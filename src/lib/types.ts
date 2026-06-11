@@ -219,6 +219,29 @@ export interface BusinessReview {
   generatedAt: string;
 }
 
+/* ---------- sales advisor chat ---------- */
+
+export interface ProposedAction {
+  id: string;
+  tool: string;                       // e.g. "create_task"
+  description: string;                // human-readable, shown on the card
+  args: Record<string, unknown>;
+  status: "pending" | "confirmed" | "dismissed";
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  actions?: ProposedAction[];         // assistant turns only
+  createdAt: string;                  // ISO
+}
+
+export interface Conversation extends BaseRecord {
+  title: string;                      // auto-derived from the first user message
+  messages: ChatMessage[];
+}
+
 export interface Settings {
   businessName: string;
   founderName: string;
@@ -238,7 +261,11 @@ export interface DataShape {
   tasks: Task[];
   scorecards: Scorecard[];
   painPoints: PainPoint[];
+  conversations: Conversation[];
   settings: Settings;
 }
 
 export type CollectionKey = Exclude<keyof DataShape, "settings">;
+
+/** What the Sales Advisor route receives as the current data picture. */
+export type AdvisorSnapshot = Omit<DataShape, "conversations">;

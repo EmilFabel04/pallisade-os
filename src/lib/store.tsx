@@ -71,6 +71,7 @@ const EMPTY: DataShape = {
   tasks: [],
   scorecards: [],
   painPoints: [],
+  conversations: [],
   settings: DEFAULT_SETTINGS,
 };
 
