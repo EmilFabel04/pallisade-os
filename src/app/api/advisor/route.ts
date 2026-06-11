@@ -38,7 +38,11 @@ export async function POST(req: Request) {
   const services = body.context?.services ||
     "bespoke AI systems, workflow automation, custom software, dashboards and reporting tools";
 
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD, for date-relative tasks
+
   const system =
+    `Today's date is ${today}. When the founder says "tomorrow", "next week" etc., resolve dates relative ` +
+    `to that and pass concrete ISO dates (YYYY-MM-DD) to tools.\n\n` +
     `You are the Sales Advisor for ${biz}, a solo B2B agency run by ${founder} that sells ${services} ` +
     `to boutique asset managers and B2B service businesses. You help run the pipeline: leads, interactions, ` +
     `projects, tasks, daily scorecards and a pain-point bank.\n\n` +
