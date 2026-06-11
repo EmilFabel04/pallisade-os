@@ -11,10 +11,15 @@ export interface AdvisorReply {
   actions: ProposedAction[];
 }
 
-/** Strip the conversations collection — the advisor reads business data, not chat history. */
+/**
+ * Build the data picture sent to the advisor: every business collection except
+ * `conversations` (the advisor reads business data, not chat history). We pick the
+ * keys explicitly so a caller passing the full store value — with its methods and
+ * `ready` flag — doesn't leak those into the request body.
+ */
 export function buildSnapshot(data: DataShape): AdvisorSnapshot {
-  const { conversations: _conversations, ...rest } = data;
-  return rest;
+  const { leads, interactions, projects, tasks, scorecards, painPoints, settings } = data;
+  return { leads, interactions, projects, tasks, scorecards, painPoints, settings };
 }
 
 export async function getAdvisorStatus(): Promise<{ configured: boolean }> {

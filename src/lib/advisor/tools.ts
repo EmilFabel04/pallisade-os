@@ -145,6 +145,9 @@ export function resolveTool(
     case "search_pain_points": return JSON.stringify(searchPainPoints(snapshot, args));
     case "get_pipeline_metrics": return JSON.stringify(getPipelineMetrics(snapshot, args));
 
+    // Skill tools run the deterministic local generators from ai.ts (not the
+    // Claude-backed /api/ai route) on purpose: it keeps this loop synchronous and
+    // avoids a nested model call inside each tool turn.
     case "generate_call_summary":
       return JSON.stringify(generateCallSummary({
         rawNotes: String(args.rawNotes ?? ""),
