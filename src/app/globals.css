@@ -1,0 +1,348 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Pallisade OS — "Boutique terminal" design system
+   Near-black charcoal canvas · off-white text · hairline borders
+   · single restrained crimson accent · mono numerals
+   ============================================================ */
+
+@theme {
+  /* Surfaces */
+  --color-canvas: #0a0a0b;
+  --color-surface: #111114;
+  --color-surface-2: #16161a;
+  --color-surface-3: #1c1c21;
+
+  /* Borders */
+  --color-line: #222227;
+  --color-line-strong: #2e2e35;
+
+  /* Text */
+  --color-ink: #ededee;
+  --color-ink-soft: #b6b6bd;
+  --color-muted: #87878f;
+  --color-dim: #56565e;
+
+  /* Accent — crimson */
+  --color-accent: #e5484d;
+  --color-accent-soft: #f0595e;
+  --color-accent-dim: #3a1416;
+
+  /* Status */
+  --color-positive: #3dd68c;
+  --color-positive-dim: #123524;
+  --color-warning: #e3b341;
+  --color-warning-dim: #33280d;
+  --color-info: #5b9bd5;
+  --color-info-dim: #122436;
+
+  /* Type */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+
+  /* Radius */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv01", "ss01";
+  }
+
+  /* Subtle atmospheric vignette + grain so the canvas isn't dead flat */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(120% 90% at 100% 0%, rgba(229, 72, 77, 0.05) 0%, transparent 45%),
+      radial-gradient(100% 80% at 0% 100%, rgba(91, 155, 213, 0.025) 0%, transparent 50%);
+  }
+
+  ::selection {
+    background: var(--color-accent);
+    color: #fff;
+  }
+
+  /* Tabular figures everywhere numbers matter */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 999px;
+    border: 3px solid var(--color-canvas);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a3a42;
+  }
+
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+  }
+  textarea {
+    resize: vertical;
+  }
+}
+
+@layer components {
+  /* ---- Panels / cards ---- */
+  .panel {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+    position: relative;
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.95rem 1.1rem;
+    border-bottom: 1px solid var(--color-line);
+  }
+  .panel-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+
+  /* ---- Eyebrow label ---- */
+  .eyebrow {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-dim);
+  }
+
+  /* ---- Buttons ---- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    height: 36px;
+    padding: 0 0.85rem;
+    font-size: 0.82rem;
+    font-weight: 500;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-line-strong);
+    color: var(--color-ink);
+    background: var(--color-surface-2);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease,
+      transform 0.05s ease;
+  }
+  .btn:hover {
+    background: var(--color-surface-3);
+    border-color: #3a3a42;
+  }
+  .btn:active {
+    transform: translateY(0.5px);
+  }
+  .btn-accent {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: #fff;
+  }
+  .btn-accent:hover {
+    background: var(--color-accent-soft);
+    border-color: var(--color-accent-soft);
+  }
+  .btn-ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--color-muted);
+  }
+  .btn-ghost:hover {
+    background: var(--color-surface-2);
+    color: var(--color-ink);
+    border-color: transparent;
+  }
+  .btn-sm {
+    height: 30px;
+    padding: 0 0.6rem;
+    font-size: 0.78rem;
+  }
+  .btn-icon {
+    width: 36px;
+    padding: 0;
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* ---- Form controls ---- */
+  .field-label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--color-muted);
+    margin-bottom: 0.35rem;
+  }
+  .input,
+  .select,
+  .textarea {
+    width: 100%;
+    background: var(--color-canvas);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    color: var(--color-ink);
+    font-size: 0.85rem;
+    padding: 0.5rem 0.65rem;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease;
+  }
+  .input::placeholder,
+  .textarea::placeholder {
+    color: var(--color-dim);
+  }
+  .input:focus,
+  .select:focus,
+  .textarea:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.12);
+  }
+  .select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2387878f' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    padding-right: 1.8rem;
+  }
+
+  /* ---- Tables ---- */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+  }
+  .data-table thead th {
+    text-align: left;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-dim);
+    padding: 0.65rem 0.9rem;
+    border-bottom: 1px solid var(--color-line);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    background: var(--color-surface);
+    z-index: 1;
+  }
+  .data-table tbody td {
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--color-line);
+    color: var(--color-ink-soft);
+    vertical-align: middle;
+  }
+  .data-table tbody tr {
+    transition: background 0.12s ease;
+  }
+  .data-table tbody tr:hover {
+    background: var(--color-surface-2);
+    cursor: pointer;
+  }
+  .data-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* ---- Badges / chips ---- */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-line-strong);
+    color: var(--color-ink-soft);
+    white-space: nowrap;
+  }
+  .chip-dot::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+    display: inline-block;
+  }
+
+  /* ---- Focusable row link reset ---- */
+  .link-accent {
+    color: var(--color-accent-soft);
+    transition: color 0.12s ease;
+  }
+  .link-accent:hover {
+    color: #fff;
+  }
+}
+
+@layer utilities {
+  .hairline {
+    border-color: var(--color-line);
+  }
+  .animate-rise {
+    animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes fadein {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .animate-fade {
+    animation: fadein 0.2s ease both;
+  }
+}

@@ -1,0 +1,738 @@
+import type {
+  DataShape,
+  Interaction,
+  Lead,
+  PainPoint,
+  Project,
+  Scorecard,
+  Settings,
+  Task,
+} from "./types";
+import { addDaysISO, nowISO, todayISO, uid } from "./utils";
+
+/* Demo dataset — generated relative to "today" so the dashboard,
+   follow-up logic and charts are immediately meaningful. */
+
+const today = todayISO();
+const D = (offset: number) => addDaysISO(today, offset);
+
+export const DEFAULT_SETTINGS: Settings = {
+  businessName: "Pallisade Data",
+  founderName: "Emil",
+  mainMarket: "Boutique asset managers and B2B service businesses",
+  services:
+    "Bespoke AI systems, workflow automation, custom software, dashboards, reporting tools",
+  accentColor: "#e5484d",
+  currency: "ZAR",
+  secondaryCurrencyEnabled: true,
+};
+
+function rec<T extends object>(data: T, ageDays = 3): T & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+} {
+  return {
+    ...data,
+    id: uid(),
+    createdAt: new Date(Date.now() - ageDays * 86400000).toISOString(),
+    updatedAt: nowISO(),
+  };
+}
+
+/* ---------------- Leads ---------------- */
+
+const leadSeeds: Omit<Lead, keyof { id: string; createdAt: string; updatedAt: string }>[] = [
+  {
+    company: "Quillmere Capital",
+    contactName: "Johan Pretorius",
+    contactRole: "Managing Partner",
+    email: "johan@quillmere-capital.example",
+    phone: "+27 00 555 0142",
+    linkedinUrl: "https://linkedin.example/in/johanpretorius",
+    industry: "Asset Management",
+    companyType: "Boutique fund manager",
+    source: "referral",
+    status: "interested",
+    quality: "high",
+    painPoint: "Monthly investor reports take 3 days of manual Excel work",
+    objection: "Worried about data security with an outside vendor",
+    buyingSignal: "Asked how fast a pilot could be live",
+    lastContact: D(-2),
+    nextFollowUp: D(0),
+    notes: "Warm intro via Anika. Decision maker, moves fast. Budget exists.",
+    solutionIdea: "Automated investor reporting pipeline + branded PDF generator",
+    estimatedValue: 120000,
+    owner: "Emil",
+  },
+  {
+    company: "Sugarbird Wealth Partners",
+    contactName: "Sarah Naidoo",
+    contactRole: "Operations Director",
+    email: "s.naidoo@sugarbird-wealth.example",
+    phone: "+27 00 555 0931",
+    linkedinUrl: "https://linkedin.example/in/sarahnaidoo",
+    industry: "Wealth Management",
+    companyType: "Private wealth firm",
+    source: "LinkedIn",
+    status: "call booked",
+    quality: "high",
+    painPoint: "Client onboarding is a manual paperwork bottleneck",
+    objection: "",
+    buyingSignal: "Booked a discovery call for next week",
+    lastContact: D(-1),
+    nextFollowUp: D(2),
+    notes: "Responded to LinkedIn outreach within an hour. Clearly feeling the pain.",
+    solutionIdea: "Digital onboarding workflow with e-sign + KYC checklist automation",
+    estimatedValue: 85000,
+    owner: "Emil",
+  },
+  {
+    company: "Kestrelmoor Asset Management",
+    contactName: "David Coetzee",
+    contactRole: "CIO",
+    email: "dcoetzee@kestrelmoor-am.example",
+    phone: "+27 00 555 0410",
+    linkedinUrl: "https://linkedin.example/in/davidcoetzee",
+    industry: "Asset Management",
+    companyType: "Mid-size fund manager",
+    source: "cold call",
+    status: "replied",
+    quality: "medium",
+    painPoint: "No single view of portfolio data across systems",
+    objection: "Already has an internal analyst doing this",
+    buyingSignal: "",
+    lastContact: D(-4),
+    nextFollowUp: D(-1),
+    notes: "Curious but guarded. Needs a sharper hook around analyst time saved.",
+    solutionIdea: "Unified portfolio dashboard pulling from custodian + accounting feeds",
+    estimatedValue: 150000,
+    owner: "Emil",
+  },
+  {
+    company: "Dunewright Logistics",
+    contactName: "Lerato Mokoena",
+    contactRole: "COO",
+    email: "lerato@dunewright-logistics.example",
+    phone: "+27 00 555 0277",
+    linkedinUrl: "https://linkedin.example/in/leratomokoena",
+    industry: "Logistics",
+    companyType: "B2B services",
+    source: "email",
+    status: "contacted",
+    quality: "medium",
+    painPoint: "Dispatch scheduling done on whiteboards and WhatsApp",
+    objection: "",
+    buyingSignal: "",
+    lastContact: D(-3),
+    nextFollowUp: D(1),
+    notes: "Opened the email twice. No reply yet — send a value-led follow-up.",
+    solutionIdea: "Lightweight dispatch + tracking dashboard",
+    estimatedValue: 70000,
+    owner: "Emil",
+  },
+  {
+    company: "Thornveld Legal",
+    contactName: "Thabo Dlamini",
+    contactRole: "Founding Attorney",
+    email: "thabo@thornveld-legal.example",
+    phone: "+27 00 555 0688",
+    linkedinUrl: "https://linkedin.example/in/thabodlamini",
+    industry: "Legal",
+    companyType: "Boutique law firm",
+    source: "warm lead",
+    status: "proposal",
+    quality: "high",
+    painPoint: "Drafting standard contracts eats junior associate hours",
+    objection: "Wants to see ROI before committing",
+    buyingSignal: "Requested a written proposal",
+    lastContact: D(-1),
+    nextFollowUp: D(0),
+    notes: "Proposal sent. Follow up to confirm receipt and offer a walkthrough.",
+    solutionIdea: "AI contract drafting assistant trained on their templates",
+    estimatedValue: 95000,
+    owner: "Emil",
+  },
+  {
+    company: "Lanternpost Advisory",
+    contactName: "Emma van Wyk",
+    contactRole: "Partner",
+    email: "emma@lanternpost-advisory.example",
+    phone: "+27 00 555 0820",
+    linkedinUrl: "https://linkedin.example/in/emmavanwyk",
+    industry: "Advisory",
+    companyType: "B2B services",
+    source: "LinkedIn",
+    status: "new",
+    quality: "medium",
+    painPoint: "",
+    objection: "",
+    buyingSignal: "",
+    lastContact: null,
+    nextFollowUp: D(0),
+    notes: "Identified on LinkedIn. Strong fit profile. Not yet contacted.",
+    solutionIdea: "",
+    estimatedValue: 60000,
+    owner: "Emil",
+  },
+  {
+    company: "Tallyhook Audit Co",
+    contactName: "Riaan Botha",
+    contactRole: "Audit Manager",
+    email: "riaan@tallyhook-audit.example",
+    phone: "+27 00 555 0455",
+    linkedinUrl: "https://linkedin.example/in/riaanbotha",
+    industry: "Accounting",
+    companyType: "B2B services",
+    source: "cold call",
+    status: "won",
+    quality: "high",
+    painPoint: "Reconciliation across client accounts was painfully manual",
+    objection: "",
+    buyingSignal: "Signed after the demo",
+    lastContact: D(-6),
+    nextFollowUp: null,
+    notes: "Closed — first paid client of the quarter. Kickoff scheduled.",
+    solutionIdea: "Automated reconciliation tool",
+    estimatedValue: 110000,
+    owner: "Emil",
+  },
+  {
+    company: "Driftwood Quant Partners",
+    contactName: "Nadia Hendricks",
+    contactRole: "Head of Research",
+    email: "nadia@driftwood-quant.example",
+    phone: "+27 00 555 0199",
+    linkedinUrl: "https://linkedin.example/in/nadiahendricks",
+    industry: "Asset Management",
+    companyType: "Quant fund",
+    source: "referral",
+    status: "lost",
+    quality: "low",
+    painPoint: "Wanted custom backtesting tooling",
+    objection: "Built it in-house instead",
+    buyingSignal: "",
+    lastContact: D(-12),
+    nextFollowUp: null,
+    notes: "Lost — strong internal eng team. Keep warm for future automation work.",
+    solutionIdea: "",
+    estimatedValue: 0,
+    owner: "Emil",
+  },
+  {
+    company: "Tidewrack Insurance Brokers",
+    contactName: "Michael Adams",
+    contactRole: "Director",
+    email: "michael@tidewrack-brokers.example",
+    phone: "+27 00 555 0733",
+    linkedinUrl: "https://linkedin.example/in/michaeladams",
+    industry: "Insurance",
+    companyType: "B2B services",
+    source: "website",
+    status: "interested",
+    quality: "medium",
+    painPoint: "Quote turnaround is slow because data is scattered",
+    objection: "Small team, limited bandwidth to adopt new tools",
+    buyingSignal: "Filled in the website contact form",
+    lastContact: D(-2),
+    nextFollowUp: D(3),
+    notes: "Inbound lead. Needs a low-friction pitch given small team.",
+    solutionIdea: "Quote-assembly automation pulling from existing spreadsheets",
+    estimatedValue: 55000,
+    owner: "Emil",
+  },
+  {
+    company: "Hollowcrest Private Wealth",
+    contactName: "Grace Mahlangu",
+    contactRole: "Founder",
+    email: "grace@hollowcrest-wealth.example",
+    phone: "+27 00 555 0512",
+    linkedinUrl: "https://linkedin.example/in/gracemahlangu",
+    industry: "Wealth Management",
+    companyType: "Boutique private wealth",
+    source: "referral",
+    status: "not a fit",
+    quality: "low",
+    painPoint: "Looking for an off-the-shelf CRM, not bespoke",
+    objection: "Budget too small for custom work",
+    buyingSignal: "",
+    lastContact: D(-8),
+    nextFollowUp: null,
+    notes: "Not a fit right now. Pointed them to an off-the-shelf option.",
+    solutionIdea: "",
+    estimatedValue: 0,
+    owner: "Emil",
+  },
+];
+
+const leads: Lead[] = leadSeeds.map((l, i) => rec(l, 14 - i));
+
+const leadByCompany = (name: string) => leads.find((l) => l.company === name)!;
+
+/* ---------------- Interactions ---------------- */
+
+const interactionSeeds: Array<Omit<Interaction, "id" | "createdAt" | "updatedAt">> = [
+  {
+    leadId: leadByCompany("Quillmere Capital").id,
+    company: "Quillmere Capital",
+    contact: "Johan Pretorius",
+    date: D(-2),
+    type: "discovery call",
+    rawNotes:
+      "Johan walked me through their reporting process. Every month-end two people spend 3 days copying numbers from the custodian into Excel and formatting PDFs. Lots of manual errors. He's frustrated, wants it gone. Asked how fast a pilot could go live. Only concern is data security since it's investor data.",
+    whatTheySaid:
+      "If you can take the month-end reporting pain away I'll find the budget. How quickly could a pilot be live?",
+    painPoints:
+      "Manual month-end reporting; 3 days of work; copy-paste errors; investor data formatting",
+    objections: "Concerned about data security with an external vendor",
+    buyingSignals: "Asked about pilot timeline; said he'd find budget",
+    followUpRequired: true,
+    followUpDate: D(0),
+  },
+  {
+    leadId: leadByCompany("Sugarbird Wealth Partners").id,
+    company: "Sugarbird Wealth Partners",
+    contact: "Sarah Naidoo",
+    date: D(-1),
+    type: "LinkedIn reply",
+    rawNotes:
+      "Replied to my LinkedIn message within an hour. Said client onboarding is a nightmare of paperwork and chasing signatures. Booked a discovery call for next week. Very engaged.",
+    whatTheySaid:
+      "Onboarding is honestly our biggest bottleneck — let's talk next week.",
+    painPoints: "Manual client onboarding; chasing signatures; paperwork heavy",
+    objections: "",
+    buyingSignals: "Booked a discovery call; described pain as 'biggest bottleneck'",
+    followUpRequired: true,
+    followUpDate: D(2),
+  },
+  {
+    leadId: leadByCompany("Tallyhook Audit Co").id,
+    company: "Tallyhook Audit Co",
+    contact: "Riaan Botha",
+    date: D(-6),
+    type: "demo",
+    rawNotes:
+      "Demoed the reconciliation prototype. Riaan was visibly relieved — said it would save the team days each month. Signed off on a paid build on the call.",
+    whatTheySaid: "This is exactly what we need. Let's do it.",
+    painPoints: "Manual reconciliation across client accounts",
+    objections: "",
+    buyingSignals: "Signed on the call",
+    followUpRequired: false,
+    followUpDate: null,
+  },
+  {
+    leadId: leadByCompany("Thornveld Legal").id,
+    company: "Thornveld Legal",
+    contact: "Thabo Dlamini",
+    date: D(-1),
+    type: "email reply",
+    rawNotes:
+      "Thabo replied asking for a written proposal for the contract drafting assistant. Wants to understand ROI before committing — how many associate hours it saves.",
+    whatTheySaid: "Send me a proposal with the expected time savings and cost.",
+    painPoints: "Junior associates spend hours drafting standard contracts",
+    objections: "Wants clear ROI before committing",
+    buyingSignals: "Requested a written proposal",
+    followUpRequired: true,
+    followUpDate: D(0),
+  },
+  {
+    leadId: leadByCompany("Kestrelmoor Asset Management").id,
+    company: "Kestrelmoor Asset Management",
+    contact: "David Coetzee",
+    date: D(-4),
+    type: "cold call",
+    rawNotes:
+      "Cold called David. Polite but guarded. Mentioned they have no single view across systems but an internal analyst handles it. Didn't commit to anything.",
+    whatTheySaid: "We manage with our analyst for now, but it's not ideal.",
+    painPoints: "No unified portfolio view across systems",
+    objections: "Already has an internal analyst doing the work",
+    buyingSignals: "",
+    followUpRequired: true,
+    followUpDate: D(-1),
+  },
+];
+
+const interactions: Interaction[] = interactionSeeds.map((s, i) => rec(s, 6 - i));
+
+/* ---------------- Projects ---------------- */
+
+const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
+  {
+    name: "Reconciliation Automation",
+    company: "Tallyhook Audit Co",
+    type: "paid project",
+    stage: "building",
+    priority: "high",
+    startDate: D(-5),
+    dueDate: D(12),
+    currentMilestone: "Core matching engine for bank vs ledger",
+    currentBlocker: "Waiting on sample data export from client",
+    nextAction: "Chase Riaan for the CSV exports and finalise matching rules",
+    deliverables: "Reconciliation tool, admin dashboard, 1h handover session",
+    notes: "First paid build. Get it right — strong referral potential.",
+  },
+  {
+    name: "Investor Reporting Pilot",
+    company: "Quillmere Capital",
+    type: "demo",
+    stage: "planning",
+    priority: "high",
+    startDate: D(-1),
+    dueDate: D(9),
+    currentMilestone: "Scoped pilot covering one fund's month-end report",
+    currentBlocker: "Need sign-off on data-security approach",
+    nextAction: "Send the security one-pager Johan asked for",
+    deliverables: "Automated report pipeline demo + branded PDF sample",
+    notes: "If the pilot lands this becomes a retained build.",
+  },
+  {
+    name: "Onboarding Workflow Demo",
+    company: "Sugarbird Wealth Partners",
+    type: "demo",
+    stage: "idea",
+    priority: "medium",
+    startDate: null,
+    dueDate: D(14),
+    currentMilestone: "Outline the onboarding flow before the discovery call",
+    currentBlocker: "",
+    nextAction: "Map their current onboarding steps from the call notes",
+    deliverables: "Clickable onboarding flow mockup",
+    notes: "Prep a sharp demo for the discovery call next week.",
+  },
+  {
+    name: "Pallisade Outreach Engine",
+    company: "Pallisade Data (internal)",
+    type: "internal product",
+    stage: "building",
+    priority: "medium",
+    startDate: D(-20),
+    dueDate: null,
+    currentMilestone: "Automated LinkedIn + email sequencing",
+    currentBlocker: "Deliverability tuning on the email side",
+    nextAction: "Test the new email warm-up settings",
+    deliverables: "Internal tool to run my own outreach at scale",
+    notes: "Dogfood it — also a potential productised offering later.",
+  },
+  {
+    name: "Contract Assistant Proposal",
+    company: "Thornveld Legal",
+    type: "proposal",
+    stage: "sent",
+    priority: "high",
+    startDate: D(-3),
+    dueDate: D(0),
+    currentMilestone: "Proposal delivered, awaiting decision",
+    currentBlocker: "Awaiting Thabo's review",
+    nextAction: "Follow up to confirm receipt and offer a walkthrough",
+    deliverables: "Written proposal with ROI breakdown",
+    notes: "ROI-led proposal. Follow up today.",
+  },
+];
+
+const projects: Project[] = projectSeeds.map((p, i) => rec(p, 12 - i));
+
+const projectByName = (name: string) => projects.find((p) => p.name === name)!;
+
+/* ---------------- Tasks ---------------- */
+
+const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
+  {
+    title: "Follow up with Johan on the security one-pager",
+    linkKind: "lead",
+    linkId: leadByCompany("Quillmere Capital").id,
+    category: "follow-up",
+    priority: "high",
+    status: "not started",
+    dueDate: D(0),
+    notes: "He flagged data security — send the one-pager then call.",
+  },
+  {
+    title: "Confirm Thornveld Legal received the proposal",
+    linkKind: "lead",
+    linkId: leadByCompany("Thornveld Legal").id,
+    category: "sales",
+    priority: "high",
+    status: "not started",
+    dueDate: D(0),
+    notes: "Offer a 15-min walkthrough of the ROI numbers.",
+  },
+  {
+    title: "Chase Riaan for reconciliation sample data",
+    linkKind: "project",
+    linkId: projectByName("Reconciliation Automation").id,
+    category: "delivery",
+    priority: "high",
+    status: "blocked",
+    dueDate: D(-1),
+    notes: "Build is blocked until the CSV exports arrive.",
+  },
+  {
+    title: "Send value-led follow-up to Dunewright Logistics",
+    linkKind: "lead",
+    linkId: leadByCompany("Dunewright Logistics").id,
+    category: "outreach",
+    priority: "medium",
+    status: "not started",
+    dueDate: D(1),
+    notes: "Opened twice, no reply. Lead with the dispatch pain.",
+  },
+  {
+    title: "Map Sugarbird Wealth onboarding flow",
+    linkKind: "project",
+    linkId: projectByName("Onboarding Workflow Demo").id,
+    category: "product",
+    priority: "medium",
+    status: "in progress",
+    dueDate: D(3),
+    notes: "Use the call notes to draft the flow before discovery call.",
+  },
+  {
+    title: "Build core matching engine",
+    linkKind: "project",
+    linkId: projectByName("Reconciliation Automation").id,
+    category: "delivery",
+    priority: "high",
+    status: "in progress",
+    dueDate: D(5),
+    notes: "Bank vs ledger matching with tolerance rules.",
+  },
+  {
+    title: "Write 5 cold LinkedIn messages",
+    linkKind: "none",
+    linkId: null,
+    category: "outreach",
+    priority: "medium",
+    status: "not started",
+    dueDate: D(0),
+    notes: "Target boutique asset managers in Cape Town.",
+  },
+  {
+    title: "Publish SEO article: 'Automating fund reporting'",
+    linkKind: "none",
+    linkId: null,
+    category: "SEO",
+    priority: "low",
+    status: "not started",
+    dueDate: D(6),
+    notes: "Target keyword: automated investor reporting South Africa.",
+  },
+  {
+    title: "Invoice Tallyhook Audit for deposit",
+    linkKind: "lead",
+    linkId: leadByCompany("Tallyhook Audit Co").id,
+    category: "admin",
+    priority: "medium",
+    status: "done",
+    dueDate: D(-2),
+    notes: "50% deposit invoice sent and paid.",
+  },
+  {
+    title: "Tune outreach engine email deliverability",
+    linkKind: "project",
+    linkId: projectByName("Pallisade Outreach Engine").id,
+    category: "product",
+    priority: "medium",
+    status: "in progress",
+    dueDate: D(2),
+    notes: "Adjust warm-up volume and SPF/DKIM.",
+  },
+  {
+    title: "Prep Sugarbird Wealth discovery call agenda",
+    linkKind: "lead",
+    linkId: leadByCompany("Sugarbird Wealth Partners").id,
+    category: "sales",
+    priority: "high",
+    status: "not started",
+    dueDate: D(1),
+    notes: "Three sharp questions + a teaser of the onboarding demo.",
+  },
+  {
+    title: "Reconcile this week's expenses",
+    linkKind: "none",
+    linkId: null,
+    category: "admin",
+    priority: "low",
+    status: "not started",
+    dueDate: D(4),
+    notes: "",
+  },
+];
+
+const tasks: Task[] = taskSeeds.map((t, i) => rec(t, 8 - (i % 8)));
+
+/* ---------------- Scorecards (last 16 days) ---------------- */
+
+// deterministic pseudo data with a gentle upward trend
+function buildScorecards(): Scorecard[] {
+  const out: Scorecard[] = [];
+  const days = 16;
+  for (let i = days - 1; i >= 0; i--) {
+    const dayOffset = -i;
+    const dateISO = D(dayOffset);
+    const dow = new Date(dateISO + "T00:00:00").getDay();
+    const weekend = dow === 0 || dow === 6;
+    const ramp = (days - i) / days; // 0..1 upward trend
+    const wobble = ((i * 37) % 11) - 5; // -5..5 deterministic
+    const base = weekend ? 0.3 : 1;
+
+    const dials = Math.max(0, Math.round((18 + ramp * 22 + wobble) * base));
+    const emails = Math.max(0, Math.round((12 + ramp * 16 + wobble) * base));
+    const linkedinMessages = Math.max(0, Math.round((8 + ramp * 12 + wobble / 2) * base));
+    const replies = Math.max(0, Math.round((dials + emails + linkedinMessages) * 0.12));
+    const conversations = Math.max(0, Math.round(replies * 0.6));
+    const leadsCreated = Math.max(0, Math.round(conversations * 0.5 + (ramp > 0.5 ? 1 : 0)));
+    const meetingsBooked = Math.max(0, Math.round(conversations * 0.35));
+    const proposalsSent = i % 4 === 0 && !weekend ? 1 : 0;
+    const productHours = weekend ? Math.round(ramp * 2) : Math.round(1 + ramp * 3);
+    const revenueClosed = dayOffset === -6 ? 110000 : 0;
+
+    out.push(
+      rec(
+        {
+          date: dateISO,
+          dials,
+          emails,
+          linkedinMessages,
+          replies,
+          conversations,
+          leadsCreated,
+          meetingsBooked,
+          proposalsSent,
+          productHours,
+          seoWork: i % 5 === 0 ? "Drafted one article outline" : "",
+          revenueClosed,
+          wins:
+            dayOffset === 0
+              ? "Quillmere discovery call went well — they want a pilot."
+              : dayOffset === -6
+                ? "Closed Tallyhook Audit — first paid client!"
+                : "",
+          problems: dayOffset === 0 ? "Too much time on email formatting." : "",
+          lessons: dayOffset === 0 ? "Lead with the security story for fund managers." : "",
+          avoidTomorrow: dayOffset === 0 ? "Don't start the day in the inbox." : "",
+        } as Omit<Scorecard, "id" | "createdAt" | "updatedAt">,
+        i,
+      ),
+    );
+  }
+  return out;
+}
+
+const scorecards: Scorecard[] = buildScorecards();
+
+/* ---------------- Pain points ---------------- */
+
+const painSeeds: Array<Omit<PainPoint, "id" | "createdAt" | "updatedAt">> = [
+  {
+    painPoint: "Month-end investor reporting is manual and error-prone",
+    industry: "Asset Management",
+    companyType: "Boutique fund manager",
+    whoMentioned: "Quillmere Capital, Kestrelmoor",
+    frequency: 5,
+    workaround: "Two people in Excel for 3 days each month",
+    possibleSolution: "Automated reporting pipeline with branded PDF output",
+    urgency: "high",
+    willingnessToPay: "high",
+    notes: "Strongest repeating pattern. Clear productisation candidate.",
+  },
+  {
+    painPoint: "Client onboarding is paperwork-heavy and slow",
+    industry: "Wealth Management",
+    companyType: "Private wealth firm",
+    whoMentioned: "Sugarbird Wealth, Summit",
+    frequency: 3,
+    workaround: "Manual forms, chasing signatures over email",
+    possibleSolution: "Digital onboarding with e-sign and KYC checklist automation",
+    urgency: "high",
+    willingnessToPay: "medium",
+    notes: "Regulatory angle increases urgency.",
+  },
+  {
+    painPoint: "No single view of data across systems",
+    industry: "Asset Management",
+    companyType: "Mid-size fund manager",
+    whoMentioned: "Kestrelmoor, Driftwood Quant",
+    frequency: 4,
+    workaround: "An internal analyst stitches reports together manually",
+    possibleSolution: "Unified dashboard pulling from custodian + accounting feeds",
+    urgency: "medium",
+    willingnessToPay: "medium",
+    notes: "Often blocked by 'we have an analyst for that'.",
+  },
+  {
+    painPoint: "Drafting standard contracts consumes billable hours",
+    industry: "Legal",
+    companyType: "Boutique law firm",
+    whoMentioned: "Thornveld Legal",
+    frequency: 2,
+    workaround: "Junior associates copy and edit old templates",
+    possibleSolution: "AI drafting assistant trained on firm templates",
+    urgency: "high",
+    willingnessToPay: "high",
+    notes: "ROI is easy to quantify in associate hours.",
+  },
+  {
+    painPoint: "Dispatch scheduling lives on whiteboards and WhatsApp",
+    industry: "Logistics",
+    companyType: "B2B services",
+    whoMentioned: "Dunewright Logistics",
+    frequency: 2,
+    workaround: "Whiteboard + group chats",
+    possibleSolution: "Lightweight dispatch and tracking dashboard",
+    urgency: "medium",
+    willingnessToPay: "low",
+    notes: "Price-sensitive segment — keep scope tight.",
+  },
+  {
+    painPoint: "Reconciliation across client accounts is fully manual",
+    industry: "Accounting",
+    companyType: "B2B services",
+    whoMentioned: "Tallyhook Audit",
+    frequency: 3,
+    workaround: "Manual matching in spreadsheets",
+    possibleSolution: "Automated reconciliation engine",
+    urgency: "high",
+    willingnessToPay: "high",
+    notes: "Already sold one — repeatable across audit firms.",
+  },
+  {
+    painPoint: "Quote turnaround is slow due to scattered data",
+    industry: "Insurance",
+    companyType: "B2B services",
+    whoMentioned: "Tidewrack Brokers",
+    frequency: 1,
+    workaround: "Manually pulling numbers from multiple spreadsheets",
+    possibleSolution: "Quote-assembly automation",
+    urgency: "medium",
+    willingnessToPay: "medium",
+    notes: "Small teams need low-friction adoption.",
+  },
+  {
+    painPoint: "Founders have no daily view of their own pipeline",
+    industry: "B2B Services",
+    companyType: "Solo / micro agencies",
+    whoMentioned: "Self-observed",
+    frequency: 4,
+    workaround: "Scattered notes, spreadsheets, memory",
+    possibleSolution: "An operating system like this one — productise it",
+    urgency: "medium",
+    willingnessToPay: "medium",
+    notes: "Meta-opportunity: Pallisade OS itself could be a product.",
+  },
+];
+
+const painPoints: PainPoint[] = painSeeds.map((p, i) => rec(p, 10 - i));
+
+/* ---------------- Export ---------------- */
+
+export function seedData(): DataShape {
+  return {
+    leads,
+    interactions,
+    projects,
+    tasks,
+    scorecards,
+    painPoints,
+    settings: DEFAULT_SETTINGS,
+  };
+}

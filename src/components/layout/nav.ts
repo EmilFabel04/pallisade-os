@@ -1,0 +1,39 @@
+import {
+  LayoutDashboard,
+  Users,
+  PhoneCall,
+  FolderKanban,
+  ListChecks,
+  ClipboardList,
+  Sparkles,
+  Layers,
+  Settings,
+  type LucideIcon,
+} from "lucide-react";
+
+export interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  group: "Overview" | "Pipeline" | "Delivery" | "Intelligence" | "System";
+}
+
+export const NAV: NavItem[] = [
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, group: "Overview" },
+  { href: "/leads", label: "Leads", icon: Users, group: "Pipeline" },
+  { href: "/interactions", label: "Interactions", icon: PhoneCall, group: "Pipeline" },
+  { href: "/pain-bank", label: "Pain Point Bank", icon: Layers, group: "Pipeline" },
+  { href: "/projects", label: "Projects", icon: FolderKanban, group: "Delivery" },
+  { href: "/tasks", label: "Tasks", icon: ListChecks, group: "Delivery" },
+  { href: "/scorecard", label: "Daily Scorecard", icon: ClipboardList, group: "Intelligence" },
+  { href: "/review", label: "AI Business Review", icon: Sparkles, group: "Intelligence" },
+  { href: "/settings", label: "Settings", icon: Settings, group: "System" },
+];
+
+export const NAV_GROUPS: NavItem["group"][] = [
+  "Overview",
+  "Pipeline",
+  "Delivery",
+  "Intelligence",
+  "System",
+];
