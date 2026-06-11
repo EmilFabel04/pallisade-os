@@ -733,6 +733,7 @@ export function seedData(): DataShape {
     tasks,
     scorecards,
     painPoints,
+    conversations: [],
     settings: DEFAULT_SETTINGS,
   };
 }

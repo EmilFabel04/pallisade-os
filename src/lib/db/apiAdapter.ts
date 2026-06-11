@@ -41,6 +41,7 @@ export class ApiAdapter implements StorageAdapter {
       tasks: [],
       scorecards: [],
       painPoints: [],
+      conversations: [],
       settings: DEFAULT_SETTINGS,
     };
     await this.save(empty);
