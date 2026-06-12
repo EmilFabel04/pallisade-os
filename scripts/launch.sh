@@ -43,10 +43,18 @@ if [ ! -d node_modules ]; then
   npm install || { echo "  ✗ npm install failed"; read -r -p "Press enter to close."; exit 1; }
 fi
 
-# A valid production build has a BUILD_ID. (Running `next dev` overwrites
-# .next with dev artifacts, so check for the real build marker.)
+# Rebuild when there's no valid production build (.next/BUILD_ID), or when any
+# source file is newer than the last build — so code changes (new pages, the
+# logo, the advisor, etc.) always show up instead of serving a stale build.
+NEEDS_BUILD=0
 if [ ! -f .next/BUILD_ID ]; then
-  echo "  Building the app (first run, ~30s)…"
+  NEEDS_BUILD=1
+elif [ -n "$(find src public package.json next.config.ts postcss.config.mjs -newer .next/BUILD_ID 2>/dev/null | head -1)" ]; then
+  NEEDS_BUILD=1
+  echo "  Code changed since last run — rebuilding…"
+fi
+if [ "$NEEDS_BUILD" = "1" ]; then
+  echo "  Building the app (this can take ~30s)…"
   npm run build || { echo "  ✗ build failed"; read -r -p "Press enter to close."; exit 1; }
 fi
 

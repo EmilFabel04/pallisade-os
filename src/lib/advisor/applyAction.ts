@@ -1,5 +1,5 @@
 import type {
-  Lead, Task, Project, Interaction, ProposedAction,
+  Lead, Task, Project, Interaction, ProposedAction, CollectionKey,
   LeadSource, LeadStatus, LeadQuality, InteractionType,
   ProjectType, ProjectStage, Priority, TaskCategory, TaskStatus,
 } from "@/lib/types";
@@ -57,6 +57,18 @@ export function buildLead(a: Args): New<Lead> {
 
 export function buildLeadPatch(a: Args): Partial<Lead> {
   const p: Partial<Lead> = {};
+  // contact / firmographics
+  if (a.company != null) p.company = str(a.company);
+  if (a.contactName != null) p.contactName = str(a.contactName);
+  if (a.contactRole != null) p.contactRole = str(a.contactRole);
+  if (a.email != null) p.email = str(a.email);
+  if (a.phone != null) p.phone = str(a.phone);
+  if (a.linkedinUrl != null) p.linkedinUrl = str(a.linkedinUrl);
+  if (a.industry != null) p.industry = str(a.industry);
+  if (a.companyType != null) p.companyType = str(a.companyType);
+  if (a.source != null) p.source = a.source as LeadSource;
+  if (a.owner != null) p.owner = str(a.owner);
+  // pipeline
   if (a.status != null) p.status = a.status as LeadStatus;
   if (a.quality != null) p.quality = a.quality as LeadQuality;
   if (a.nextFollowUp !== undefined) p.nextFollowUp = orNull(a.nextFollowUp);
@@ -65,7 +77,19 @@ export function buildLeadPatch(a: Args): Partial<Lead> {
   if (a.painPoint != null) p.painPoint = str(a.painPoint);
   if (a.objection != null) p.objection = str(a.objection);
   if (a.buyingSignal != null) p.buyingSignal = str(a.buyingSignal);
+  if (a.solutionIdea != null) p.solutionIdea = str(a.solutionIdea);
   if (a.estimatedValue != null) p.estimatedValue = Number(a.estimatedValue) || 0;
+  return p;
+}
+
+export function buildTaskPatch(a: Args): Partial<Task> {
+  const p: Partial<Task> = {};
+  if (a.title != null) p.title = str(a.title);
+  if (a.category != null) p.category = a.category as TaskCategory;
+  if (a.priority != null) p.priority = a.priority as Priority;
+  if (a.status != null) p.status = a.status as TaskStatus;
+  if (a.dueDate !== undefined) p.dueDate = orNull(a.dueDate);
+  if (a.notes != null) p.notes = str(a.notes);
   return p;
 }
 
@@ -103,19 +127,41 @@ export function buildInteraction(a: Args): New<Interaction> {
   };
 }
 
-/** Apply a confirmed action through the store's existing CRUD. */
-export function applyAction(store: AdvisorStore, action: ProposedAction): void {
+type Created = { id: string };
+const idOf = (rec: unknown): string => (rec as Created)?.id ?? "";
+
+/**
+ * Apply a confirmed action through the store's existing CRUD.
+ * Returns where the affected record lives so the UI can deep-link to it
+ * (`/<page>?focus=<id>`), or null if nothing addressable was touched.
+ */
+export function applyAction(
+  store: AdvisorStore,
+  action: ProposedAction,
+): { kind: CollectionKey; id: string } | null {
   const a = action.args ?? {};
   switch (action.tool) {
-    case "create_task": store.create("tasks", buildTask(a)); break;
-    case "create_lead": store.create("leads", buildLead(a)); break;
-    case "create_project": store.create("projects", buildProject(a)); break;
-    case "log_interaction": store.create("interactions", buildInteraction(a)); break;
+    case "create_task":
+      return { kind: "tasks", id: idOf(store.create("tasks", buildTask(a))) };
+    case "create_lead":
+      return { kind: "leads", id: idOf(store.create("leads", buildLead(a))) };
+    case "create_project":
+      return { kind: "projects", id: idOf(store.create("projects", buildProject(a))) };
+    case "log_interaction":
+      return { kind: "interactions", id: idOf(store.create("interactions", buildInteraction(a))) };
     case "update_lead": {
       const id = str(a.id);
-      if (id) store.update("leads", id, buildLeadPatch(a));
-      break;
+      if (!id) return null;
+      store.update("leads", id, buildLeadPatch(a));
+      return { kind: "leads", id };
     }
-    default: break;
+    case "update_task": {
+      const id = str(a.id);
+      if (!id) return null;
+      store.update("tasks", id, buildTaskPatch(a));
+      return { kind: "tasks", id };
+    }
+    default:
+      return null;
   }
 }

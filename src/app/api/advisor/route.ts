@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type { AdvisorSnapshot, ProposedAction } from "@/lib/types";
-import { TOOLS, resolveTool } from "@/lib/advisor/tools";
+import { TOOLS, EMAIL_TOOLS, EMAIL_TOOL_NAMES, resolveTool } from "@/lib/advisor/tools";
+import { emailToolsAvailable, connectedEmails, resolveEmailTool } from "@/lib/gmail/advisorEmail";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,10 +51,22 @@ export async function POST(req: Request) {
     `founder's real data — never invent leads, numbers or history. Use the skill tools to generate call ` +
     `summaries, business reviews and tomorrow plans when helpful.\n\n` +
     `When the founder wants to change data, call the matching write tool (create_task, create_lead, ` +
-    `update_lead, log_interaction, create_project). Write tools do NOT execute immediately — they are ` +
-    `queued as proposals the founder must confirm in the UI. After proposing, briefly tell them what you've ` +
-    `queued and that it's awaiting their confirmation; do not claim it is already done. For update_lead, ` +
-    `always pass an id you obtained from query_leads. Be concise, direct and practical.`;
+    `update_lead, update_task, log_interaction, create_project). You can fully edit a lead with update_lead ` +
+    `(any field — contact details, firmographics, pipeline status, value, notes) and edit/reschedule/complete ` +
+    `tasks with update_task. Write tools do NOT execute immediately — they are queued as proposals the founder ` +
+    `must confirm in the UI. After proposing, briefly tell them what you've queued and that it's awaiting their ` +
+    `confirmation; do not claim it is already done. For update_lead / update_task, always pass an id you ` +
+    `obtained from query_leads / query_tasks, and only include the fields you intend to change. Be concise, ` +
+    `direct and practical.`;
+
+  // Offer Gmail read tools only when an inbox is connected.
+  const emailEnabled = emailToolsAvailable();
+  const tools = emailEnabled ? [...TOOLS, ...EMAIL_TOOLS] : TOOLS;
+  const systemFull = emailEnabled
+    ? `${system}\n\nConnected Gmail inboxes: ${connectedEmails().join(", ")}. Use query_emails ` +
+      `(Gmail search syntax) or list_inboxes to read real email when the founder asks about their inbox, ` +
+      `a sender, or recent messages — never invent email content.`
+    : system;
 
   const client = new Anthropic({ apiKey });
   const proposals: ProposedAction[] = [];
@@ -67,8 +80,8 @@ export async function POST(req: Request) {
       const response = await client.messages.create({
         model: MODEL,
         max_tokens: 2048,
-        system,
-        tools: TOOLS as unknown as Anthropic.Tool[],
+        system: systemFull,
+        tools: tools as unknown as Anthropic.Tool[],
         messages,
       });
 
@@ -83,13 +96,18 @@ export async function POST(req: Request) {
 
       if (response.stop_reason !== "tool_use" || toolUses.length === 0) break;
 
-      // record the assistant turn, then answer every tool_use with a tool_result
+      // record the assistant turn, then answer every tool_use with a tool_result.
+      // Email tools resolve async (Gmail API); everything else is synchronous.
       messages.push({ role: "assistant", content: response.content });
-      const results: Anthropic.ToolResultBlockParam[] = toolUses.map((tu) => ({
-        type: "tool_result",
-        tool_use_id: tu.id,
-        content: resolveTool(tu.name, (tu.input ?? {}) as Record<string, unknown>, snapshot, proposals),
-      }));
+      const results: Anthropic.ToolResultBlockParam[] = await Promise.all(
+        toolUses.map(async (tu) => {
+          const input = (tu.input ?? {}) as Record<string, unknown>;
+          const content = EMAIL_TOOL_NAMES.has(tu.name)
+            ? await resolveEmailTool(tu.name, input)
+            : resolveTool(tu.name, input, snapshot, proposals);
+          return { type: "tool_result" as const, tool_use_id: tu.id, content };
+        }),
+      );
       messages.push({ role: "user", content: results });
     }
 

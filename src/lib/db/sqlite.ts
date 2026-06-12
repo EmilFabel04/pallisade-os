@@ -21,6 +21,7 @@ const COLLECTIONS = [
   "tasks",
   "scorecards",
   "painPoints",
+  "conversations",
 ] as const;
 type Coll = (typeof COLLECTIONS)[number];
 

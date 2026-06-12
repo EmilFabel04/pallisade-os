@@ -227,6 +227,8 @@ export interface ProposedAction {
   description: string;                // human-readable, shown on the card
   args: Record<string, unknown>;
   status: "pending" | "confirmed" | "dismissed";
+  /** Set after a write is confirmed, so the card can deep-link to the record. */
+  result?: { kind: CollectionKey; id: string };
 }
 
 export interface ChatMessage {

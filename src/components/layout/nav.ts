@@ -9,6 +9,7 @@ import {
   Layers,
   Settings,
   Bot,
+  Inbox,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,6 +22,7 @@ export interface NavItem {
 
 export const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, group: "Overview" },
+  { href: "/inbox", label: "Inbox", icon: Inbox, group: "Pipeline" },
   { href: "/leads", label: "Leads", icon: Users, group: "Pipeline" },
   { href: "/interactions", label: "Interactions", icon: PhoneCall, group: "Pipeline" },
   { href: "/pain-bank", label: "Pain Point Bank", icon: Layers, group: "Pipeline" },

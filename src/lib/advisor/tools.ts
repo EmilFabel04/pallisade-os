@@ -63,6 +63,8 @@ export const TOOLS: ToolDef[] = [
     input_schema: obj({}) },
 
   // ---- write (proposed, need confirmation) ----
+  // NB: read email tools (EMAIL_TOOLS) are appended by the route only when a
+  // Gmail inbox is connected — they resolve async and aren't part of resolveTool.
   { name: "create_task", description: "Propose creating a task.",
     input_schema: obj({
       title: s(), category: s(), priority: enumStr(["low", "medium", "high"]),
@@ -76,9 +78,21 @@ export const TOOLS: ToolDef[] = [
     }, ["company"]) },
   { name: "update_lead", description: "Propose updating an existing lead. Use an id from query_leads.",
     input_schema: obj({
-      id: s("lead id"), status: s(), quality: enumStr(["low", "medium", "high"]),
+      id: s("lead id"),
+      // contact / firmographics
+      company: s(), contactName: s(), contactRole: s(), email: s(), phone: s(),
+      linkedinUrl: s(), industry: s(), companyType: s(), source: s(), owner: s(),
+      // pipeline
+      status: s(), quality: enumStr(["low", "medium", "high"]),
       nextFollowUp: dateStr(), lastContact: dateStr(), painPoint: s(), buyingSignal: s(),
-      objection: s(), estimatedValue: n(), notes: s(),
+      objection: s(), solutionIdea: s(), estimatedValue: n(), notes: s(),
+    }, ["id"]) },
+  { name: "update_task", description: "Propose editing a task — reschedule, reprioritise, mark done, or edit. Use an id from query_tasks. Only pass the fields you want to change.",
+    input_schema: obj({
+      id: s("task id"), title: s(), category: s("sales, product, delivery, admin, SEO, outreach, follow-up"),
+      priority: enumStr(["low", "medium", "high"]),
+      status: enumStr(["not started", "in progress", "blocked", "done"]),
+      dueDate: dateStr(), notes: s(),
     }, ["id"]) },
   { name: "log_interaction", description: "Propose logging a call/interaction note.",
     input_schema: obj({
@@ -92,7 +106,23 @@ export const TOOLS: ToolDef[] = [
     }, ["name"]) },
 ];
 
-const WRITE_TOOLS = new Set(["create_task", "create_lead", "update_lead", "log_interaction", "create_project"]);
+/* Read tools for connected Gmail inboxes. Appended to the tool list by the route
+   only when at least one inbox is connected, and resolved asynchronously
+   (see resolveEmailTool) since they hit the Gmail API. */
+export const EMAIL_TOOLS: ToolDef[] = [
+  { name: "list_inboxes", description: "List the founder's connected Gmail inboxes (email addresses).",
+    input_schema: obj({}) },
+  { name: "query_emails", description: "Search recent emails across connected Gmail inboxes. Use Gmail search syntax in `query` (e.g. 'from:acme.com newer_than:14d'). Returns compact email summaries — never invent emails.",
+    input_schema: obj({
+      query: s("Gmail search query, optional"),
+      account: s("limit to one inbox by its email address, optional"),
+      limit: n("default 10"),
+    }) },
+];
+
+export const EMAIL_TOOL_NAMES = new Set(EMAIL_TOOLS.map((t) => t.name));
+
+const WRITE_TOOLS = new Set(["create_task", "create_lead", "update_lead", "update_task", "log_interaction", "create_project"]);
 
 /* ---------------- descriptions for proposal cards ---------------- */
 
@@ -102,9 +132,16 @@ export function describeAction(tool: string, a: Args): string {
     case "create_task": return `Create task: ${v("title") || "(untitled)"}${v("priority") ? ` · ${v("priority")} priority` : ""}${v("dueDate") ? ` · due ${v("dueDate")}` : ""}`;
     case "create_lead": return `Create lead: ${v("company") || "(no company)"}${v("contactName") ? ` — ${v("contactName")}` : ""}`;
     case "update_lead": {
-      const fields = ["status", "quality", "nextFollowUp", "estimatedValue", "painPoint", "buyingSignal", "objection", "notes", "lastContact"]
+      const fields = ["company", "contactName", "contactRole", "email", "phone", "linkedinUrl",
+        "industry", "companyType", "source", "owner", "status", "quality", "nextFollowUp",
+        "lastContact", "estimatedValue", "painPoint", "buyingSignal", "objection", "solutionIdea", "notes"]
         .filter((k) => a[k] != null).map((k) => `${k}=${v(k)}`).join(", ");
       return `Update lead ${v("id")}: ${fields || "(no changes)"}`;
+    }
+    case "update_task": {
+      const fields = ["title", "status", "priority", "category", "dueDate", "notes"]
+        .filter((k) => a[k] != null).map((k) => `${k}=${v(k)}`).join(", ");
+      return `Update task ${v("id")}: ${fields || "(no changes)"}`;
     }
     case "log_interaction": return `Log ${v("type") || "interaction"} with ${v("company") || "—"}${v("contact") ? ` (${v("contact")})` : ""}`;
     case "create_project": return `Create project: ${v("name") || "(unnamed)"}${v("company") ? ` for ${v("company")}` : ""}`;

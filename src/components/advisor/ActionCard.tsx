@@ -1,7 +1,8 @@
 "use client";
 
-import { Check, X, Plus, PencilLine, PhoneCall, FolderPlus } from "lucide-react";
-import type { ProposedAction } from "@/lib/types";
+import Link from "next/link";
+import { Check, X, Plus, PencilLine, PhoneCall, FolderPlus, ArrowUpRight } from "lucide-react";
+import type { CollectionKey, ProposedAction } from "@/lib/types";
 
 const ICON: Record<string, typeof Plus> = {
   create_task: Plus,
@@ -9,7 +10,22 @@ const ICON: Record<string, typeof Plus> = {
   create_project: FolderPlus,
   log_interaction: PhoneCall,
   update_lead: PencilLine,
+  update_task: PencilLine,
 };
+
+/** Each addressable collection maps onto its section route (which reads ?focus=). */
+const ROUTE: Partial<Record<CollectionKey, string>> = {
+  leads: "/leads",
+  tasks: "/tasks",
+  projects: "/projects",
+  interactions: "/interactions",
+};
+
+function viewHref(result?: ProposedAction["result"]): string | null {
+  if (!result) return null;
+  const base = ROUTE[result.kind];
+  return base && result.id ? `${base}?focus=${result.id}` : null;
+}
 
 export function ActionCard({
   action, onConfirm, onDismiss,
@@ -21,6 +37,7 @@ export function ActionCard({
   const Icon = ICON[action.tool] ?? Plus;
   const done = action.status === "confirmed";
   const skipped = action.status === "dismissed";
+  const href = done ? viewHref(action.result) : null;
 
   return (
     <div
@@ -40,6 +57,14 @@ export function ActionCard({
             <X size={13} /> Dismiss
           </button>
         </div>
+      ) : href ? (
+        <Link
+          href={href}
+          className="flex items-center gap-1 text-[0.72rem] shrink-0 link-accent"
+          style={{ color: "var(--color-positive)" }}
+        >
+          View <ArrowUpRight size={12} />
+        </Link>
       ) : (
         <span className="text-[0.72rem] shrink-0" style={{ color: done ? "var(--color-positive)" : "var(--color-dim)" }}>
           {done ? "✓ Done" : "Dismissed"}

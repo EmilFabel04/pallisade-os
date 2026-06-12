@@ -90,26 +90,34 @@ export default function AdvisorPage() {
     }
   };
 
-  const updateAction = (msgId: string, actionId: string, status: ProposedAction["status"]) => {
+  const updateAction = (
+    msgId: string,
+    actionId: string,
+    patch: Partial<ProposedAction>,
+  ) => {
     if (!active) return;
     const messages = active.messages.map((m) =>
       m.id === msgId
-        ? { ...m, actions: m.actions?.map((a) => (a.id === actionId ? { ...a, status } : a)) }
+        ? { ...m, actions: m.actions?.map((a) => (a.id === actionId ? { ...a, ...patch } : a)) }
         : m,
     );
     setMessages(active, messages);
   };
 
   const confirmAction = (msg: ChatMessage) => (a: ProposedAction) => {
-    applyAction(crud, a);
-    updateAction(msg.id, a.id, "confirmed");
+    const result = applyAction(crud, a);
+    updateAction(msg.id, a.id, { status: "confirmed", ...(result ? { result } : {}) });
   };
   const dismissAction = (msg: ChatMessage) => (a: ProposedAction) => {
-    updateAction(msg.id, a.id, "dismissed");
+    updateAction(msg.id, a.id, { status: "dismissed" });
   };
 
-  const onKey = (e: React.KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void send(); }
+  // Enter sends; Shift+Enter inserts a newline. `isComposing` guards IME input.
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      void send();
+    }
   };
 
   return (
@@ -174,7 +182,7 @@ export default function AdvisorPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKey}
-              placeholder="Ask the advisor…  (⌘/Ctrl+Enter to send)"
+              placeholder="Ask the advisor…  (Enter to send · Shift+Enter for a new line)"
               disabled={loading}
             />
             <button className="btn btn-accent" onClick={() => void send()} disabled={loading || !input.trim()}>
