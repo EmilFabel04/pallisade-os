@@ -154,8 +154,9 @@ onto the saved playbook for this session only.
   `Panel` / `Field` / `Modal` / `Detail` UI.
 - Each section has its **own "Draft with AI"** button — regenerating one section
   never touches another section's hand-edited cards.
-- AI drafts are held in component state and shown for accept / edit / discard before
-  they persist. Manual add / edit / delete also supported.
+- AI-drafted cards are **appended** to the section (prepended to the list), never
+  overwriting existing cards. You then review them in place and edit or delete any you
+  don't want. Manual add / edit / delete supported throughout.
 
 ### Speech helper
 
@@ -171,7 +172,8 @@ unsupported, exposes `supported: false` and the "Hear it" button is hidden.
 - **Sparse lead in Meeting mode:** generation uses whatever fields exist; lead cards
   merge with — never overwrite — saved playbook cards for the session.
 - **`speechSynthesis` unavailable:** "Hear it" hidden; phonetic + tip still carry the card.
-- **Bad AI draft:** staged in component state; never clobbers saved cards until accepted.
+- **Bad AI draft:** drafted cards are appended, never overwriting existing cards, so a
+  weak draft only adds a card you can edit or delete — it can't clobber saved work.
 
 ## 5. Testing (vitest)
 
