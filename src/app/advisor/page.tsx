@@ -7,6 +7,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { ThreadList } from "@/components/advisor/ThreadList";
 import { MessageBubble } from "@/components/advisor/MessageBubble";
+import { MicButton } from "@/components/ui/MicButton";
+import { createCalendarEvent } from "@/lib/calendar/calendarClient";
 import { applyAction, type AdvisorStore } from "@/lib/advisor/applyAction";
 import { buildSnapshot, getAdvisorStatus, sendAdvisorTurn } from "@/lib/advisorClient";
 import type { ChatMessage, CollectionKey, Conversation, ProposedAction } from "@/lib/types";
@@ -104,7 +106,24 @@ export default function AdvisorPage() {
     setMessages(active, messages);
   };
 
-  const confirmAction = (msg: ChatMessage) => (a: ProposedAction) => {
+  const confirmAction = (msg: ChatMessage) => async (a: ProposedAction) => {
+    // Calendar events are created via the Google API, not the local store.
+    if (a.tool === "create_calendar_event") {
+      try {
+        const ev = await createCalendarEvent({
+          summary: String(a.args.summary ?? ""),
+          start: String(a.args.start ?? ""),
+          durationMinutes: a.args.durationMinutes ? Number(a.args.durationMinutes) : undefined,
+          description: a.args.description ? String(a.args.description) : undefined,
+          location: a.args.location ? String(a.args.location) : undefined,
+          attendees: Array.isArray(a.args.attendees) ? (a.args.attendees as string[]) : undefined,
+        });
+        updateAction(msg.id, a.id, { status: "confirmed", externalUrl: ev.htmlLink });
+      } catch (e) {
+        setError(`Couldn't add to calendar: ${(e as Error).message}`);
+      }
+      return;
+    }
     const result = applyAction(crud, a);
     updateAction(msg.id, a.id, { status: "confirmed", ...(result ? { result } : {}) });
   };
@@ -182,8 +201,13 @@ export default function AdvisorPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKey}
-              placeholder="Ask the advisor…  (Enter to send · Shift+Enter for a new line)"
+              placeholder="Ask the advisor…  (Enter to send · Shift+Enter for a new line · 🎙 to talk)"
               disabled={loading}
+            />
+            <MicButton
+              size={16}
+              title="Talk to the advisor"
+              onTranscript={(t) => setInput((prev) => (prev && !/\s$/.test(prev) ? `${prev} ${t}` : `${prev}${t}`))}
             />
             <button className="btn btn-accent" onClick={() => void send()} disabled={loading || !input.trim()}>
               {loading ? <Loader2 size={15} className="animate-spin" /> : <SendHorizontal size={15} />}

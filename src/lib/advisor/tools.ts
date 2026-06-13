@@ -122,7 +122,30 @@ export const EMAIL_TOOLS: ToolDef[] = [
 
 export const EMAIL_TOOL_NAMES = new Set(EMAIL_TOOLS.map((t) => t.name));
 
-const WRITE_TOOLS = new Set(["create_task", "create_lead", "update_lead", "update_task", "log_interaction", "create_project"]);
+/* Google Calendar tools. Appended by the route only when a calendar-enabled
+   account is connected. query_calendar resolves async (Calendar API);
+   create_calendar_event is queued as a confirm-gated proposal and executed
+   client-side via the calendar API on confirmation. */
+const arr = (description = "") => ({ type: "array", items: { type: "string" }, description });
+
+export const CALENDAR_TOOLS: ToolDef[] = [
+  { name: "query_calendar", description: "List the founder's upcoming Google Calendar events. Returns compact events — never invent meetings.",
+    input_schema: obj({ days: n("look-ahead window, default 7"), query: s("free-text filter, optional") }) },
+  { name: "create_calendar_event", description: "Propose creating a Google Calendar event (e.g. booking a call). Resolve relative times against today's date and pass `start` as a full ISO date-time. Queued for the founder's confirmation.",
+    input_schema: obj({
+      summary: s("event title"),
+      start: s("ISO date-time, e.g. 2026-06-15T14:30:00"),
+      durationMinutes: n("default 30"),
+      description: s(), location: s(), attendees: arr("attendee email addresses"),
+    }, ["summary", "start"]) },
+];
+
+export const CALENDAR_READ_TOOL_NAMES = new Set(["query_calendar"]);
+
+const WRITE_TOOLS = new Set([
+  "create_task", "create_lead", "update_lead", "update_task", "log_interaction",
+  "create_project", "create_calendar_event",
+]);
 
 /* ---------------- descriptions for proposal cards ---------------- */
 
@@ -145,6 +168,7 @@ export function describeAction(tool: string, a: Args): string {
     }
     case "log_interaction": return `Log ${v("type") || "interaction"} with ${v("company") || "—"}${v("contact") ? ` (${v("contact")})` : ""}`;
     case "create_project": return `Create project: ${v("name") || "(unnamed)"}${v("company") ? ` for ${v("company")}` : ""}`;
+    case "create_calendar_event": return `Add to calendar: ${v("summary") || "(untitled)"}${v("start") ? ` · ${v("start").replace("T", " ").slice(0, 16)}` : ""}`;
     default: return tool;
   }
 }

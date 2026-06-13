@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type { AdvisorSnapshot, ProposedAction } from "@/lib/types";
-import { TOOLS, EMAIL_TOOLS, EMAIL_TOOL_NAMES, resolveTool } from "@/lib/advisor/tools";
+import {
+  TOOLS, EMAIL_TOOLS, EMAIL_TOOL_NAMES, CALENDAR_TOOLS, CALENDAR_READ_TOOL_NAMES, resolveTool,
+} from "@/lib/advisor/tools";
 import { emailToolsAvailable, connectedEmails, resolveEmailTool } from "@/lib/gmail/advisorEmail";
+import { calendarToolsAvailable, resolveCalendarTool } from "@/lib/calendar/advisorCalendar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,6 +50,13 @@ export async function POST(req: Request) {
     `You are the Sales Advisor for ${biz}, a solo B2B agency run by ${founder} that sells ${services} ` +
     `to boutique asset managers and B2B service businesses. You help run the pipeline: leads, interactions, ` +
     `projects, tasks, daily scorecards and a pain-point bank.\n\n` +
+    `Personality: you're a sharp, seasoned sales strategist who is genuinely in ${founder}'s corner — ` +
+    `confident, professional, and energised about closing. Bring warmth and a bit of hunger: celebrate real ` +
+    `wins, hype the strong opportunities, and call out risks and cold leads straight, without sugar-coating. ` +
+    `You're smart and decisive — you give a clear recommendation, not a menu of options. Talk like a trusted ` +
+    `partner, not a corporate bot: natural, punchy, occasionally a well-placed bit of dry wit. But personality ` +
+    `never overrides substance — stay grounded in the real data, never invent numbers or history, never let ` +
+    `enthusiasm turn into fluff or length. Confident and concise beats verbose every time.\n\n` +
     `Use the read tools (query_*, search_pain_points, get_pipeline_metrics) to ground every answer in the ` +
     `founder's real data — never invent leads, numbers or history. Use the skill tools to generate call ` +
     `summaries, business reviews and tomorrow plans when helpful.\n\n` +
@@ -59,14 +69,27 @@ export async function POST(req: Request) {
     `obtained from query_leads / query_tasks, and only include the fields you intend to change. Be concise, ` +
     `direct and practical.`;
 
-  // Offer Gmail read tools only when an inbox is connected.
+  // Offer Gmail / calendar tools only when those are connected.
   const emailEnabled = emailToolsAvailable();
-  const tools = emailEnabled ? [...TOOLS, ...EMAIL_TOOLS] : TOOLS;
-  const systemFull = emailEnabled
-    ? `${system}\n\nConnected Gmail inboxes: ${connectedEmails().join(", ")}. Use query_emails ` +
+  const calendarEnabled = calendarToolsAvailable();
+  const tools = [
+    ...TOOLS,
+    ...(emailEnabled ? EMAIL_TOOLS : []),
+    ...(calendarEnabled ? CALENDAR_TOOLS : []),
+  ];
+  let systemFull = system;
+  if (emailEnabled) {
+    systemFull +=
+      `\n\nConnected Gmail inboxes: ${connectedEmails().join(", ")}. Use query_emails ` +
       `(Gmail search syntax) or list_inboxes to read real email when the founder asks about their inbox, ` +
-      `a sender, or recent messages — never invent email content.`
-    : system;
+      `a sender, or recent messages — never invent email content.`;
+  }
+  if (calendarEnabled) {
+    systemFull +=
+      `\n\nGoogle Calendar is connected. Use query_calendar to read upcoming meetings, and ` +
+      `create_calendar_event to propose booking a call or follow-up (confirm-gated, like other writes). ` +
+      `Resolve relative times against today's date and pass a full ISO date-time for start.`;
+  }
 
   const client = new Anthropic({ apiKey });
   const proposals: ProposedAction[] = [];
@@ -104,6 +127,8 @@ export async function POST(req: Request) {
           const input = (tu.input ?? {}) as Record<string, unknown>;
           const content = EMAIL_TOOL_NAMES.has(tu.name)
             ? await resolveEmailTool(tu.name, input)
+            : CALENDAR_READ_TOOL_NAMES.has(tu.name)
+            ? await resolveCalendarTool(tu.name, input)
             : resolveTool(tu.name, input, snapshot, proposals);
           return { type: "tool_result" as const, tool_use_id: tu.id, content };
         }),

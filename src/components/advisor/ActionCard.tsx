@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, X, Plus, PencilLine, PhoneCall, FolderPlus, ArrowUpRight } from "lucide-react";
+import { Check, X, Plus, PencilLine, PhoneCall, FolderPlus, ArrowUpRight, CalendarPlus } from "lucide-react";
 import type { CollectionKey, ProposedAction } from "@/lib/types";
 
 const ICON: Record<string, typeof Plus> = {
@@ -11,6 +11,7 @@ const ICON: Record<string, typeof Plus> = {
   log_interaction: PhoneCall,
   update_lead: PencilLine,
   update_task: PencilLine,
+  create_calendar_event: CalendarPlus,
 };
 
 /** Each addressable collection maps onto its section route (which reads ?focus=). */
@@ -38,6 +39,7 @@ export function ActionCard({
   const done = action.status === "confirmed";
   const skipped = action.status === "dismissed";
   const href = done ? viewHref(action.result) : null;
+  const externalUrl = done ? action.externalUrl : null;
 
   return (
     <div
@@ -57,6 +59,16 @@ export function ActionCard({
             <X size={13} /> Dismiss
           </button>
         </div>
+      ) : externalUrl ? (
+        <a
+          href={externalUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1 text-[0.72rem] shrink-0 link-accent"
+          style={{ color: "var(--color-positive)" }}
+        >
+          Open in Calendar <ArrowUpRight size={12} />
+        </a>
       ) : href ? (
         <Link
           href={href}

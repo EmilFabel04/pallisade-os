@@ -4,6 +4,7 @@ import { useState } from "react";
 import { INTERACTION_TYPES, type Interaction } from "@/lib/types";
 import { useStore } from "@/lib/store";
 import { Field, FormGrid, Select, TextArea, TextInput } from "@/components/ui/Field";
+import { DictateTextArea } from "@/components/ui/DictateTextArea";
 import { todayISO } from "@/lib/utils";
 import { FormActions } from "./FormActions";
 
@@ -87,7 +88,7 @@ export function InteractionForm({
       </FormGrid>
 
       <Field label="Raw notes" className="mt-3.5" hint="Rough notes — the AI summary turns these into structured output.">
-        <TextArea value={d.rawNotes} onChange={(e) => set("rawNotes", e.target.value)} rows={4} autoFocus placeholder="Dump everything from the conversation here…" />
+        <DictateTextArea value={d.rawNotes} onValueChange={(v) => set("rawNotes", v)} rows={4} autoFocus placeholder="Dump everything from the conversation here… or 🎙 to dictate" />
       </Field>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5 mt-3.5">

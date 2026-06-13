@@ -10,6 +10,7 @@ import {
   Settings,
   Bot,
   Inbox,
+  CalendarClock,
   type LucideIcon,
 } from "lucide-react";
 
@@ -22,6 +23,7 @@ export interface NavItem {
 
 export const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, group: "Overview" },
+  { href: "/agenda", label: "Agenda", icon: CalendarClock, group: "Overview" },
   { href: "/inbox", label: "Inbox", icon: Inbox, group: "Pipeline" },
   { href: "/leads", label: "Leads", icon: Users, group: "Pipeline" },
   { href: "/interactions", label: "Interactions", icon: PhoneCall, group: "Pipeline" },

@@ -146,7 +146,10 @@ export async function profileEmail(accessToken: string): Promise<string> {
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) throw new Error(`profile_${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`profile_${res.status}: ${body.slice(0, 300)}`);
+  }
   const data = (await res.json()) as { emailAddress?: string };
   return data.emailAddress ?? "";
 }

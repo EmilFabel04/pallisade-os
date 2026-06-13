@@ -23,6 +23,7 @@ import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { MetricCard } from "@/components/dashboard/MetricCard";
+import { UpcomingMeetings } from "@/components/calendar/UpcomingMeetings";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useQuickAdd } from "@/components/forms/QuickAdd";
@@ -296,6 +297,9 @@ export default function DashboardPage() {
           )}
         </Panel>
       </div>
+
+      {/* Upcoming calendar meetings (hidden until Google Calendar is connected) */}
+      <UpcomingMeetings limit={5} days={7} />
     </div>
   );
 }

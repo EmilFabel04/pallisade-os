@@ -8,6 +8,7 @@ import {
   Pencil,
   Trash2,
   PhoneCall,
+  CalendarPlus,
   ExternalLink,
   Mail,
   Phone,
@@ -23,6 +24,7 @@ import { Modal, ConfirmDialog } from "@/components/ui/Modal";
 import { DetailGrid, DetailRow, FilterSelect } from "@/components/ui/Detail";
 import { LeadForm } from "@/components/forms/LeadForm";
 import { InteractionForm } from "@/components/forms/InteractionForm";
+import { ScheduleCallModal } from "@/components/calendar/ScheduleCallModal";
 import {
   LEAD_SOURCES,
   LEAD_STATUSES,
@@ -47,6 +49,7 @@ function LeadsView() {
   const [editId, setEditId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [logFor, setLogFor] = useState<Lead | null>(null);
+  const [scheduleFor, setScheduleFor] = useState<Lead | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -190,6 +193,9 @@ function LeadsView() {
               <button className="btn" onClick={() => { setLogFor(view); setViewId(null); }}>
                 <PhoneCall size={15} /> Log interaction
               </button>
+              <button className="btn" onClick={() => { setScheduleFor(view); setViewId(null); }}>
+                <CalendarPlus size={15} /> Schedule call
+              </button>
               <button className="btn" onClick={() => { setEditId(view.id); setViewId(null); }}>
                 <Pencil size={15} /> Edit
               </button>
@@ -246,6 +252,9 @@ function LeadsView() {
       <Modal open={!!logFor} onClose={() => setLogFor(null)} title="Log Interaction" subtitle={logFor?.company}>
         {logFor && <InteractionForm presetLeadId={logFor.id} onClose={() => setLogFor(null)} />}
       </Modal>
+
+      {/* Schedule a call (Google Calendar) */}
+      <ScheduleCallModal lead={scheduleFor} onClose={() => setScheduleFor(null)} />
 
       <ConfirmDialog
         open={!!deleteId}

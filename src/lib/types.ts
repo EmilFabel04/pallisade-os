@@ -229,6 +229,8 @@ export interface ProposedAction {
   status: "pending" | "confirmed" | "dismissed";
   /** Set after a write is confirmed, so the card can deep-link to the record. */
   result?: { kind: CollectionKey; id: string };
+  /** External link for actions that live outside the OS (e.g. a calendar event). */
+  externalUrl?: string;
 }
 
 export interface ChatMessage {

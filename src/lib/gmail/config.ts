@@ -7,10 +7,21 @@
 
 import { OAuth2Client } from "google-auth-library";
 
-export const GMAIL_SCOPES = [
+export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
+
+/** Back-compat alias. */
+export const GMAIL_SCOPES = GOOGLE_SCOPES;
+
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+
+/** Whether a stored token's granted scopes include calendar access. */
+export function hasCalendarScope(scope: string | undefined | null): boolean {
+  return !!scope && scope.includes(CALENDAR_SCOPE);
+}
 
 /** Where Google sends the user back after consent. Must be registered verbatim
  *  as an authorized redirect URI on the OAuth client. */

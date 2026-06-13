@@ -19,6 +19,7 @@ import {
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
+import { DictateTextArea } from "@/components/ui/DictateTextArea";
 import type { BusinessReview } from "@/lib/types";
 import { requestBusinessReview } from "@/lib/aiClient";
 import { latestScorecard } from "@/lib/selectors";
@@ -77,12 +78,11 @@ export default function ReviewPage() {
             </button>
           }
         >
-          <textarea
-            className="textarea"
+          <DictateTextArea
             rows={14}
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={"Dump everything from today — calls, replies, what worked, what didn't, what you're worried about, what you put off…\n\nThe messier the better. The AI sorts it out."}
+            onValueChange={setText}
+            placeholder={"Dump everything from today — calls, replies, what worked, what didn't, what you're worried about, what you put off…  (🎙 to talk it out)\n\nThe messier the better. The AI sorts it out."}
           />
           <div className="flex items-center justify-between mt-3">
             <span className="text-[0.72rem] text-[var(--color-dim)]">{text.trim() ? `${text.trim().split(/\s+/).length} words` : "Empty"}</span>

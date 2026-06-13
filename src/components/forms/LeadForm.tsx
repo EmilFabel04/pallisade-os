@@ -9,6 +9,7 @@ import {
 } from "@/lib/types";
 import { useStore } from "@/lib/store";
 import { Field, FormGrid, NumberInput, Select, TextArea, TextInput } from "@/components/ui/Field";
+import { DictateTextArea } from "@/components/ui/DictateTextArea";
 import { FormActions } from "./FormActions";
 
 type Draft = Omit<Lead, "id" | "createdAt" | "updatedAt">;
@@ -113,7 +114,7 @@ export function LeadForm({ initial, onClose }: { initial?: Lead; onClose: () => 
         </Field>
       </div>
       <Field label="Notes" className="mt-3.5">
-        <TextArea value={d.notes} onChange={(e) => set("notes", e.target.value)} rows={2} />
+        <DictateTextArea value={d.notes} onValueChange={(v) => set("notes", v)} rows={2} placeholder="Notes… or 🎙 to dictate" />
       </Field>
 
       <FormActions onCancel={onClose} saveLabel={initial ? "Save changes" : "Add lead"} saveDisabled={!d.company.trim()} />

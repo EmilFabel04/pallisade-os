@@ -40,23 +40,36 @@ async function accessTokenFor(account: GmailAccount): Promise<string> {
   }
 }
 
+/** Authenticated fetch against any Google API for a connected account.
+ *  Handles token refresh; maps 401 to GmailAuthError (reconnect needed). */
+export async function googleFetch(
+  accountId: string,
+  url: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const account = getAccount(accountId);
+  if (!account) throw new GmailAuthError(accountId);
+  const token = await accessTokenFor(account);
+  const res = await fetch(url, {
+    ...init,
+    headers: { ...(init?.headers ?? {}), Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) throw new GmailAuthError(accountId);
+  return res;
+}
+
 /** GET against `users/me/<path>` for a connected account; returns parsed JSON. */
 export async function gmailGet<T = unknown>(
   accountId: string,
   path: string,
   query?: Record<string, string | number | undefined>,
 ): Promise<T> {
-  const account = getAccount(accountId);
-  if (!account) throw new GmailAuthError(accountId);
-
-  const token = await accessTokenFor(account);
   const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`);
   for (const [k, v] of Object.entries(query ?? {})) {
     if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
   }
 
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (res.status === 401) throw new GmailAuthError(accountId);
+  const res = await googleFetch(accountId, url.toString());
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     throw new Error(`gmail_api_${res.status}: ${detail.slice(0, 200)}`);

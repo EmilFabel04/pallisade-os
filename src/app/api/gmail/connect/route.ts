@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { isConfigured, oauthClient, GMAIL_SCOPES } from "@/lib/gmail/config";
+import { isConfigured, oauthClient, GOOGLE_SCOPES } from "@/lib/gmail/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export async function GET() {
     access_type: "offline",   // request a refresh token
     prompt: "consent",        // ensure a refresh token even on re-consent
     include_granted_scopes: true,
-    scope: GMAIL_SCOPES,
+    scope: GOOGLE_SCOPES,
     state,
   });
 

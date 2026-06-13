@@ -68,6 +68,14 @@ export function fmtDateShort(iso: string | null | undefined): string {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 }
 
+/** Local clock time, e.g. "14:30". */
+export function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
 /** Relative phrasing for follow-up urgency */
 export function relativeDay(iso: string | null | undefined): string {
   if (!iso) return "—";
