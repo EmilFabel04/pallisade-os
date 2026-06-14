@@ -11,6 +11,7 @@ import {
   Bot,
   Inbox,
   CalendarClock,
+  GraduationCap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,6 +33,7 @@ export const NAV: NavItem[] = [
   { href: "/tasks", label: "Tasks", icon: ListChecks, group: "Delivery" },
   { href: "/scorecard", label: "Daily Scorecard", icon: ClipboardList, group: "Intelligence" },
   { href: "/advisor", label: "Sales Advisor", icon: Bot, group: "Intelligence" },
+  { href: "/prep", label: "Meeting Prep", icon: GraduationCap, group: "Intelligence" },
   { href: "/review", label: "AI Business Review", icon: Sparkles, group: "Intelligence" },
   { href: "/settings", label: "Settings", icon: Settings, group: "System" },
 ];
