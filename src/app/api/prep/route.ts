@@ -154,9 +154,10 @@ export async function POST(req: Request) {
     const toolUse = response.content.find(
       (blk): blk is Anthropic.ToolUseBlock => blk.type === "tool_use",
     );
-    const draft: PlaybookSections = normalizeDraft(
-      (toolUse?.input as Record<string, unknown>) ?? {},
-    );
+    // Forced tool_choice should always yield a tool_use block; a missing one means a
+    // truncated/abnormal response — signal failure rather than a silent empty result.
+    if (!toolUse) return NextResponse.json({ error: "no_tool_use" }, { status: 502 });
+    const draft: PlaybookSections = normalizeDraft(toolUse.input as Record<string, unknown>);
     return NextResponse.json(draft);
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 502 });
