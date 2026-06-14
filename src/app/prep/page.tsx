@@ -6,7 +6,6 @@ import { useStore, usePlaybook } from "@/lib/store";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Select } from "@/components/ui/Field";
 import { SessionRunner } from "@/components/prep/SessionRunner";
 import { PlaybookEditor } from "@/components/prep/PlaybookEditor";
 import { buildSession, mergePlaybook, nextConfidence, type PlaybookSections, type StageId } from "@/lib/prep/session";
@@ -136,15 +135,17 @@ export default function PrepPage() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[0.76rem] text-[var(--color-muted)]">Prep for</span>
-          <Select
-            options={["General", ...leads.map((l) => l.company)]}
-            value={leadId ? (leads.find((l) => l.id === leadId)?.company ?? "General") : "General"}
-            onChange={(e) => {
-              const company = e.target.value;
-              const lead = leads.find((l) => l.company === company);
-              void selectLead(lead ? lead.id : "");
-            }}
-          />
+          {/* Keyed by lead id, not company name, so duplicate company names stay distinct. */}
+          <select
+            className="select"
+            value={leadId}
+            onChange={(e) => void selectLead(e.target.value)}
+          >
+            <option value="">General</option>
+            {leads.map((l) => (
+              <option key={l.id} value={l.id}>{l.company}</option>
+            ))}
+          </select>
         </div>
       </div>
 
