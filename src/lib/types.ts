@@ -256,6 +256,45 @@ export interface Settings {
   secondaryCurrencyEnabled: boolean;
 }
 
+/* ---------- meeting prep playbook ---------- */
+
+export type Confidence = "new" | "learning" | "known";
+
+/** Fields every playbook card shares. `confidence` is self-graded and drives drill order. */
+export interface PlaybookCard {
+  id: string;
+  confidence: Confidence;
+}
+
+export interface PronunciationCard extends PlaybookCard {
+  term: string;      // "Aigues-Mortes", "Saoirse", "EBITDA"
+  phonetic: string;  // "eg-MORT", "SEER-sha"
+  tip: string;       // "silent s; rhymes with 'court'"
+}
+
+export interface GlossaryCard extends PlaybookCard {
+  term: string;
+  definition: string;
+  kind: "acronym" | "term";
+  industry: string;  // "" for general
+  example: string;   // a sentence using the term naturally
+}
+
+export interface OfferingCard extends PlaybookCard {
+  name: string;
+  summary: string;
+  valueProp: string;
+  priceAnchor: string; // "from R15k" / "" if N/A
+  objection: string;   // the objection likely to be heard
+  response: string;    // crisp rebuttal
+}
+
+export interface Playbook extends BaseRecord {
+  pronunciations: PronunciationCard[];
+  glossary: GlossaryCard[];
+  offerings: OfferingCard[];
+}
+
 /* ---------- collections registry ---------- */
 
 export interface DataShape {
@@ -266,6 +305,7 @@ export interface DataShape {
   scorecards: Scorecard[];
   painPoints: PainPoint[];
   conversations: Conversation[];
+  playbooks: Playbook[];
   settings: Settings;
 }
 
