@@ -312,4 +312,4 @@ export interface DataShape {
 export type CollectionKey = Exclude<keyof DataShape, "settings">;
 
 /** What the Sales Advisor route receives as the current data picture. */
-export type AdvisorSnapshot = Omit<DataShape, "conversations">;
+export type AdvisorSnapshot = Omit<DataShape, "conversations" | "playbooks">;
