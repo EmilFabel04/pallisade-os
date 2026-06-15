@@ -119,6 +119,23 @@ git commit -m "feat(prep): add Playbook domain types"
 **Files:**
 - Modify: `src/lib/store.tsx` (the `EMPTY` constant near the top; the convenience selectors at the bottom)
 - Modify: `src/lib/db/sqlite.ts` (the `COLLECTIONS` array)
+- Modify: `src/lib/types.ts` (the `AdvisorSnapshot` type)
+- Modify: `src/lib/seed.ts` (the `seedData` return literal)
+- Modify: `src/lib/db/apiAdapter.ts` (its default `DataShape` literal)
+- Modify: `src/components/layout/Topbar.tsx` (the `HIT_ROUTE` and `HIT_LABEL` records)
+
+> **Why these extra files:** Making `playbooks` a *required* `DataShape` field (Task 1) breaks every place that builds a `DataShape`/`AdvisorSnapshot` literal or a `Record<CollectionKey, …>`. This task closes that ripple so `tsc` is clean. The Sales Advisor does **not** need the prep playbook, so we exclude `playbooks` from `AdvisorSnapshot` (rather than threading an empty array through advisor code and its test fixtures).
+
+- [ ] **Step 0: Exclude `playbooks` from the advisor snapshot**
+
+In `src/lib/types.ts`, change the `AdvisorSnapshot` type so the advisor never receives the playbook:
+
+```ts
+/** What the Sales Advisor route receives as the current data picture. */
+export type AdvisorSnapshot = Omit<DataShape, "conversations" | "playbooks">;
+```
+
+This resolves the `tsc` errors in `advisorClient.ts`, `readTools.test.ts` and `tools.test.ts` without touching those files.
 
 - [ ] **Step 1: Add `playbooks` to the empty store**
 
@@ -166,16 +183,38 @@ const COLLECTIONS = [
 ] as const;
 ```
 
-- [ ] **Step 4: Verify type-check passes clean**
+- [ ] **Step 4: Add `playbooks: []` to the other `DataShape` literals**
+
+In `src/lib/seed.ts`, the `seedData()` function returns a `DataShape` object literal — add `playbooks: []` to it (alongside `conversations: []`).
+
+In `src/lib/db/apiAdapter.ts`, the default/empty `DataShape` literal (around line 37) likewise needs `playbooks: []` added.
+
+- [ ] **Step 5: Add `playbooks` entries to the Topbar records**
+
+In `src/components/layout/Topbar.tsx`, `SearchHit["kind"]` now includes `"playbooks"`, so the two `Record<SearchHit["kind"], string>` maps need an entry. Add to `HIT_ROUTE`:
+
+```ts
+  playbooks: "/prep",
+```
+
+and to `HIT_LABEL`:
+
+```ts
+  playbooks: "Playbook",
+```
+
+(These are never actually emitted — `store.search()` does not produce playbook hits — but the exhaustive `Record` type requires the key.)
+
+- [ ] **Step 6: Verify type-check passes clean**
 
 Run: `npx tsc --noEmit`
 Expected: PASS (no errors).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/lib/store.tsx src/lib/db/sqlite.ts
-git commit -m "feat(prep): wire playbooks collection into store and sqlite"
+git add src/lib/store.tsx src/lib/db/sqlite.ts src/lib/types.ts src/lib/seed.ts src/lib/db/apiAdapter.ts src/components/layout/Topbar.tsx
+git commit -m "feat(prep): wire playbooks collection into store, sqlite and snapshot"
 ```
 
 ---
