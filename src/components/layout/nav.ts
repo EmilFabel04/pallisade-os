@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   Users,
+  Target,
   PhoneCall,
   FolderKanban,
   ListChecks,
@@ -27,6 +28,7 @@ export const NAV: NavItem[] = [
   { href: "/agenda", label: "Agenda", icon: CalendarClock, group: "Overview" },
   { href: "/inbox", label: "Inbox", icon: Inbox, group: "Pipeline" },
   { href: "/leads", label: "Leads", icon: Users, group: "Pipeline" },
+  { href: "/targets", label: "Targets", icon: Target, group: "Pipeline" },
   { href: "/interactions", label: "Interactions", icon: PhoneCall, group: "Pipeline" },
   { href: "/pain-bank", label: "Pain Point Bank", icon: Layers, group: "Pipeline" },
   { href: "/projects", label: "Projects", icon: FolderKanban, group: "Delivery" },
