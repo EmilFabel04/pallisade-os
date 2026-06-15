@@ -295,6 +295,20 @@ export interface Playbook extends BaseRecord {
   offerings: OfferingCard[];
 }
 
+/* ---------- targets (imported prospect list) ---------- */
+
+export interface Target extends BaseRecord {
+  company: string;
+  contactName: string;
+  contactRole: string;
+  email: string;
+  phone: string;
+  linkedinUrl: string;
+  industry: string;
+  location: string;
+  notes: string;
+}
+
 /* ---------- collections registry ---------- */
 
 export interface DataShape {
@@ -306,10 +320,11 @@ export interface DataShape {
   painPoints: PainPoint[];
   conversations: Conversation[];
   playbooks: Playbook[];
+  targets: Target[];
   settings: Settings;
 }
 
 export type CollectionKey = Exclude<keyof DataShape, "settings">;
 
 /** What the Sales Advisor route receives as the current data picture. */
-export type AdvisorSnapshot = Omit<DataShape, "conversations" | "playbooks">;
+export type AdvisorSnapshot = Omit<DataShape, "conversations" | "playbooks" | "targets">;
