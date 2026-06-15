@@ -8,7 +8,7 @@ import type { Target } from "@/lib/types";
 import { parseCsv } from "@/lib/targets/csv";
 import {
   guessMapping, rowsToTargets, dedupeTargets,
-  TARGET_FIELDS, type ColumnMapping, type NewTarget,
+  COLUMN_ROLES, type ColumnMapping, type NewTarget,
 } from "@/lib/targets/mapping";
 
 interface Summary { added: number; duplicates: number; blank: number }
@@ -56,7 +56,7 @@ export function ImportCsvModal({
     setSummary({ added: toAdd.length, duplicates, blank: blankSkipped });
   };
 
-  const fieldOptions = ["ignore", ...TARGET_FIELDS];
+  const fieldOptions = COLUMN_ROLES;
 
   return (
     <Modal open={open} onClose={close} title="Import targets from CSV" size="lg">

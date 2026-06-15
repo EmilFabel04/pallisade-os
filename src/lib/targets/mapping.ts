@@ -8,16 +8,23 @@ export const TARGET_FIELDS: TargetField[] = [
   "phone", "linkedinUrl", "industry", "location", "notes",
 ];
 
-export type ColumnMapping = (TargetField | "ignore")[];
+/** A column maps to a target field, to a name part (joined into contactName), or is ignored. */
+export type ColumnRole = TargetField | "firstName" | "lastName" | "ignore";
+export type ColumnMapping = ColumnRole[];
 
-/** Header (normalised) → field. Covers common CSV export variants. */
-const SYNONYMS: Record<string, TargetField> = {
+/** Roles selectable in the import mapping UI, in dropdown order. */
+export const COLUMN_ROLES: ColumnRole[] = ["ignore", "firstName", "lastName", ...TARGET_FIELDS];
+
+/** Header (normalised) → role. Covers common CSV export variants (incl. Apollo). */
+const SYNONYMS: Record<string, ColumnRole> = {
   company: "company", companyname: "company", organisation: "company", organization: "company", account: "company",
+  firstname: "firstName", givenname: "firstName", forename: "firstName",
+  lastname: "lastName", surname: "lastName", familyname: "lastName",
   contactname: "contactName", fullname: "contactName", name: "contactName", contact: "contactName", person: "contactName",
   contactrole: "contactRole", role: "contactRole", title: "contactRole", jobtitle: "contactRole", position: "contactRole",
   email: "email", emailaddress: "email", mail: "email",
-  phone: "phone", phonenumber: "phone", mobile: "phone", tel: "phone",
-  linkedinurl: "linkedinUrl", linkedin: "linkedinUrl", profileurl: "linkedinUrl", profile: "linkedinUrl",
+  phone: "phone", phonenumber: "phone", mobile: "phone", mobilephone: "phone", tel: "phone",
+  linkedinurl: "linkedinUrl", linkedin: "linkedinUrl", personlinkedinurl: "linkedinUrl", profileurl: "linkedinUrl", profile: "linkedinUrl",
   industry: "industry", sector: "industry", vertical: "industry",
   location: "location", city: "location", country: "location", region: "location",
   notes: "notes", note: "notes", comment: "notes", comments: "notes", description: "notes",
@@ -27,12 +34,12 @@ function normalise(header: string): string {
   return header.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-/** Guess a field per column from its header; first column to claim a field wins. */
+/** Guess a role per column from its header; first column to claim a role wins. */
 export function guessMapping(headers: string[]): ColumnMapping {
-  const used = new Set<TargetField>();
+  const used = new Set<ColumnRole>();
   return headers.map((h) => {
-    const field = SYNONYMS[normalise(h)];
-    if (field && !used.has(field)) { used.add(field); return field; }
+    const role = SYNONYMS[normalise(h)];
+    if (role && !used.has(role)) { used.add(role); return role; }
     return "ignore";
   });
 }
@@ -42,7 +49,8 @@ const BLANK: NewTarget = {
   phone: "", linkedinUrl: "", industry: "", location: "", notes: "",
 };
 
-/** Apply a mapping to raw rows; trim values; skip rows with no company AND no contactName. */
+/** Apply a mapping to raw rows; trim values; join firstName + lastName into contactName
+ *  (a direct contactName column wins); skip rows with no company AND no contactName. */
 export function rowsToTargets(
   rows: string[][],
   mapping: ColumnMapping,
@@ -51,9 +59,18 @@ export function rowsToTargets(
   let blankSkipped = 0;
   for (const row of rows) {
     const t: NewTarget = { ...BLANK };
-    mapping.forEach((field, col) => {
-      if (field !== "ignore") t[field] = (row[col] ?? "").trim();
+    let firstName = "";
+    let lastName = "";
+    mapping.forEach((role, col) => {
+      const value = (row[col] ?? "").trim();
+      if (role === "ignore") return;
+      if (role === "firstName") { firstName = value; return; }
+      if (role === "lastName") { lastName = value; return; }
+      t[role] = value;
     });
+    if (!t.contactName) {
+      t.contactName = [firstName, lastName].filter(Boolean).join(" ");
+    }
     if (!t.company && !t.contactName) { blankSkipped++; continue; }
     targets.push(t);
   }

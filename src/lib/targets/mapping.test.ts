@@ -33,6 +33,14 @@ describe("guessMapping", () => {
   it("only maps the first column that claims a field (first wins)", () => {
     expect(guessMapping(["email", "Email Address"])).toEqual(["email", "ignore"]);
   });
+
+  it("maps an Apollo export, recognising First/Last Name and Person Linkedin Url", () => {
+    expect(guessMapping([
+      "First Name", "Last Name", "Title", "Company Name", "Email", "Person Linkedin Url", "Country",
+    ])).toEqual([
+      "firstName", "lastName", "contactRole", "company", "email", "linkedinUrl", "location",
+    ]);
+  });
 });
 
 describe("rowsToTargets", () => {
@@ -56,6 +64,37 @@ describe("rowsToTargets", () => {
     expect(targets).toHaveLength(1);
     expect(targets[0].company).toBe("Acme");
     expect(blankSkipped).toBe(1);
+  });
+
+  it("joins firstName + lastName columns into contactName", () => {
+    const { targets } = rowsToTargets(
+      [[" Jane ", " Doe ", "Acme"]],
+      ["firstName", "lastName", "company"],
+    );
+    expect(targets[0].contactName).toBe("Jane Doe");
+    expect(targets[0].company).toBe("Acme");
+  });
+
+  it("uses just the present name part when the other is blank", () => {
+    expect(rowsToTargets([["Jane", ""]], ["firstName", "lastName"]).targets[0].contactName).toBe("Jane");
+    expect(rowsToTargets([["", "Doe"]], ["firstName", "lastName"]).targets[0].contactName).toBe("Doe");
+  });
+
+  it("counts a row blank when company and both name parts are empty", () => {
+    const { targets, blankSkipped } = rowsToTargets(
+      [["", "", ""]],
+      ["firstName", "lastName", "company"],
+    );
+    expect(targets).toHaveLength(0);
+    expect(blankSkipped).toBe(1);
+  });
+
+  it("prefers a direct contactName over first/last parts", () => {
+    const { targets } = rowsToTargets(
+      [["Full Name Wins", "Jane", "Doe"]],
+      ["contactName", "firstName", "lastName"],
+    );
+    expect(targets[0].contactName).toBe("Full Name Wins");
   });
 });
 
