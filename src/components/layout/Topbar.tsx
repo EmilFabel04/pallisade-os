@@ -15,6 +15,7 @@ const HIT_ROUTE: Record<SearchHit["kind"], string> = {
   painPoints: "/pain-bank",
   conversations: "/advisor",
   playbooks: "/prep",
+  targets: "/targets",
 };
 
 const HIT_LABEL: Record<SearchHit["kind"], string> = {
@@ -26,6 +27,7 @@ const HIT_LABEL: Record<SearchHit["kind"], string> = {
   painPoints: "Pain point",
   conversations: "Conversation",
   playbooks: "Playbook",
+  targets: "Target",
 };
 
 const QUICK_ACTIONS: { kind: NonNullable<QuickAddKind>; label: string; icon: typeof Plus }[] = [

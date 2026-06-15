@@ -19,6 +19,7 @@ import type {
   Project,
   Scorecard,
   Settings,
+  Target,
   Task,
 } from "./types";
 import { ApiAdapter } from "./db/apiAdapter";
@@ -74,6 +75,7 @@ const EMPTY: DataShape = {
   painPoints: [],
   conversations: [],
   playbooks: [],
+  targets: [],
   settings: DEFAULT_SETTINGS,
 };
 
@@ -290,3 +292,5 @@ export const useSettings = () => useStore().settings as Settings;
 
 /** The single Playbook record, or null before it has been created. */
 export const usePlaybook = () => (useStore().playbooks as Playbook[])[0] ?? null;
+
+export const useTargets = () => useStore().targets as Target[];

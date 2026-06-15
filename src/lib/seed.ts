@@ -735,6 +735,7 @@ export function seedData(): DataShape {
     painPoints,
     conversations: [],
     playbooks: [],
+    targets: [],
     settings: DEFAULT_SETTINGS,
   };
 }
