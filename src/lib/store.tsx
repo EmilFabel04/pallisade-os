@@ -15,6 +15,7 @@ import type {
   Interaction,
   Lead,
   PainPoint,
+  Playbook,
   Project,
   Scorecard,
   Settings,
@@ -72,6 +73,7 @@ const EMPTY: DataShape = {
   scorecards: [],
   painPoints: [],
   conversations: [],
+  playbooks: [],
   settings: DEFAULT_SETTINGS,
 };
 
@@ -285,3 +287,6 @@ export const useTasks = () => useStore().tasks as Task[];
 export const useScorecards = () => useStore().scorecards as Scorecard[];
 export const usePainPoints = () => useStore().painPoints as PainPoint[];
 export const useSettings = () => useStore().settings as Settings;
+
+/** The single Playbook record, or null before it has been created. */
+export const usePlaybook = () => (useStore().playbooks as Playbook[])[0] ?? null;
