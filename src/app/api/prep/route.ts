@@ -121,7 +121,7 @@ export async function POST(req: Request) {
     sectionsWanted = [section];
     const per: Record<Section, string> = {
       pronunciations: `tricky names, places, brands or terms ${biz} encounters selling to ${market}.`,
-      glossary: `the core industry language and acronyms used by ${market}.`,
+      glossary: `the 12-18 most important industry terms and acronyms used by ${market}. Keep each definition to one concise sentence and each example short.`,
       offerings: `the founder's services (${services}) — one card per distinct offering, with value prop, a price anchor if sensible, and the most likely objection plus a rebuttal.`,
     };
     task = `Draft the "${section}" section of the sales playbook: ${per[section]}`;
@@ -144,7 +144,7 @@ export async function POST(req: Request) {
     const client = new Anthropic({ apiKey });
     const response = await client.messages.create({
       model: MODEL,
-      max_tokens: 2048,
+      max_tokens: 4096,
       system,
       tools: [tool] as unknown as Anthropic.Tool[],
       tool_choice: { type: "tool", name: "save_playbook" },
@@ -157,6 +157,11 @@ export async function POST(req: Request) {
     // Forced tool_choice should always yield a tool_use block; a missing one means a
     // truncated/abnormal response — signal failure rather than a silent empty result.
     if (!toolUse) return NextResponse.json({ error: "no_tool_use" }, { status: 502 });
+    // A forced tool call that hit the token cap is truncated into unparseable/empty
+    // input — surface it instead of silently returning an empty playbook.
+    if (response.stop_reason === "max_tokens") {
+      return NextResponse.json({ error: "generation_incomplete" }, { status: 502 });
+    }
     const draft: PlaybookSections = normalizeDraft(toolUse.input as Record<string, unknown>);
     return NextResponse.json(draft);
   } catch (err) {
