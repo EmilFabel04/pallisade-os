@@ -38,6 +38,9 @@ async function post(body: unknown): Promise<PlaybookSections> {
     if (err.error === "no_key") {
       throw new Error("Drafting needs an ANTHROPIC_API_KEY. Add it to .env.local and restart.");
     }
+    if (err.error === "generation_incomplete" || err.error === "no_tool_use") {
+      throw new Error("The draft didn't come back complete — please try that section again.");
+    }
     throw new Error(typeof err.error === "string" ? err.error : "The prep request failed.");
   }
   return { ...EMPTY, ...((await res.json()) as Partial<PlaybookSections>) };
