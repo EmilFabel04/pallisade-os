@@ -53,7 +53,6 @@ export default function ContentPage() {
   // Effective profile / content type for the composer: from the active thread, else defaults.
   const activeProfileId = active?.profileId ?? positioningProfiles[0]?.id ?? null;
   const activeContentType: ContentType = active?.contentType ?? "social";
-  const activeProfile = positioningProfiles.find((p) => p.id === activeProfileId) ?? null;
 
   const newThread = () => { setActiveId(null); setInput(""); setError(null); };
 
@@ -61,7 +60,10 @@ export default function ContentPage() {
   // for an existing thread, persist immediately.
   const [pendingProfileId, setPendingProfileId] = useState<string | null>(null);
   const [pendingType, setPendingType] = useState<ContentType | null>(null);
-  const selProfileId = active ? activeProfileId : (pendingProfileId ?? activeProfileId);
+  const candidateProfileId = active ? activeProfileId : (pendingProfileId ?? activeProfileId);
+  const selProfileId = positioningProfiles.some((p) => p.id === candidateProfileId)
+    ? candidateProfileId
+    : (positioningProfiles[0]?.id ?? null);
   const selType = active ? activeContentType : (pendingType ?? "social");
   const selProfile = positioningProfiles.find((p) => p.id === selProfileId) ?? null;
 
