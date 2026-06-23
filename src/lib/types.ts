@@ -246,6 +246,22 @@ export interface Conversation extends BaseRecord {
   messages: ChatMessage[];
 }
 
+/* ---------- content studio ---------- */
+
+export type ContentType = "social" | "script" | "longform";
+
+export interface PositioningProfile extends BaseRecord {
+  name: string;   // e.g. "Pallisade — boutique asset managers"
+  body: string;   // the pasted positioning document
+}
+
+export interface ContentThread extends BaseRecord {
+  title: string;                      // auto-derived from the first user message
+  messages: ChatMessage[];
+  profileId: string | null;           // selected positioning profile
+  contentType: ContentType;           // selected content type
+}
+
 export interface Settings {
   businessName: string;
   founderName: string;
@@ -321,10 +337,15 @@ export interface DataShape {
   conversations: Conversation[];
   playbooks: Playbook[];
   targets: Target[];
+  positioningProfiles: PositioningProfile[];
+  contentThreads: ContentThread[];
   settings: Settings;
 }
 
 export type CollectionKey = Exclude<keyof DataShape, "settings">;
 
 /** What the Sales Advisor route receives as the current data picture. */
-export type AdvisorSnapshot = Omit<DataShape, "conversations" | "playbooks" | "targets">;
+export type AdvisorSnapshot = Omit<
+  DataShape,
+  "conversations" | "playbooks" | "targets" | "positioningProfiles" | "contentThreads"
+>;

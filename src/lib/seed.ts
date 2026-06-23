@@ -736,6 +736,8 @@ export function seedData(): DataShape {
     conversations: [],
     playbooks: [],
     targets: [],
+    positioningProfiles: [],
+    contentThreads: [],
     settings: DEFAULT_SETTINGS,
   };
 }
