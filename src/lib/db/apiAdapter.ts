@@ -44,6 +44,8 @@ export class ApiAdapter implements StorageAdapter {
       conversations: [],
       playbooks: [],
       targets: [],
+      positioningProfiles: [],
+      contentThreads: [],
       settings: DEFAULT_SETTINGS,
     };
     await this.save(empty);

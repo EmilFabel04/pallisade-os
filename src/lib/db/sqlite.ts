@@ -24,6 +24,8 @@ const COLLECTIONS = [
   "conversations",
   "playbooks",
   "targets",
+  "positioningProfiles",
+  "contentThreads",
 ] as const;
 type Coll = (typeof COLLECTIONS)[number];
 
