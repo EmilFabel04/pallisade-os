@@ -26,6 +26,7 @@ const COLLECTIONS = [
   "targets",
   "positioningProfiles",
   "contentThreads",
+  "brainThreads",
 ] as const;
 type Coll = (typeof COLLECTIONS)[number];
 

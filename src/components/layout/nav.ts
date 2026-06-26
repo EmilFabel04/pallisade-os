@@ -14,6 +14,7 @@ import {
   CalendarClock,
   GraduationCap,
   PenLine,
+  BrainCircuit,
   type LucideIcon,
 } from "lucide-react";
 
@@ -37,6 +38,7 @@ export const NAV: NavItem[] = [
   { href: "/scorecard", label: "Daily Scorecard", icon: ClipboardList, group: "Intelligence" },
   { href: "/advisor", label: "Sales Advisor", icon: Bot, group: "Intelligence" },
   { href: "/content", label: "Content Studio", icon: PenLine, group: "Intelligence" },
+  { href: "/brain", label: "Brain", icon: BrainCircuit, group: "Intelligence" },
   { href: "/prep", label: "Meeting Prep", icon: GraduationCap, group: "Intelligence" },
   { href: "/review", label: "AI Business Review", icon: Sparkles, group: "Intelligence" },
   { href: "/settings", label: "Settings", icon: Settings, group: "System" },

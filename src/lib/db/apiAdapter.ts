@@ -46,6 +46,7 @@ export class ApiAdapter implements StorageAdapter {
       targets: [],
       positioningProfiles: [],
       contentThreads: [],
+      brainThreads: [],
       settings: DEFAULT_SETTINGS,
     };
     await this.save(empty);

@@ -78,6 +78,7 @@ const EMPTY: DataShape = {
   targets: [],
   positioningProfiles: [],
   contentThreads: [],
+  brainThreads: [],
   settings: DEFAULT_SETTINGS,
 };
 

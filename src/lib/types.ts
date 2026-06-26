@@ -262,6 +262,13 @@ export interface ContentThread extends BaseRecord {
   contentType: ContentType;           // selected content type
 }
 
+/* ---------- the brain (CEO / strategist) ---------- */
+
+export interface BrainThread extends BaseRecord {
+  title: string;                      // auto-derived from the first user message
+  messages: ChatMessage[];
+}
+
 export interface Settings {
   businessName: string;
   founderName: string;
@@ -339,6 +346,7 @@ export interface DataShape {
   targets: Target[];
   positioningProfiles: PositioningProfile[];
   contentThreads: ContentThread[];
+  brainThreads: BrainThread[];
   settings: Settings;
 }
 
@@ -347,5 +355,5 @@ export type CollectionKey = Exclude<keyof DataShape, "settings">;
 /** What the Sales Advisor route receives as the current data picture. */
 export type AdvisorSnapshot = Omit<
   DataShape,
-  "conversations" | "playbooks" | "targets" | "positioningProfiles" | "contentThreads"
+  "conversations" | "playbooks" | "targets" | "positioningProfiles" | "contentThreads" | "brainThreads"
 >;
