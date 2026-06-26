@@ -738,6 +738,7 @@ export function seedData(): DataShape {
     targets: [],
     positioningProfiles: [],
     contentThreads: [],
+    brainThreads: [],
     settings: DEFAULT_SETTINGS,
   };
 }

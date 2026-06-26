@@ -18,6 +18,7 @@ const HIT_ROUTE: Record<SearchHit["kind"], string> = {
   targets: "/targets",
   positioningProfiles: "/content",
   contentThreads: "/content",
+  brainThreads: "/brain",
 };
 
 const HIT_LABEL: Record<SearchHit["kind"], string> = {
@@ -32,6 +33,7 @@ const HIT_LABEL: Record<SearchHit["kind"], string> = {
   targets: "Target",
   positioningProfiles: "Positioning Profile",
   contentThreads: "Content Thread",
+  brainThreads: "Brain Thread",
 };
 
 const QUICK_ACTIONS: { kind: NonNullable<QuickAddKind>; label: string; icon: typeof Plus }[] = [
