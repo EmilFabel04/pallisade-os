@@ -94,6 +94,13 @@ export async function POST(req: Request) {
           blk.type === "tool_use" && DRIVE_TOOL_NAMES.has(blk.name),
       );
 
+      // web_search may pause its server-side loop; resume by re-requesting with the
+      // partial assistant turn appended and no synthetic tool_result.
+      if (response.stop_reason === "pause_turn") {
+        messages.push({ role: "assistant", content: response.content });
+        continue;
+      }
+
       if (response.stop_reason !== "tool_use" || driveUses.length === 0) break;
 
       messages.push({ role: "assistant", content: response.content });
