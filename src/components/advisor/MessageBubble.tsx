@@ -7,11 +7,13 @@ import { ActionCard } from "./ActionCard";
 import { Markdown } from "./Markdown";
 
 export function MessageBubble({
-  message, onConfirm, onDismiss,
+  message, onConfirm, onDismiss, copyRaw: _copyRaw,
 }: {
   message: ChatMessage;
   onConfirm: (a: ProposedAction) => void;
   onDismiss: (a: ProposedAction) => void;
+  /** Forward-declared for Task 10 — copy raw markdown instead of rendered text when true */
+  copyRaw?: boolean;
 }) {
   const isUser = message.role === "user";
   const bodyRef = useRef<HTMLDivElement>(null);
