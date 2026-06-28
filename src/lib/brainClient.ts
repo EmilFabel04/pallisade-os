@@ -30,3 +30,13 @@ export async function sendBrainTurn(params: {
 
   return (await res.json()) as { content: string };
 }
+
+export async function getDriveStatus(): Promise<{ connected: boolean; accountId: string | null }> {
+  try {
+    const res = await fetch("/api/drive/status");
+    if (!res.ok) return { connected: false, accountId: null };
+    return (await res.json()) as { connected: boolean; accountId: string | null };
+  } catch {
+    return { connected: false, accountId: null };
+  }
+}

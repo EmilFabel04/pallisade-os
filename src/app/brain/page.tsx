@@ -48,6 +48,7 @@ export default function BrainPage() {
     if (!thread) {
       thread = store.create("brainThreads", {
         title: text.slice(0, 48),
+        mode: "strategist",
         messages: [],
       } as Omit<BrainThread, "id" | "createdAt" | "updatedAt">) as BrainThread;
       setActiveId(thread.id);
