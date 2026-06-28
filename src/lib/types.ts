@@ -264,9 +264,18 @@ export interface ContentThread extends BaseRecord {
 
 /* ---------- the brain (CEO / strategist) ---------- */
 
+export interface BrainAttachment {
+  id: string;
+  name: string;        // file name, e.g. "discovery-call-acme.md"
+  content: string;     // raw text
+  createdAt: string;
+}
+
 export interface BrainThread extends BaseRecord {
   title: string;                      // auto-derived from the first user message
+  mode: "strategist" | "brainstorm";   // legacy rows read as "strategist" via threadMode()
   messages: ChatMessage[];
+  attachments?: BrainAttachment[];      // brainstorm session source docs
 }
 
 export interface Settings {
