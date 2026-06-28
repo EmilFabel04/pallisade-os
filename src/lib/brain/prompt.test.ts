@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildBrainSystemPrompt } from "./prompt";
+import { buildBrainSystemPrompt, formatAttachmentsBlock } from "./prompt";
 
 describe("buildBrainSystemPrompt", () => {
   const base = {
@@ -40,5 +40,36 @@ describe("buildBrainSystemPrompt", () => {
   it("sets a direct, high-signal, no-flattery tone", () => {
     const p = buildBrainSystemPrompt(base);
     expect(p).toMatch(/direct|high-signal|no flattery|concise/i);
+  });
+});
+
+describe("buildBrainSystemPrompt — modes", () => {
+  const base = { businessName: "Pallisade Data", founderName: "Emil", today: "2026-06-28" };
+
+  it("strategist output is unchanged when mode omitted vs explicit strategist", () => {
+    expect(buildBrainSystemPrompt(base)).toBe(buildBrainSystemPrompt({ ...base, mode: "strategist" }));
+  });
+
+  it("brainstorm mode steers toward sources, research and a build scope", () => {
+    const p = buildBrainSystemPrompt({ ...base, mode: "brainstorm" });
+    expect(p).toMatch(/drive_search|drive_read_file/);
+    expect(p).toMatch(/web_search|research/i);
+    expect(p).toMatch(/build scope/i);
+    expect(p).toMatch(/Claude Code/i);
+  });
+});
+
+describe("formatAttachmentsBlock", () => {
+  it("returns empty string with no attachments", () => {
+    expect(formatAttachmentsBlock([])).toBe("");
+  });
+  it("labels each document by name", () => {
+    const out = formatAttachmentsBlock([{ name: "call.md", content: "hello" }]);
+    expect(out).toContain("call.md");
+    expect(out).toContain("hello");
+  });
+  it("truncates past the char budget with a marker", () => {
+    const out = formatAttachmentsBlock([{ name: "big.md", content: "x".repeat(50) }], 10);
+    expect(out).toContain("[truncated]");
   });
 });

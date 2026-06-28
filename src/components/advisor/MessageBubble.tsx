@@ -7,11 +7,12 @@ import { ActionCard } from "./ActionCard";
 import { Markdown } from "./Markdown";
 
 export function MessageBubble({
-  message, onConfirm, onDismiss,
+  message, onConfirm, onDismiss, copyRaw = false,
 }: {
   message: ChatMessage;
   onConfirm: (a: ProposedAction) => void;
   onDismiss: (a: ProposedAction) => void;
+  copyRaw?: boolean;
 }) {
   const isUser = message.role === "user";
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -30,7 +31,7 @@ export function MessageBubble({
   /* Copy button: grabs the clean rendered text (no markdown syntax, no styling),
      ideal for pasting an advisor-drafted email straight into Gmail. */
   const copyAll = async () => {
-    const text = bodyRef.current?.innerText ?? message.content;
+    const text = copyRaw ? message.content : (bodyRef.current?.innerText ?? message.content);
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);

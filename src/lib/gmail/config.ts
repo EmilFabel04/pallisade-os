@@ -11,6 +11,7 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/drive.readonly",
 ];
 
 /** Back-compat alias. */
@@ -21,6 +22,13 @@ export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 /** Whether a stored token's granted scopes include calendar access. */
 export function hasCalendarScope(scope: string | undefined | null): boolean {
   return !!scope && scope.includes(CALENDAR_SCOPE);
+}
+
+export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+
+/** Whether a stored token's granted scopes include Drive read access. */
+export function hasDriveScope(scope: string | undefined | null): boolean {
+  return !!scope && scope.includes(DRIVE_SCOPE);
 }
 
 /** Where Google sends the user back after consent. Must be registered verbatim
