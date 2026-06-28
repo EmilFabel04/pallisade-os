@@ -10,7 +10,9 @@ export async function getBrainStatus(): Promise<{ configured: boolean; model: st
 
 export async function sendBrainTurn(params: {
   messages: { role: "user" | "assistant"; content: string }[];
-  context: { businessName: string; founderName: string };
+  mode?: "strategist" | "brainstorm";
+  attachments?: { name: string; content: string }[];
+  context: { businessName: string; founderName: string; driveAccountId?: string };
 }): Promise<{ content: string }> {
   const res = await fetch("/api/brain", {
     method: "POST",
@@ -21,9 +23,7 @@ export async function sendBrainTurn(params: {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "request_failed" }));
     if (err.error === "no_key") {
-      throw new Error(
-        "The Brain needs an ANTHROPIC_API_KEY. Add it to .env.local and restart.",
-      );
+      throw new Error("The Brain needs an ANTHROPIC_API_KEY. Add it to .env.local and restart.");
     }
     throw new Error(typeof err.error === "string" ? err.error : "The request failed.");
   }
