@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2, SendHorizontal, BrainCircuit, Paperclip, X } from "lucide-react";
 import { useStore } from "@/lib/store";
