@@ -8,12 +8,33 @@ function pick(block: string, tag: string): string {
   return m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
 }
 
-/** RSS uses <link>text</link>; Atom uses <link href="…"/>. */
+/** RSS uses <link>text</link>; Atom uses <link href="…"/>.
+ *  For Atom, prefers rel="alternate" > no rel > anything except rel="self"|"hub". */
 function pickLink(block: string): string {
   const rss = pick(block, "link");
   if (rss) return rss;
-  const m = block.match(/<link[^>]*href=["']([^"']+)["']/i);
-  return m ? m[1] : "";
+
+  // Collect all <link …> tags that carry an href attribute.
+  const tags = block.match(/<link\s[^>]*href=["'][^"']*["'][^>]*\/?>/gi) ?? [];
+
+  function getAttr(tag: string, attr: string): string {
+    const m = tag.match(new RegExp(`${attr}=["']([^"']*)["']`, "i"));
+    return m ? m[1] : "";
+  }
+
+  // Priority a: rel="alternate"
+  const alternate = tags.find((t) => /rel=["']alternate["']/i.test(t));
+  if (alternate) return getAttr(alternate, "href");
+
+  // Priority b: no rel attribute at all
+  const noRel = tags.find((t) => !/rel=/i.test(t));
+  if (noRel) return getAttr(noRel, "href");
+
+  // Priority c: first that is not rel="self" or rel="hub"
+  const fallback = tags.find((t) => !/rel=["'](self|hub)["']/i.test(t));
+  if (fallback) return getAttr(fallback, "href");
+
+  return "";
 }
 
 function stripTags(s: string): string {
@@ -28,7 +49,7 @@ function host(url: string): string {
 export function parseRssXml(
   xml: string,
 ): { title: string; link: string; description: string; pubDate: string | null }[] {
-  const blocks = xml.match(/<(item|entry)\b[\s\S]*?<\/(item|entry)>/gi) ?? [];
+  const blocks = xml.match(/<(item|entry)\b[\s\S]*?<\/\1>/gi) ?? [];
   return blocks.map((b) => ({
     title: stripTags(pick(b, "title")),
     link: pickLink(b),

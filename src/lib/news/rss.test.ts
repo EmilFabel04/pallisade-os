@@ -19,6 +19,16 @@ const atom = `<?xml version="1.0"?><feed>
   </entry>
 </feed>`;
 
+const atomWithSelfAndAlternate = `<?xml version="1.0"?><feed>
+  <entry>
+    <title>Atom prefer alternate</title>
+    <link rel="self" href="https://feed.example.com/atom" />
+    <link rel="alternate" href="https://article.example.com/post" />
+    <summary>Body text</summary>
+    <updated>2026-06-24T08:00:00Z</updated>
+  </entry>
+</feed>`;
+
 describe("parseRssXml", () => {
   it("parses RSS items, unwraps CDATA, strips HTML from description", () => {
     const out = parseRssXml(rss);
@@ -35,6 +45,24 @@ describe("parseRssXml", () => {
     expect(out[0].link).toBe("https://atom.example.com/a");
     expect(out[0].description).toBe("Short summary");
   });
+
+  it("Atom entry with rel=self and rel=alternate resolves to alternate url", () => {
+    const out = parseRssXml(atomWithSelfAndAlternate);
+    expect(out[0].link).toBe("https://article.example.com/post");
+  });
+
+  it("clips long description to ≤240 characters", () => {
+    const longText = "x".repeat(420);
+    const xml = `<?xml version="1.0"?><rss><channel>
+      <item>
+        <title>Long item</title>
+        <link>https://news.example.com/long</link>
+        <description>${longText}</description>
+      </item>
+    </channel></rss>`;
+    const out = parseRssXml(xml);
+    expect(out[0].description.length).toBeLessThanOrEqual(240);
+  });
 });
 
 describe("normalizeRss", () => {
@@ -47,5 +75,27 @@ describe("normalizeRss", () => {
     });
     expect(out[0].publishedAt).toBe(new Date("Wed, 24 Jun 2026 08:00:00 GMT").toISOString());
     expect(out[0].source).toBe("news.example.com");
+  });
+
+  it("drops RSS <item> missing <link>", () => {
+    const xml = `<?xml version="1.0"?><rss><channel>
+      <item>
+        <title>No link item</title>
+        <description>Some text</description>
+      </item>
+    </channel></rss>`;
+    const out = normalizeRss(xml, "ai");
+    expect(out).toHaveLength(0);
+  });
+
+  it("drops RSS <item> missing <title>", () => {
+    const xml = `<?xml version="1.0"?><rss><channel>
+      <item>
+        <link>https://news.example.com/notitle</link>
+        <description>Some text</description>
+      </item>
+    </channel></rss>`;
+    const out = normalizeRss(xml, "ai");
+    expect(out).toHaveLength(0);
   });
 });
