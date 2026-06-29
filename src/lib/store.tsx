@@ -14,6 +14,9 @@ import type {
   DataShape,
   Interaction,
   Lead,
+  NewsFeed,
+  NewsInterests,
+  NewsBookmark,
   PainPoint,
   Playbook,
   Project,
@@ -79,6 +82,9 @@ const EMPTY: DataShape = {
   positioningProfiles: [],
   contentThreads: [],
   brainThreads: [],
+  newsFeed: [],
+  newsInterests: [],
+  newsBookmarks: [],
   settings: DEFAULT_SETTINGS,
 };
 
@@ -297,3 +303,8 @@ export const useSettings = () => useStore().settings as Settings;
 export const usePlaybook = () => (useStore().playbooks as Playbook[])[0] ?? null;
 
 export const useTargets = () => useStore().targets as Target[];
+
+export const useNewsFeed = () => (useStore().newsFeed as NewsFeed[])[0] ?? null;
+export const useNewsInterests = () =>
+  (useStore().newsInterests as NewsInterests[])[0] ?? null;
+export const useNewsBookmarks = () => useStore().newsBookmarks as NewsBookmark[];

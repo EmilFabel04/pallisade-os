@@ -14,7 +14,7 @@ import path from "node:path";
 import type { DataShape } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/seed";
 
-const COLLECTIONS = [
+export const COLLECTIONS = [
   "leads",
   "interactions",
   "projects",
@@ -27,6 +27,9 @@ const COLLECTIONS = [
   "positioningProfiles",
   "contentThreads",
   "brainThreads",
+  "newsFeed",
+  "newsInterests",
+  "newsBookmarks",
 ] as const;
 type Coll = (typeof COLLECTIONS)[number];
 

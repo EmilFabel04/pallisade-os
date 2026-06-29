@@ -739,6 +739,9 @@ export function seedData(): DataShape {
     positioningProfiles: [],
     contentThreads: [],
     brainThreads: [],
+    newsFeed: [],
+    newsInterests: [],
+    newsBookmarks: [],
     settings: DEFAULT_SETTINGS,
   };
 }
