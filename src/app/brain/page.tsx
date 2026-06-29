@@ -26,6 +26,7 @@ export default function BrainPage() {
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [drive, setDrive] = useState<{ connected: boolean; accountId: string | null }>({ connected: false, accountId: null });
   const scrollRef = useRef<HTMLDivElement>(null);
+  const deepLinked = useRef(false);
   const searchParams = useSearchParams();
 
   useEffect(() => { getBrainStatus().then((s) => setConfigured(s.configured)); }, []);
@@ -138,8 +139,10 @@ export default function BrainPage() {
 
   // Deep link from the News section: /brain?thread=<id> opens that thread.
   useEffect(() => {
+    if (deepLinked.current) return;
     const id = searchParams.get("thread");
     if (id && store.ready && brainThreads.some((t) => t.id === id)) {
+      deepLinked.current = true;
       selectThread(id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

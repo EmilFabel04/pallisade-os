@@ -73,7 +73,7 @@ export default function NewsPage() {
     }
   };
 
-  // Auto-refresh once if the cache is missing or stale (>6h) and AI is configured.
+  // Auto-refresh once on mount when the cache is missing or older than 6h. Runs even without an API key — the structured feed loads regardless; the AI summary is just skipped.
   useEffect(() => {
     if (!store.ready || autoTried || configured === null) return;
     const stale = !feed || Date.now() - Date.parse(feed.fetchedAt) > STALE_MS;
