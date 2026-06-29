@@ -341,6 +341,51 @@ export interface Target extends BaseRecord {
   notes: string;
 }
 
+/* ---------- news ---------- */
+
+export type NewsCategory =
+  | "github"
+  | "ai"
+  | "finance"
+  | "products"
+  | "reddit"
+  | "x";
+
+export interface NewsItem {
+  id: string;             // stable hash of url (dedupe across refreshes)
+  title: string;
+  url: string;
+  source: string;         // e.g. "github", "r/MachineLearning", "TechCrunch", "x.com"
+  category: NewsCategory;
+  snippet: string;        // short description / excerpt
+  whyItMatters?: string;  // one-line Claude blurb (top items only)
+  score?: number;         // upstream signal (stars, upvotes) for sort
+  publishedAt: string | null; // ISO when known
+}
+
+/** What the /api/news route returns (no BaseRecord fields). */
+export interface NewsFeedData {
+  items: NewsItem[];
+  summary: string;        // top-picks digest (markdown), "" when no AI pass
+  fetchedAt: string;      // ISO — drives the 6h staleness check
+  degraded: string[];     // names of sources that failed this fetch
+}
+
+export interface NewsFeed extends BaseRecord, NewsFeedData {}
+
+export interface NewsInterests extends BaseRecord {
+  topics: string;          // free-text keywords, comma/newline separated
+  githubLanguages: string; // e.g. "TypeScript, Python"
+  githubTopics: string;    // e.g. "llm, agents, rag"
+  subreddits: string;      // e.g. "MachineLearning, LocalLLaMA, SaaS"
+  rssFeeds: string;        // newline-separated; each line "category|url" or just "url"
+  aboutMe: string;         // blurb Claude uses to judge relevance
+}
+
+export interface NewsBookmark extends BaseRecord {
+  item: NewsItem;          // snapshot, so it survives feed replacement
+}
+
 /* ---------- collections registry ---------- */
 
 export interface DataShape {
@@ -356,6 +401,9 @@ export interface DataShape {
   positioningProfiles: PositioningProfile[];
   contentThreads: ContentThread[];
   brainThreads: BrainThread[];
+  newsFeed: NewsFeed[];
+  newsInterests: NewsInterests[];
+  newsBookmarks: NewsBookmark[];
   settings: Settings;
 }
 
@@ -364,5 +412,7 @@ export type CollectionKey = Exclude<keyof DataShape, "settings">;
 /** What the Sales Advisor route receives as the current data picture. */
 export type AdvisorSnapshot = Omit<
   DataShape,
-  "conversations" | "playbooks" | "targets" | "positioningProfiles" | "contentThreads" | "brainThreads"
+  | "conversations" | "playbooks" | "targets" | "positioningProfiles"
+  | "contentThreads" | "brainThreads"
+  | "newsFeed" | "newsInterests" | "newsBookmarks"
 >;
