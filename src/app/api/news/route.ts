@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import type { NewsInterests } from "@/lib/types";
+import type { NewsInterests, NewsItem } from "@/lib/types";
 import { fetchStructured } from "@/lib/news/sources";
 import { curate, buildStructuredFeed } from "@/lib/news/curate";
 import { nowISO, todayISO } from "@/lib/utils";
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   const interests = body.interests;
   const fetchedAt = nowISO();
 
-  let structured: { items: import("@/lib/types").NewsItem[]; degraded: string[] };
+  let structured: { items: NewsItem[]; degraded: string[] };
   try {
     structured = await fetchStructured(interests);
   } catch (err) {
@@ -50,6 +50,7 @@ export async function POST(req: Request) {
   }
 
   const client = new Anthropic({ apiKey });
+  // curate() guards its own Claude loop and always falls back to the structured feed — it never throws, so no try/catch here (returning 502 would defeat graceful degradation).
   const feed = await curate({
     client,
     model: MODEL,
