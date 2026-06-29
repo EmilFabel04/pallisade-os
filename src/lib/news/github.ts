@@ -13,16 +13,18 @@ interface GithubRepo {
 export function normalizeGithub(json: unknown): NewsItem[] {
   const repos = (json as { items?: GithubRepo[] } | null)?.items;
   if (!Array.isArray(repos)) return [];
-  return repos.map((r) => ({
-    id: itemId(r.html_url),
-    title: r.full_name,
-    url: r.html_url,
-    source: "github",
-    category: "github" as const,
-    snippet: r.description ?? "",
-    score: r.stargazers_count ?? 0,
-    publishedAt: r.created_at ?? null,
-  }));
+  return repos
+    .filter((r): r is GithubRepo => typeof r?.html_url === "string")
+    .map((r) => ({
+      id: itemId(r.html_url),
+      title: r.full_name,
+      url: r.html_url,
+      source: "github",
+      category: "github" as const,
+      snippet: r.description ?? "",
+      score: r.stargazers_count ?? 0,
+      publishedAt: r.created_at ?? null,
+    }));
 }
 
 /** Search repos created in the last 7 days, filtered by the user's languages/topics,
@@ -31,7 +33,8 @@ export async function fetchGithub(interests: NewsInterests): Promise<NewsItem[]>
   const since = addDaysISO(todayISO(), -7);
   const langs = parseList(interests.githubLanguages).map((l) => `language:${l}`);
   const topics = parseList(interests.githubTopics).map((t) => `topic:${t}`);
-  // GitHub OR-combines repeated qualifiers; created: narrows to the last week.
+  // created: narrows to the last week; repeated language: qualifiers are OR-combined;
+  // repeated topic: qualifiers are AND-combined.
   const q = [`created:>=${since}`, ...langs, ...topics].join(" ");
   const url =
     `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}` +
@@ -44,6 +47,6 @@ export async function fetchGithub(interests: NewsInterests): Promise<NewsItem[]>
   if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
 
   const res = await fetch(url, { headers });
-  if (!res.ok) throw new Error(`GitHub ${res.status}`);
+  if (!res.ok) throw new Error(`GitHub ${res.status} ${res.statusText}`);
   return normalizeGithub(await res.json());
 }

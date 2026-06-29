@@ -37,4 +37,22 @@ describe("normalizeGithub", () => {
     expect(normalizeGithub({})).toEqual([]);
     expect(normalizeGithub(null)).toEqual([]);
   });
+
+  it("drops items missing html_url and keeps the rest", () => {
+    const mixed = {
+      items: [
+        {
+          full_name: "acme/agent-kit",
+          html_url: "https://github.com/acme/agent-kit",
+          description: "A toolkit",
+          stargazers_count: 10,
+          created_at: "2026-06-25T10:00:00Z",
+        },
+        { full_name: "bad/repo", description: "no url here" },
+      ],
+    };
+    const out = normalizeGithub(mixed);
+    expect(out).toHaveLength(1);
+    expect(out[0].url).toBe("https://github.com/acme/agent-kit");
+  });
 });
