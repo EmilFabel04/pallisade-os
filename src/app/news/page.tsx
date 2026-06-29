@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Newspaper, RefreshCw, Settings2, Loader2, Bookmark } from "lucide-react";
 import { useStore, useNewsFeed, useNewsInterests, useNewsBookmarks } from "@/lib/store";
@@ -33,16 +33,30 @@ export default function NewsPage() {
 
   useEffect(() => { getNewsStatus().then((s) => setConfigured(s.configured)); }, []);
 
-  // Ensure an interests record exists (seed on first visit).
+  const seededRef = useRef<NewsInterests | null>(null);
+
+  // Returns the existing interests record, or creates one exactly once.
+  // Safe under Strict Mode double-invoke because the ref persists across
+  // invocations and across renders until the useNewsInterests() selector catches up.
   const ensureInterests = (): NewsInterests => {
     if (interests) return interests;
-    return store.create("newsInterests", { ...DEFAULT_NEWS_INTERESTS }) as NewsInterests;
+    if (seededRef.current) return seededRef.current;
+    const created = store.create("newsInterests", { ...DEFAULT_NEWS_INTERESTS }) as NewsInterests;
+    seededRef.current = created;
+    return created;
   };
+
+  // Seed the interests record once the store is ready so the modal always has a record to edit.
+  useEffect(() => {
+    if (!store.ready) return;
+    ensureInterests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.ready]);
 
   // Upsert the singleton feed record.
   const saveFeed = (data: { items: NewsItem[]; summary: string; fetchedAt: string; degraded: string[] }) => {
     if (feed) store.update("newsFeed", feed.id, data);
-    else store.create("newsFeed", data as Omit<typeof data, never>);
+    else store.create("newsFeed", data);
   };
 
   const refresh = async () => {
@@ -89,8 +103,9 @@ export default function NewsPage() {
 
   const visibleItems = showSaved ? bookmarks.map((b) => b.item) : feed?.items ?? [];
   const byCategory = useMemo(() => {
+    const items = showSaved ? bookmarks.map((b) => b.item) : feed?.items ?? [];
     const map = new Map<string, NewsItem[]>();
-    for (const it of visibleItems) {
+    for (const it of items) {
       const arr = map.get(it.category) ?? [];
       arr.push(it);
       map.set(it.category, arr);
@@ -100,7 +115,7 @@ export default function NewsPage() {
       arr.sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
     }
     return map;
-  }, [visibleItems]);
+  }, [showSaved, bookmarks, feed]);
 
   const hasAnything = visibleItems.length > 0;
 
@@ -191,17 +206,6 @@ export default function NewsPage() {
           interests={interests}
           onClose={() => setShowInterests(false)}
           onSave={(patch) => store.update("newsInterests", interests.id, patch)}
-        />
-      )}
-      {!interests && showInterests && (
-        <NewsInterestsModal
-          open={showInterests}
-          interests={ensureInterests()}
-          onClose={() => setShowInterests(false)}
-          onSave={(patch) => {
-            const created = ensureInterests();
-            store.update("newsInterests", created.id, patch);
-          }}
         />
       )}
     </div>
