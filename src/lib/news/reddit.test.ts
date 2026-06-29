@@ -36,4 +36,39 @@ describe("normalizeReddit", () => {
   it("returns [] for a malformed payload", () => {
     expect(normalizeReddit({}, "x")).toEqual([]);
   });
+
+  it("skips malformed children (no permalink) without throwing, returning only valid posts", () => {
+    const mixed = {
+      data: {
+        children: [
+          // valid post
+          {
+            data: {
+              title: "Valid post",
+              permalink: "/r/MachineLearning/comments/xyz/valid/",
+              score: 42,
+              created_utc: 1_750_000_000,
+              subreddit: "MachineLearning",
+            },
+          },
+          // structurally incomplete: empty object (no data key)
+          {},
+          // structurally incomplete: data present but no permalink
+          { data: {} },
+          // Reddit "more" continuation object variant
+          { kind: "more", data: { children: [], count: 5 } },
+        ],
+      },
+    };
+
+    let result: ReturnType<typeof normalizeReddit> | undefined;
+    expect(() => {
+      result = normalizeReddit(mixed, "MachineLearning");
+    }).not.toThrow();
+    expect(result).toHaveLength(1);
+    expect(result![0].title).toBe("Valid post");
+    expect(result![0].url).toBe(
+      "https://reddit.com/r/MachineLearning/comments/xyz/valid/",
+    );
+  });
 });

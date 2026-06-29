@@ -16,20 +16,22 @@ interface RedditListing {
 export function normalizeReddit(json: unknown, sub: string): NewsItem[] {
   const children = (json as RedditListing | null)?.data?.children;
   if (!Array.isArray(children)) return [];
-  return children.map((c) => {
-    const d = c.data;
-    const url = "https://reddit.com" + d.permalink;
-    return {
-      id: itemId(url),
-      title: d.title,
-      url,
-      source: "r/" + (d.subreddit ?? sub),
-      category: "reddit" as const,
-      snippet: (d.selftext ?? "").slice(0, 240),
-      score: d.score ?? 0,
-      publishedAt: d.created_utc ? new Date(d.created_utc * 1000).toISOString() : null,
-    };
-  });
+  return children
+    .filter((c) => c?.data?.permalink)
+    .map((c) => {
+      const d = c.data;
+      const url = "https://reddit.com" + d.permalink;
+      return {
+        id: itemId(url),
+        title: d.title,
+        url,
+        source: "r/" + (d.subreddit ?? sub),
+        category: "reddit" as const,
+        snippet: (d.selftext ?? "").slice(0, 240),
+        score: d.score ?? 0,
+        publishedAt: d.created_utc ? new Date(d.created_utc * 1000).toISOString() : null,
+      };
+    });
 }
 
 /** Top posts of the day for each configured subreddit. Reddit blocks the default
