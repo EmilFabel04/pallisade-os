@@ -10,6 +10,6 @@ export async function GET() {
   return NextResponse.json({
     configured,
     redirectUri: redirectUri(),
-    accounts: configured ? listAccountInfo() : [],
+    accounts: configured ? await listAccountInfo() : [],
   });
 }

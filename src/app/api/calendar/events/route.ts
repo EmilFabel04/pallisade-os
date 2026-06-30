@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   const days = Math.min(Number(url.searchParams.get("days")) || 14, 60);
   const only = url.searchParams.get("accountId");
 
-  const accounts = listAccounts().filter((a) => !only || only === "all" || a.id === only);
+  const accounts = (await listAccounts()).filter((a) => !only || only === "all" || a.id === only);
   const needsReconnect: AccountRef[] = [];
   const enabled = accounts.filter((a) => {
     const ok = hasCalendarScope(a.tokens.scope);
@@ -39,7 +39,7 @@ export async function GET(req: Request) {
       ),
     );
     const events = lists.flat().sort((a, b) => (a.start < b.start ? -1 : 1));
-    return NextResponse.json({ events, needsReconnect, hasAccounts: listAccounts().length > 0 });
+    return NextResponse.json({ events, needsReconnect, hasAccounts: (await listAccounts()).length > 0 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
   }
 
   // Pick the account: explicit, else the first calendar-enabled one.
-  const enabled = listAccounts().filter((a) => hasCalendarScope(a.tokens.scope));
+  const enabled = (await listAccounts()).filter((a) => hasCalendarScope(a.tokens.scope));
   const accountId = body.accountId ? String(body.accountId) : enabled[0]?.id;
   if (!accountId) {
     return NextResponse.json({ error: "no_calendar_account" }, { status: 409 });

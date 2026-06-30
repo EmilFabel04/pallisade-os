@@ -4,7 +4,7 @@
    Server-only.
    ============================================================ */
 
-import type { OAuth2Client } from "google-auth-library";
+import type { OAuth2Client, Credentials } from "google-auth-library";
 import { oauthClient } from "./config";
 import { getAccount, updateTokens, type GmailAccount } from "./accounts";
 
@@ -17,27 +17,45 @@ export class GmailAuthError extends Error {
   }
 }
 
-function clientForAccount(account: GmailAccount): OAuth2Client {
+function clientForAccount(account: GmailAccount): {
+  client: OAuth2Client;
+  takeRefreshed: () => Credentials | null;
+} {
   const client = oauthClient();
   client.setCredentials(account.tokens);
-  // Persist tokens whenever the library refreshes the access token.
+  // Capture refreshed tokens so the caller can persist them with an AWAITED
+  // write inside the request — a detached/fire-and-forget write can be lost
+  // when a serverless instance freezes after the response is sent.
+  let refreshed: Credentials | null = null;
   client.on("tokens", (t) => {
     const merged = { ...account.tokens, ...t };
-    account.tokens = merged;
-    updateTokens(account.id, merged);
+    account.tokens = merged; // current request uses the fresh token regardless
+    refreshed = merged;
   });
-  return client;
+  return { client, takeRefreshed: () => refreshed };
 }
 
 async function accessTokenFor(account: GmailAccount): Promise<string> {
-  const client = clientForAccount(account);
+  const { client, takeRefreshed } = clientForAccount(account);
+  let token: string | null | undefined;
   try {
-    const { token } = await client.getAccessToken();
-    if (!token) throw new Error("no_token");
-    return token;
+    ({ token } = await client.getAccessToken());
   } catch {
     throw new GmailAuthError(account.id);
   }
+  // Persist a refreshed token before returning (awaited, so it survives on
+  // serverless). Failure to persist is non-fatal — the request still has the
+  // token in memory; the worst case is an extra refresh next time.
+  const refreshed = takeRefreshed();
+  if (refreshed) {
+    try {
+      await updateTokens(account.id, refreshed);
+    } catch {
+      /* non-fatal: token already applied in memory for this request */
+    }
+  }
+  if (!token) throw new GmailAuthError(account.id);
+  return token;
 }
 
 /** Authenticated fetch against any Google API for a connected account.
@@ -47,7 +65,7 @@ export async function googleFetch(
   url: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const account = getAccount(accountId);
+  const account = await getAccount(accountId);
   if (!account) throw new GmailAuthError(accountId);
   const token = await accessTokenFor(account);
   const res = await fetch(url, {

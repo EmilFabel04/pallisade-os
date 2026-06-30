@@ -24,7 +24,7 @@ export async function GET(req: Request) {
     const access = tokens.access_token ?? undefined;
     const email = access ? await profileEmail(access) : "";
     if (!email) throw new Error("Could not read the account email.");
-    upsertAccount(email, tokens);
+    await upsertAccount(email, tokens);
     return page(true, email);
   } catch (e) {
     return page(false, (e as Error).message || "Failed to connect the account.");

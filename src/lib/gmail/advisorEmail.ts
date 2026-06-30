@@ -11,21 +11,21 @@ import { listThreads } from "./gmailApi";
 type Args = Record<string, unknown>;
 
 /** True when the advisor should be offered the email tools. */
-export function emailToolsAvailable(): boolean {
-  return isConfigured() && listAccountInfo().length > 0;
+export async function emailToolsAvailable(): Promise<boolean> {
+  return isConfigured() && (await listAccountInfo()).length > 0;
 }
 
-export function connectedEmails(): string[] {
-  return listAccountInfo().map((a) => a.email);
+export async function connectedEmails(): Promise<string[]> {
+  return (await listAccountInfo()).map((a) => a.email);
 }
 
 export async function resolveEmailTool(name: string, args: Args): Promise<string> {
   if (name === "list_inboxes") {
-    return JSON.stringify({ inboxes: connectedEmails() });
+    return JSON.stringify({ inboxes: await connectedEmails() });
   }
 
   if (name === "query_emails") {
-    const accounts = listAccountInfo();
+    const accounts = await listAccountInfo();
     const byId = new Map(accounts.map((a) => [a.id, a.email]));
     const wanted = args.account ? String(args.account).toLowerCase() : null;
     const target = wanted ? accounts.filter((a) => a.email.toLowerCase() === wanted) : accounts;

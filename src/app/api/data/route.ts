@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { loadAll, saveAll } from "@/lib/db/sqlite";
 import type { DataShape } from "@/lib/types";
 
-// SQLite needs the Node runtime + always-dynamic (never cached).
+// libSQL needs the Node runtime + always-dynamic (never cached).
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    return NextResponse.json(loadAll());
+    return NextResponse.json(await loadAll());
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message },
@@ -19,7 +19,7 @@ export async function GET() {
 
 async function persist(req: Request) {
   const body = (await req.json()) as DataShape;
-  saveAll(body);
+  await saveAll(body);
   return NextResponse.json({ ok: true });
 }
 
