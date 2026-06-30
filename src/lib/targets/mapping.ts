@@ -1,12 +1,13 @@
 import type { Target } from "@/lib/types";
 
 export type NewTarget = Omit<Target, "id" | "createdAt" | "updatedAt">;
-export type TargetField = keyof NewTarget;
 
-export const TARGET_FIELDS: TargetField[] = [
+export const TARGET_FIELDS = [
   "company", "contactName", "contactRole", "email",
   "phone", "linkedinUrl", "industry", "location", "notes",
-];
+] as const;
+
+export type TargetField = (typeof TARGET_FIELDS)[number];
 
 /** A column maps to a target field, to a name part (joined into contactName), or is ignored. */
 export type ColumnRole = TargetField | "firstName" | "lastName" | "ignore";

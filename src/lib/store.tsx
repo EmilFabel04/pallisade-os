@@ -12,6 +12,7 @@ import {
 import type {
   CollectionKey,
   DataShape,
+  DialList,
   Interaction,
   Lead,
   NewsFeed,
@@ -79,6 +80,7 @@ const EMPTY: DataShape = {
   conversations: [],
   playbooks: [],
   targets: [],
+  dialLists: [],
   positioningProfiles: [],
   contentThreads: [],
   brainThreads: [],
@@ -312,6 +314,8 @@ export const useSettings = () => useStore().settings as Settings;
 export const usePlaybook = () => (useStore().playbooks as Playbook[])[0] ?? null;
 
 export const useTargets = () => useStore().targets as Target[];
+
+export const useDialLists = () => useStore().dialLists as DialList[];
 
 export const useNewsFeed = () => (useStore().newsFeed as NewsFeed[])[0] ?? null;
 export const useNewsInterests = () =>

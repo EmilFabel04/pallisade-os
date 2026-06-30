@@ -736,6 +736,7 @@ export function seedData(): DataShape {
     conversations: [],
     playbooks: [],
     targets: [],
+    dialLists: [],
     positioningProfiles: [],
     contentThreads: [],
     brainThreads: [],

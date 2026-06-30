@@ -339,6 +339,23 @@ export interface Target extends BaseRecord {
   industry: string;
   location: string;
   notes: string;
+  // ── dial-list call tracking (all optional; absent callCount means 0) ──
+  callCount?: number;
+  lastCalledAt?: string | null;
+  disposition?: "not_interested" | null;
+}
+
+/* ---------- dial list (daily call snapshot) ---------- */
+
+export interface DialEntry {
+  targetId: string;
+  label: string; // denormalized "Company — Contact", captured at snapshot time
+  outcome?: "interested" | "not_interested" | null;
+}
+
+export interface DialList extends BaseRecord {
+  date: string; // "YYYY-MM-DD" — exactly one per day
+  entries: DialEntry[];
 }
 
 /* ---------- news ---------- */
@@ -398,6 +415,7 @@ export interface DataShape {
   conversations: Conversation[];
   playbooks: Playbook[];
   targets: Target[];
+  dialLists: DialList[];
   positioningProfiles: PositioningProfile[];
   contentThreads: ContentThread[];
   brainThreads: BrainThread[];

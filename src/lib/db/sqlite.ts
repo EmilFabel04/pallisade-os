@@ -23,6 +23,7 @@ export const COLLECTIONS = [
   "conversations",
   "playbooks",
   "targets",
+  "dialLists",
   "positioningProfiles",
   "contentThreads",
   "brainThreads",

@@ -18,8 +18,8 @@ export interface AdvisorReply {
  * `ready` flag — doesn't leak those into the request body.
  */
 export function buildSnapshot(data: DataShape): AdvisorSnapshot {
-  const { leads, interactions, projects, tasks, scorecards, painPoints, settings } = data;
-  return { leads, interactions, projects, tasks, scorecards, painPoints, settings };
+  const { leads, interactions, projects, tasks, scorecards, painPoints, dialLists, settings } = data;
+  return { leads, interactions, projects, tasks, scorecards, painPoints, dialLists, settings };
 }
 
 export async function getAdvisorStatus(): Promise<{ configured: boolean }> {
