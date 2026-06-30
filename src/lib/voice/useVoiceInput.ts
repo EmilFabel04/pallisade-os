@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { audioExtension } from "./audioFormat";
 
 export interface VoiceInput {
   recording: boolean;
@@ -30,10 +31,25 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
   cbRef.current = onTranscript;
 
   useEffect(() => {
-    fetch("/api/transcribe")
-      .then((r) => r.json())
-      .then((d) => setConfigured(!!d.configured))
-      .catch(() => setConfigured(false));
+    let cancelled = false;
+    const check = () => {
+      fetch("/api/transcribe")
+        .then((r) => r.json())
+        .then((d) => {
+          if (!cancelled) setConfigured(!!d.configured);
+        })
+        .catch(() => {
+          if (!cancelled) setConfigured(false);
+        });
+    };
+    check();
+    // Re-check when the user returns to the window so a key added after the
+    // page loaded enables the mic without a manual refresh.
+    window.addEventListener("focus", check);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", check);
+    };
   }, []);
 
   const stop = useCallback(() => {
@@ -64,7 +80,7 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
         setTranscribing(true);
         try {
           const fd = new FormData();
-          fd.append("audio", blob, "audio.webm");
+          fd.append("audio", blob, `audio.${audioExtension(blob.type)}`);
           const res = await fetch("/api/transcribe", { method: "POST", body: fd });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || "transcribe_failed");
