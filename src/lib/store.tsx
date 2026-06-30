@@ -92,6 +92,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const adapterRef = useRef<StorageAdapter | null>(null);
   const [data, setData] = useState<DataShape>(EMPTY);
   const [ready, setReady] = useState(false);
+  // True only after a SUCCESSFUL load. Persistence is gated on this so a
+  // failed/redirected hydrate (cold start, auth timing) can never save the
+  // empty in-memory state back over a populated remote database.
+  const hydratedOk = useRef(false);
 
   // hydrate once
   useEffect(() => {
@@ -101,12 +105,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const loaded = await adapterRef.current!.load();
       if (cancelled) return;
       if (loaded && Array.isArray(loaded.leads)) {
+        // A valid payload (even all-empty arrays for a brand-new DB) — safe to
+        // use and to persist from here on.
         setData({ ...EMPTY, ...loaded });
+        hydratedOk.current = true;
       } else {
-        // Start empty — the user fills it themselves. Demo data is available
-        // on demand via Settings → "Load demo data".
+        // Load FAILED (null/malformed). Start empty in memory for the UI, but
+        // do NOT persist — saving empty here would wipe a populated remote DB.
+        // Saves stay disabled until a reload produces a successful load.
         setData(EMPTY);
-        await adapterRef.current!.save(EMPTY);
       }
       setReady(true);
     })();
@@ -115,10 +122,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // persist on change (after hydration), debounced to avoid hammering
-  // the API on rapid edits.
+  // persist on change (after a SUCCESSFUL hydration), debounced to avoid
+  // hammering the API on rapid edits.
   useEffect(() => {
-    if (!ready || !adapterRef.current) return;
+    if (!ready || !hydratedOk.current || !adapterRef.current) return;
     const t = setTimeout(() => {
       adapterRef.current!.save(data);
     }, 450);
@@ -130,6 +137,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!ready) return;
     const flush = () => {
+      // Never flush an unhydrated (empty) state — would wipe the remote DB.
+      if (!hydratedOk.current) return;
       try {
         const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
         navigator.sendBeacon?.("/api/data", blob);

@@ -98,6 +98,25 @@ export async function loadAll(): Promise<DataShape> {
 export async function saveAll(data: DataShape): Promise<void> {
   await ensureSchema();
   const client = getClient();
+
+  // Safety net: never let a fully-empty payload wipe a populated database.
+  // Guards against a transient failed hydrate or a stale browser tab POSTing
+  // an empty state back (which would otherwise DELETE every row below).
+  const payloadEmpty = COLLECTIONS.every(
+    (c) => !((data[c] as unknown[] | undefined)?.length),
+  );
+  if (payloadEmpty) {
+    const checks = await Promise.all(
+      COLLECTIONS.map((c) => client.execute(`SELECT 1 FROM ${c} LIMIT 1`)),
+    );
+    if (checks.some((r) => r.rows.length > 0)) {
+      console.warn(
+        "[db] refused empty saveAll over a populated database (kept existing data)",
+      );
+      return; // skip the destructive wipe
+    }
+  }
+
   const stmts: InStatement[] = [];
 
   for (const c of COLLECTIONS) {
