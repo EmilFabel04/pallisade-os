@@ -39,15 +39,22 @@ existing target records remain valid:
 A persisted per-day snapshot so the day's 20 are stable across refreshes:
 
 ```ts
+interface DialEntry {
+  targetId: string;
+  label: string; // denormalized "Company — Contact", captured at snapshot time
+  outcome?: "interested" | "not_interested" | null;
+}
 interface DialList extends BaseRecord {
   date: string; // "YYYY-MM-DD" — also the stable id, exactly one per day
-  entries: { targetId: string; outcome?: "interested" | "not_interested" | null }[];
+  entries: DialEntry[];
 }
 ```
 
 `outcome` records the disposition given *today* for display purposes (e.g. show a
 greyed "→ Lead" row after Interested). The authoritative persistent state lives on
 the `Target` (`callCount`, `disposition`); `outcome` is the per-day display marker.
+`label` is denormalized so a completed "→ Lead" row still renders after Interested
+removes the underlying target.
 
 ## Daily generation (the "freeze")
 
