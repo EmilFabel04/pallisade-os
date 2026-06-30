@@ -14,7 +14,9 @@ const securityHeaders = [
   },
   {
     key: "Strict-Transport-Security",
-    value: "max-age=63072000; includeSubDomains; preload",
+    // No `preload` — that's a hard-to-undo commitment if you later move to a
+    // custom apex domain. Add it deliberately once the domain is settled.
+    value: "max-age=63072000; includeSubDomains",
   },
   { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
 ];
