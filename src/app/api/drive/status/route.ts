@@ -5,8 +5,8 @@ import { listAccounts } from "@/lib/gmail/accounts";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export function GET() {
+export async function GET() {
   if (!isConfigured()) return NextResponse.json({ connected: false, accountId: null });
-  const acct = listAccounts().find((a) => hasDriveScope(a.tokens.scope));
+  const acct = (await listAccounts()).find((a) => hasDriveScope(a.tokens.scope));
   return NextResponse.json({ connected: !!acct, accountId: acct?.id ?? null });
 }

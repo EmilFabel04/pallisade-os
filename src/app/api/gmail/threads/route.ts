@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   const accountId = url.searchParams.get("accountId");
   const q = url.searchParams.get("q") ?? undefined;
 
-  const all = listAccountInfo();
+  const all = await listAccountInfo();
   const ids = accountId && accountId !== "all" ? [accountId] : all.map((a) => a.id);
   if (ids.length === 0) return NextResponse.json({ threads: [], needsReconnect: [] });
 

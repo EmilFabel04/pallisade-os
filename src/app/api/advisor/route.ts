@@ -70,8 +70,10 @@ export async function POST(req: Request) {
     `direct and practical.`;
 
   // Offer Gmail / calendar tools only when those are connected.
-  const emailEnabled = emailToolsAvailable();
-  const calendarEnabled = calendarToolsAvailable();
+  const [emailEnabled, calendarEnabled] = await Promise.all([
+    emailToolsAvailable(),
+    calendarToolsAvailable(),
+  ]);
   const tools = [
     ...TOOLS,
     ...(emailEnabled ? EMAIL_TOOLS : []),
@@ -80,7 +82,7 @@ export async function POST(req: Request) {
   let systemFull = system;
   if (emailEnabled) {
     systemFull +=
-      `\n\nConnected Gmail inboxes: ${connectedEmails().join(", ")}. Use query_emails ` +
+      `\n\nConnected Gmail inboxes: ${(await connectedEmails()).join(", ")}. Use query_emails ` +
       `(Gmail search syntax) or list_inboxes to read real email when the founder asks about their inbox, ` +
       `a sender, or recent messages — never invent email content.`;
   }

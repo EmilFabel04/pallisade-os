@@ -6,9 +6,7 @@
    SQLite file and are only ever read inside server routes.
    ============================================================ */
 
-import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
-import path from "node:path";
+import { getClient } from "@/lib/db/client";
 import type { Credentials } from "google-auth-library";
 
 export interface GmailAccount {
@@ -22,26 +20,38 @@ export interface GmailAccount {
 /** Public, secret-free view safe to return to the client. */
 export type GmailAccountInfo = Pick<GmailAccount, "id" | "email" | "createdAt">;
 
-let db: DatabaseSync | null = null;
+// ── Schema bootstrap (runs once per process) ─────────────────────────────────
 
-function getDb(): DatabaseSync {
-  if (db) return db;
-  const dir = path.join(process.cwd(), "data");
-  mkdirSync(dir, { recursive: true });
-  const handle = new DatabaseSync(path.join(dir, "pallisade.db"));
-  handle.exec("PRAGMA journal_mode = WAL;");
-  handle.exec(
-    `CREATE TABLE IF NOT EXISTS gmail_accounts (
-       id TEXT PRIMARY KEY,
-       email TEXT NOT NULL UNIQUE,
-       tokens_json TEXT NOT NULL,
-       created_at TEXT,
-       updated_at TEXT
-     )`,
-  );
-  db = handle;
-  return handle;
+let schemaReady: Promise<void> | null = null;
+
+async function ensureSchema(): Promise<void> {
+  if (schemaReady) return schemaReady;
+
+  schemaReady = (async () => {
+    const client = getClient();
+    // NOTE: no PRAGMA journal_mode here — it cannot run inside the batch's
+    // transaction (errors locally) and is meaningless on remote Turso.
+    await client.batch(
+      [
+        {
+          sql: `CREATE TABLE IF NOT EXISTS gmail_accounts (
+                  id         TEXT PRIMARY KEY,
+                  email      TEXT NOT NULL UNIQUE,
+                  tokens_json TEXT NOT NULL,
+                  created_at TEXT,
+                  updated_at TEXT
+                )`,
+          args: [],
+        },
+      ],
+      "write",
+    );
+  })();
+
+  return schemaReady;
 }
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
 
 function rowToAccount(r: {
   id: string; email: string; tokens_json: string; created_at: string; updated_at: string;
@@ -55,61 +65,100 @@ function rowToAccount(r: {
   };
 }
 
-export function listAccounts(): GmailAccount[] {
-  const rows = getDb()
-    .prepare(`SELECT * FROM gmail_accounts ORDER BY created_at ASC`)
-    .all() as Parameters<typeof rowToAccount>[0][];
-  return rows.map(rowToAccount);
+// ── Public API ────────────────────────────────────────────────────────────────
+
+export async function listAccounts(): Promise<GmailAccount[]> {
+  await ensureSchema();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT id, email, tokens_json, created_at, updated_at FROM gmail_accounts ORDER BY created_at ASC`,
+    args: [],
+  });
+  return result.rows.map((r) =>
+    rowToAccount({
+      id: r.id as string,
+      email: r.email as string,
+      tokens_json: r.tokens_json as string,
+      created_at: r.created_at as string,
+      updated_at: r.updated_at as string,
+    }),
+  );
 }
 
-export function listAccountInfo(): GmailAccountInfo[] {
-  return listAccounts().map(({ id, email, createdAt }) => ({ id, email, createdAt }));
+export async function listAccountInfo(): Promise<GmailAccountInfo[]> {
+  const accounts = await listAccounts();
+  return accounts.map(({ id, email, createdAt }) => ({ id, email, createdAt }));
 }
 
-export function getAccount(id: string): GmailAccount | null {
-  const r = getDb()
-    .prepare(`SELECT * FROM gmail_accounts WHERE id = ?`)
-    .get(id) as Parameters<typeof rowToAccount>[0] | undefined;
-  return r ? rowToAccount(r) : null;
+export async function getAccount(id: string): Promise<GmailAccount | null> {
+  await ensureSchema();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT id, email, tokens_json, created_at, updated_at FROM gmail_accounts WHERE id = ?`,
+    args: [id],
+  });
+  const r = result.rows[0];
+  if (!r) return null;
+  return rowToAccount({
+    id: r.id as string,
+    email: r.email as string,
+    tokens_json: r.tokens_json as string,
+    created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
+  });
 }
 
 /** Upsert by email — re-connecting the same inbox refreshes its tokens. */
-export function upsertAccount(email: string, tokens: Credentials): GmailAccount {
-  const d = getDb();
+export async function upsertAccount(email: string, tokens: Credentials): Promise<GmailAccount> {
+  await ensureSchema();
+  const client = getClient();
   const now = new Date().toISOString();
-  const existing = d
-    .prepare(`SELECT id, created_at FROM gmail_accounts WHERE email = ?`)
-    .get(email) as { id: string; created_at: string } | undefined;
+
+  const existingResult = await client.execute({
+    sql: `SELECT id, created_at FROM gmail_accounts WHERE email = ?`,
+    args: [email],
+  });
+  const existing = existingResult.rows[0] as unknown as { id: string; created_at: string } | undefined;
 
   if (existing) {
     // Preserve a refresh_token if Google omits it on a repeat consent.
-    const prev = getAccount(existing.id);
+    const prev = await getAccount(existing.id);
     const merged: Credentials = {
       ...tokens,
       refresh_token: tokens.refresh_token ?? prev?.tokens.refresh_token,
     };
-    d.prepare(
-      `UPDATE gmail_accounts SET tokens_json = ?, updated_at = ? WHERE id = ?`,
-    ).run(JSON.stringify(merged), now, existing.id);
-    return getAccount(existing.id)!;
+    await client.execute({
+      sql: `UPDATE gmail_accounts SET tokens_json = ?, updated_at = ? WHERE id = ?`,
+      args: [JSON.stringify(merged), now, existing.id],
+    });
+    return (await getAccount(existing.id))!;
   }
 
   const id = `gm_${Math.abs(hashString(email)).toString(36)}_${email.length}`;
-  d.prepare(
-    `INSERT INTO gmail_accounts (id, email, tokens_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).run(id, email, JSON.stringify(tokens), now, now);
-  return getAccount(id)!;
+  await client.execute({
+    sql: `INSERT INTO gmail_accounts (id, email, tokens_json, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [id, email, JSON.stringify(tokens), now, now],
+  });
+  return (await getAccount(id))!;
 }
 
-export function updateTokens(id: string, tokens: Credentials): void {
-  getDb()
-    .prepare(`UPDATE gmail_accounts SET tokens_json = ?, updated_at = ? WHERE id = ?`)
-    .run(JSON.stringify(tokens), new Date().toISOString(), id);
+export async function updateTokens(id: string, tokens: Credentials): Promise<void> {
+  await ensureSchema();
+  const client = getClient();
+  await client.execute({
+    sql: `UPDATE gmail_accounts SET tokens_json = ?, updated_at = ? WHERE id = ?`,
+    args: [JSON.stringify(tokens), new Date().toISOString(), id],
+  });
 }
 
-export function deleteAccount(id: string): void {
-  getDb().prepare(`DELETE FROM gmail_accounts WHERE id = ?`).run(id);
+export async function deleteAccount(id: string): Promise<void> {
+  await ensureSchema();
+  const client = getClient();
+  await client.execute({
+    sql: `DELETE FROM gmail_accounts WHERE id = ?`,
+    args: [id],
+  });
 }
 
 /** Tiny deterministic string hash (avoids Math.random for stable ids). */

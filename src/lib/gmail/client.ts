@@ -21,10 +21,12 @@ function clientForAccount(account: GmailAccount): OAuth2Client {
   const client = oauthClient();
   client.setCredentials(account.tokens);
   // Persist tokens whenever the library refreshes the access token.
+  // updateTokens is async — fire-and-forget is acceptable here since the
+  // token has already been applied to the in-memory account object.
   client.on("tokens", (t) => {
     const merged = { ...account.tokens, ...t };
     account.tokens = merged;
-    updateTokens(account.id, merged);
+    void updateTokens(account.id, merged);
   });
   return client;
 }
@@ -47,7 +49,7 @@ export async function googleFetch(
   url: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const account = getAccount(accountId);
+  const account = await getAccount(accountId);
   if (!account) throw new GmailAuthError(accountId);
   const token = await accessTokenFor(account);
   const res = await fetch(url, {

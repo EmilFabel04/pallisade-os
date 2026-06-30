@@ -11,13 +11,13 @@ import { listUpcomingEvents } from "./calendarApi";
 type Args = Record<string, unknown>;
 
 /** True when at least one connected account has granted calendar access. */
-export function calendarToolsAvailable(): boolean {
-  return isConfigured() && listAccounts().some((a) => hasCalendarScope(a.tokens.scope));
+export async function calendarToolsAvailable(): Promise<boolean> {
+  return isConfigured() && (await listAccounts()).some((a) => hasCalendarScope(a.tokens.scope));
 }
 
 export async function resolveCalendarTool(name: string, args: Args): Promise<string> {
   if (name === "query_calendar") {
-    const accounts = listAccounts().filter((a) => hasCalendarScope(a.tokens.scope));
+    const accounts = (await listAccounts()).filter((a) => hasCalendarScope(a.tokens.scope));
     const days = Math.min(Number(args.days) || 7, 60);
     const q = args.query ? String(args.query) : undefined;
 
