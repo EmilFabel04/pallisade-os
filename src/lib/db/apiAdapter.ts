@@ -44,6 +44,7 @@ export class ApiAdapter implements StorageAdapter {
       conversations: [],
       playbooks: [],
       targets: [],
+      dialLists: [],
       positioningProfiles: [],
       contentThreads: [],
       brainThreads: [],
