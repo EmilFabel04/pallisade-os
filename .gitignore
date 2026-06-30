@@ -13,3 +13,7 @@ next-env.d.ts
 
 # TypeScript incremental build cache
 /tsconfig.tsbuildinfo
+.env*
+
+# Turso migration credentials (never commit)
+.turso.env
