@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { audioExtension } from "@/lib/voice/audioFormat";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,8 +28,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "no_audio" }, { status: 400 });
   }
 
+  // Whisper picks the format from the filename extension, so label the upload
+  // to match what the browser actually recorded (Safari = mp4, not webm).
   const out = new FormData();
-  out.append("file", audio, "audio.webm");
+  out.append("file", audio, `audio.${audioExtension(audio.type)}`);
   out.append("model", MODEL);
   out.append("response_format", "text");
 
