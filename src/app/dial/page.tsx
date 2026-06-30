@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { PhoneOutgoing } from "lucide-react";
 import {
   useStore,
@@ -35,14 +35,27 @@ export default function DialPage() {
   const today = todayISO();
   const todayList = findToday(dialLists, today);
 
-  // Generate today's frozen snapshot once, on first view of the day.
+  // Generate today's frozen snapshot once, on first view of a day that has at
+  // least one eligible target. A synchronous date-keyed ref guards against
+  // React Strict Mode's double mount-effect invocation (store.create only
+  // queues a setData, so the findToday recheck alone is racy). `targets` is in
+  // the deps so importing prospects mid-day triggers generation instead of
+  // leaving an empty day frozen.
+  const generatedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!store.ready) return;
-    if (findToday(store.dialLists, today)) return;
-    store.create("dialLists", { date: today, entries: buildEntries(targets, DAILY_COUNT) });
-    // Intentionally runs only when readiness/date changes; targets read at creation time.
+    if (findToday(store.dialLists, today)) {
+      generatedFor.current = today;
+      return;
+    }
+    if (generatedFor.current === today) return;
+    const entries = buildEntries(targets, DAILY_COUNT);
+    if (entries.length === 0) return; // no eligible targets yet — don't freeze an empty day
+    generatedFor.current = today;
+    store.create("dialLists", { date: today, entries });
+    // store.* and targets are the real deps; listed explicitly below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.ready, today]);
+  }, [store.ready, today, targets]);
 
   const targetById = useMemo(() => {
     const m = new Map<string, Target>();
