@@ -29,6 +29,7 @@ import type {
 import { ApiAdapter } from "./db/apiAdapter";
 import type { StorageAdapter } from "./db/adapter";
 import { DEFAULT_SETTINGS, seedData } from "./seed";
+import { reconcileFollowUps } from "./reconcile";
 import { nowISO, uid } from "./utils";
 
 /* The single persistence seam. Today: SQLite via the /api/data route
@@ -108,8 +109,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (cancelled) return;
       if (loaded && Array.isArray(loaded.leads)) {
         // A valid payload (even all-empty arrays for a brand-new DB) — safe to
-        // use and to persist from here on.
-        setData({ ...EMPTY, ...loaded });
+        // use and to persist from here on. Reconcile brings existing records up
+        // to date with newer behaviours (e.g. backfilling lead follow-up dates).
+        setData(reconcileFollowUps({ ...EMPTY, ...loaded }));
         hydratedOk.current = true;
       } else {
         // Load FAILED (null/malformed). Start empty in memory for the UI, but
