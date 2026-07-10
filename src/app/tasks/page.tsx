@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Circle,
   Link2,
+  Phone,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useFocusParam } from "@/components/useFocus";
@@ -99,6 +100,11 @@ function TasksView() {
     return null;
   };
 
+  const linkPhone = (t: Task): string | null => {
+    if (t.linkKind === "lead") return leads.find((l) => l.id === t.linkId)?.phone?.trim() || null;
+    return null;
+  };
+
   const cycleStatus = (t: Task) => {
     const order: Task["status"][] = ["not started", "in progress", "blocked", "done"];
     const next = order[(order.indexOf(t.status) + 1) % order.length];
@@ -147,6 +153,7 @@ function TasksView() {
           <ul className="divide-y divide-[var(--color-line)]">
             {filtered.map((t) => {
               const link = linkName(t);
+              const phone = linkPhone(t);
               const overdue = t.status !== "done" && t.dueDate && isOverdue(t.dueDate);
               return (
                 <li key={t.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--color-surface-2)] transition-colors group">
@@ -165,6 +172,15 @@ function TasksView() {
                     <div className="flex items-center gap-2 mt-0.5 text-[0.73rem] text-[var(--color-dim)]">
                       <span>{t.category}</span>
                       {link && <span className="inline-flex items-center gap-1"><Link2 size={11} /> {link}</span>}
+                      {phone && (
+                        <a
+                          href={`tel:${phone}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 hover:text-[var(--color-ink)] transition-colors"
+                        >
+                          <Phone size={11} /> {phone}
+                        </a>
+                      )}
                     </div>
                   </div>
 

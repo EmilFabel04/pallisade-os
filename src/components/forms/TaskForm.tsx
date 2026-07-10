@@ -57,6 +57,11 @@ export function TaskForm({
     const payload: Draft = { ...d, linkKind, linkId };
     if (initial) update("tasks", initial.id, payload);
     else create("tasks", payload);
+
+    // Logging a follow-up task against a lead sets that lead's next follow-up date.
+    if (linkKind === "lead" && linkId && payload.category === "follow-up" && payload.dueDate) {
+      update("leads", linkId, { nextFollowUp: payload.dueDate.slice(0, 10) });
+    }
     onClose();
   };
 
