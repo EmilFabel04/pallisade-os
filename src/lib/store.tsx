@@ -18,6 +18,7 @@ import type {
   NewsFeed,
   NewsInterests,
   NewsBookmark,
+  Note,
   PainPoint,
   Playbook,
   Project,
@@ -88,6 +89,7 @@ const EMPTY: DataShape = {
   newsFeed: [],
   newsInterests: [],
   newsBookmarks: [],
+  notes: [],
   settings: DEFAULT_SETTINGS,
 };
 
@@ -274,6 +276,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             context: pp.possibleSolution,
           });
       }
+      for (const n of data.notes) {
+        if (match(n.title, n.body))
+          hits.push({
+            kind: "notes",
+            id: n.id,
+            title: n.title || "Untitled",
+            subtitle: "Note",
+            context: n.body.split("\n").find((l) => l.trim()) ?? "",
+          });
+      }
       return hits.slice(0, 30);
     },
     [data],
@@ -323,3 +335,5 @@ export const useNewsFeed = () => (useStore().newsFeed as NewsFeed[])[0] ?? null;
 export const useNewsInterests = () =>
   (useStore().newsInterests as NewsInterests[])[0] ?? null;
 export const useNewsBookmarks = () => useStore().newsBookmarks as NewsBookmark[];
+
+export const useNotes = () => useStore().notes as Note[];

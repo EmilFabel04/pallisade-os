@@ -17,6 +17,7 @@ import {
   PenLine,
   BrainCircuit,
   Newspaper,
+  NotebookPen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,6 +31,7 @@ export interface NavItem {
 export const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, group: "Overview" },
   { href: "/agenda", label: "Agenda", icon: CalendarClock, group: "Overview" },
+  { href: "/notebook", label: "Notebook", icon: NotebookPen, group: "Overview" },
   { href: "/inbox", label: "Inbox", icon: Inbox, group: "Pipeline" },
   { href: "/dial", label: "Dial List", icon: PhoneOutgoing, group: "Pipeline" },
   { href: "/leads", label: "Leads", icon: Users, group: "Pipeline" },

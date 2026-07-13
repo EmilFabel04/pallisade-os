@@ -23,6 +23,7 @@ const HIT_ROUTE: Record<SearchHit["kind"], string> = {
   newsFeed: "/news",
   newsInterests: "/news",
   newsBookmarks: "/news",
+  notes: "/notebook",
 };
 
 const HIT_LABEL: Record<SearchHit["kind"], string> = {
@@ -42,6 +43,7 @@ const HIT_LABEL: Record<SearchHit["kind"], string> = {
   newsFeed: "News Feed",
   newsInterests: "News Interests",
   newsBookmarks: "News Bookmark",
+  notes: "Note",
 };
 
 const QUICK_ACTIONS: { kind: NonNullable<QuickAddKind>; label: string; icon: typeof Plus }[] = [
