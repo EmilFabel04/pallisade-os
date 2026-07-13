@@ -51,6 +51,7 @@ export class ApiAdapter implements StorageAdapter {
       newsFeed: [],
       newsInterests: [],
       newsBookmarks: [],
+      notes: [],
       settings: DEFAULT_SETTINGS,
     };
     await this.save(empty);

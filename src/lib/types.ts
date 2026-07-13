@@ -403,6 +403,14 @@ export interface NewsBookmark extends BaseRecord {
   item: NewsItem;          // snapshot, so it survives feed replacement
 }
 
+/* ---------- notebook ---------- */
+
+export interface Note extends BaseRecord {
+  title: string;   // free text; may be empty ("Untitled" shown in UI)
+  body: string;    // markdown
+  pinned: boolean; // pinned notes sort first
+}
+
 /* ---------- collections registry ---------- */
 
 export interface DataShape {
@@ -422,6 +430,7 @@ export interface DataShape {
   newsFeed: NewsFeed[];
   newsInterests: NewsInterests[];
   newsBookmarks: NewsBookmark[];
+  notes: Note[];
   settings: Settings;
 }
 
@@ -433,4 +442,5 @@ export type AdvisorSnapshot = Omit<
   | "conversations" | "playbooks" | "targets" | "positioningProfiles"
   | "contentThreads" | "brainThreads"
   | "newsFeed" | "newsInterests" | "newsBookmarks"
+  | "notes"
 >;

@@ -18,6 +18,7 @@ import type {
   NewsFeed,
   NewsInterests,
   NewsBookmark,
+  Note,
   PainPoint,
   Playbook,
   Project,
@@ -88,6 +89,7 @@ const EMPTY: DataShape = {
   newsFeed: [],
   newsInterests: [],
   newsBookmarks: [],
+  notes: [],
   settings: DEFAULT_SETTINGS,
 };
 
@@ -323,3 +325,5 @@ export const useNewsFeed = () => (useStore().newsFeed as NewsFeed[])[0] ?? null;
 export const useNewsInterests = () =>
   (useStore().newsInterests as NewsInterests[])[0] ?? null;
 export const useNewsBookmarks = () => useStore().newsBookmarks as NewsBookmark[];
+
+export const useNotes = () => useStore().notes as Note[];
