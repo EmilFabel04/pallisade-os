@@ -276,6 +276,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             context: pp.possibleSolution,
           });
       }
+      for (const n of data.notes) {
+        if (match(n.title, n.body))
+          hits.push({
+            kind: "notes",
+            id: n.id,
+            title: n.title || "Untitled",
+            subtitle: "Note",
+            context: n.body.split("\n").find((l) => l.trim()) ?? "",
+          });
+      }
       return hits.slice(0, 30);
     },
     [data],
