@@ -54,6 +54,20 @@ describe("buildContentSystemPrompt", () => {
     expect(p).toMatch(/search_pain_points/);
     expect(p).toMatch(/never invent/i);
   });
+
+  it("tells the agent when to reach for web_search and to attribute sources inline", () => {
+    const p = buildContentSystemPrompt(base);
+    expect(p).toMatch(/web_search/);
+    expect(p).toMatch(/trend|current|stat/i);
+    // sources named inline in prose, not dumped as bare links
+    expect(p).toMatch(/name the source/i);
+  });
+
+  it("keeps founder/client facts sourced from the CRM tools, not the web", () => {
+    const p = buildContentSystemPrompt(base);
+    // the web-search guidance must restate the boundary
+    expect(p).toMatch(/outside world/i);
+  });
 });
 
 describe("CONTENT_TOOL_NAMES", () => {

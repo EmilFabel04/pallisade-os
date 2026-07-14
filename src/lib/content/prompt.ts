@@ -74,6 +74,14 @@ export function buildContentSystemPrompt(input: ContentPromptInput): string {
     `search_pain_points) to pull genuine customer pains and stories — search_pain_points is your ` +
     `richest seam. Never invent client names, numbers, quotes or history; if you lack a real detail, ` +
     `keep it generic rather than fabricating.\n` +
+    `- Use web_search when current or outside information would make the content land harder ` +
+    `— a live trend to hook onto, a stat worth citing, what competitors or the market are ` +
+    `saying right now. Skip it for pure voice, positioning or structure work; the profile is ` +
+    `already the source of truth there. When a claim comes from the web, name the source ` +
+    `inline in the prose ("per TechCrunch last week...") — no bare URLs, no link list at the ` +
+    `end. Search is for the outside world only: the founder's own customers, pains, numbers ` +
+    `and stories still come from the read tools, and search results never license inventing ` +
+    `client detail.\n` +
     `- Confident and concise beats verbose. No filler.`
   );
 }

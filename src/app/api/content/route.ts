@@ -15,6 +15,10 @@ const CONTENT_TOOLS = TOOLS.filter((t) =>
   (CONTENT_TOOL_NAMES as readonly string[]).includes(t.name),
 );
 
+// Anthropic executes web_search server-side and resolves it inside response.content,
+// so only these local tools need a synthetic tool_result.
+const LOCAL_TOOL_NAMES = new Set<string>(CONTENT_TOOL_NAMES);
+
 export async function GET() {
   return NextResponse.json({ configured: !!process.env.ANTHROPIC_API_KEY, model: MODEL });
 }
@@ -59,6 +63,12 @@ export async function POST(req: Request) {
   });
 
   const client = new Anthropic({ apiKey });
+  const webSearch: Anthropic.WebSearchTool20250305 = {
+    type: "web_search_20250305",
+    name: "web_search",
+    max_uses: 4,
+  };
+  const tools = [webSearch, ...(CONTENT_TOOLS as unknown as Anthropic.Tool[])];
   // resolveTool needs a proposals array for write tools; ours are all read tools,
   // so it stays empty and is never returned to the client.
   const proposals: ProposedAction[] = [];
@@ -69,23 +79,50 @@ export async function POST(req: Request) {
 
   try {
     let finalText = "";
+    // Text runs accumulated across pause_turn resumes of the SAME assistant turn.
+    let turnRuns: string[] = [];
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       const response = await client.messages.create({
         model: MODEL,
         max_tokens: 3072,
         system,
-        tools: CONTENT_TOOLS as unknown as Anthropic.Tool[],
+        tools,
         messages,
       });
 
-      const textParts = response.content
-        .filter((blk): blk is Anthropic.TextBlock => blk.type === "text")
-        .map((blk) => blk.text);
-      if (textParts.length) finalText = textParts.join("\n").trim();
+      // web_search splits prose into contiguous text blocks at citation boundaries:
+      // contiguous blocks are one span (concatenate with no separator — they already
+      // carry their own spacing), while runs separated by a server-tool block (e.g.
+      // server_tool_use / web_search_tool_result) are distinct paragraphs.
+      const runs: string[] = [];
+      let open = false;
+      for (const blk of response.content) {
+        if (blk.type === "text") {
+          if (open) runs[runs.length - 1] += blk.text;
+          else {
+            runs.push(blk.text);
+            open = true;
+          }
+        } else {
+          open = false;
+        }
+      }
+      turnRuns.push(...runs);
+      if (turnRuns.length) finalText = turnRuns.join("\n\n").trim();
 
       const toolUses = response.content.filter(
-        (blk): blk is Anthropic.ToolUseBlock => blk.type === "tool_use",
+        (blk): blk is Anthropic.ToolUseBlock =>
+          blk.type === "tool_use" && LOCAL_TOOL_NAMES.has(blk.name),
       );
+
+      // web_search may pause its server-side loop; resume by re-requesting with the
+      // partial assistant turn appended and no synthetic tool_result. This continues
+      // the same assistant turn, so keep turnRuns — pre-pause prose must survive.
+      if (response.stop_reason === "pause_turn") {
+        messages.push({ role: "assistant", content: response.content });
+        continue;
+      }
+
       if (response.stop_reason !== "tool_use" || toolUses.length === 0) break;
 
       messages.push({ role: "assistant", content: response.content });
@@ -95,6 +132,10 @@ export async function POST(req: Request) {
         content: resolveTool(tu.name, (tu.input ?? {}) as Record<string, unknown>, snapshot, proposals),
       }));
       messages.push({ role: "user", content: results });
+
+      // New turn after tool results: the model restates its answer, so the
+      // pre-tool preamble is throwaway.
+      turnRuns = [];
     }
 
     if (!finalText) finalText = "I couldn't produce a response — try rephrasing.";
