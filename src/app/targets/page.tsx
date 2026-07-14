@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Upload, Crosshair, ArrowUpRight, Trash2 } from "lucide-react";
+import { Upload, Crosshair, ArrowUpRight, PhoneForwarded, Trash2 } from "lucide-react";
 import { useStore, useTargets, useSettings } from "@/lib/store";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
@@ -10,6 +10,9 @@ import { TextInput } from "@/components/ui/Field";
 import { ConfirmDialog } from "@/components/ui/Modal";
 import { ImportCsvModal } from "@/components/targets/ImportCsvModal";
 import { targetToLead } from "@/lib/targets/promote";
+import { callbackDueDate } from "@/lib/targets/callback";
+import { useScheduleCallback } from "@/lib/targets/useScheduleCallback";
+import { todayISO, fmtDate } from "@/lib/utils";
 import type { NewTarget } from "@/lib/targets/mapping";
 import type { Target } from "@/lib/types";
 
@@ -23,10 +26,12 @@ export default function TargetsPage() {
   const store = useStore();
   const targets = useTargets();
   const settings = useSettings();
+  const scheduleCallback = useScheduleCallback();
 
   const [query, setQuery] = useState("");
   const [importing, setImporting] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [callbackFor, setCallbackFor] = useState<Target | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -115,6 +120,13 @@ export default function TargetsPage() {
                         <button className="btn btn-sm" title="Promote to lead" onClick={() => promote(t)}>
                           <ArrowUpRight size={14} /> Promote
                         </button>
+                        <button
+                          className="btn btn-sm"
+                          title="Promote to lead and book a follow-up call in a week"
+                          onClick={() => setCallbackFor(t)}
+                        >
+                          <PhoneForwarded size={14} /> Call back
+                        </button>
                         <button className="btn btn-ghost btn-icon" title="Delete" onClick={() => store.remove("targets", t.id)}>
                           <Trash2 size={14} />
                         </button>
@@ -133,6 +145,21 @@ export default function TargetsPage() {
         onClose={() => setImporting(false)}
         existing={targets}
         onImport={onImport}
+      />
+
+      <ConfirmDialog
+        open={callbackFor != null}
+        onClose={() => setCallbackFor(null)}
+        onConfirm={() => callbackFor && scheduleCallback(callbackFor)}
+        title="Book a call back?"
+        message={
+          callbackFor
+            ? `Promotes ${callbackFor.company} to a lead and adds a task to call ` +
+              `${callbackFor.contactName || "them"} back on ${fmtDate(callbackDueDate(todayISO()))}. ` +
+              `They leave your targets list.`
+            : ""
+        }
+        confirmLabel="Book call back"
       />
 
       <ConfirmDialog

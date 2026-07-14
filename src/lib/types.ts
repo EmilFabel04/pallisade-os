@@ -350,7 +350,7 @@ export interface Target extends BaseRecord {
 export interface DialEntry {
   targetId: string;
   label: string; // denormalized "Company — Contact", captured at snapshot time
-  outcome?: "interested" | "not_interested" | null;
+  outcome?: "interested" | "not_interested" | "callback" | null;
 }
 
 export interface DialList extends BaseRecord {
