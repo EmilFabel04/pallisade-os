@@ -89,7 +89,9 @@ export async function POST(req: Request) {
       const textParts = response.content
         .filter((blk): blk is Anthropic.TextBlock => blk.type === "text")
         .map((blk) => blk.text);
-      if (textParts.length) finalText = textParts.join("\n").trim();
+      // web_search splits prose into contiguous citation-boundary blocks that already
+      // contain proper spacing; join with "" not "\n" to avoid spurious newlines.
+      if (textParts.length) finalText = textParts.join("").trim();
 
       const toolUses = response.content.filter(
         (blk): blk is Anthropic.ToolUseBlock =>
