@@ -42,8 +42,8 @@ export const AFFIRMATIONS: string[] = [
 ];
 
 export function affirmationForDate(date: Date): string {
-  const start = new Date(date.getFullYear(), 0, 0);
-  const diff = date.getTime() - start.getTime();
-  const dayOfYear = Math.floor(diff / 86_400_000);
+  const startUTC = Date.UTC(date.getFullYear(), 0, 0);
+  const dateUTC = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayOfYear = Math.floor((dateUTC - startUTC) / 86_400_000);
   return AFFIRMATIONS[dayOfYear % AFFIRMATIONS.length];
 }

@@ -26,4 +26,10 @@ describe("affirmationForDate", () => {
       expect(AFFIRMATIONS[i]).not.toBe(AFFIRMATIONS[i - 1]);
     }
   });
+
+  it("rotates across the DST spring-forward boundary (Mar 8 -> Mar 9 2026)", () => {
+    const before = affirmationForDate(new Date(2026, 2, 8));
+    const after = affirmationForDate(new Date(2026, 2, 9));
+    expect(before).not.toBe(after);
+  });
 });
