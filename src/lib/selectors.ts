@@ -5,6 +5,8 @@ import type {
   Project,
   Scorecard,
   Task,
+  MetricEntry,
+  MetricKey,
 } from "./types";
 import { LEAD_STATUSES } from "./types";
 import { isToday, todayISO } from "./utils";
@@ -216,4 +218,69 @@ export function allTimeMetrics(
     waitingForFeedback: projects.filter((p) => WAITING_STAGES.includes(p.stage)).length,
     cashCollected: sum((s) => s.revenueClosed),
   };
+}
+
+export interface MetricView {
+  key: MetricKey;
+  current: number;
+  series: { label: string; value: number }[];
+}
+
+/** Latest-dated value for a metric (0 if none) + its full ascending series. */
+export function metricView(entries: MetricEntry[], key: MetricKey): MetricView {
+  const mine = entries
+    .filter((e) => e.metric === key)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    key,
+    current: mine.length ? mine[mine.length - 1].value : 0,
+    series: mine.map((e) => ({ label: e.date, value: e.value })),
+  };
+}
+
+/** The entry for a metric on a given date, if any (for upsert-by-day). */
+export function findMetricEntry(
+  entries: MetricEntry[],
+  key: MetricKey,
+  date: string,
+): MetricEntry | undefined {
+  return entries.find((e) => e.metric === key && e.date === date);
+}
+
+function isBuilt(p: Project): boolean {
+  return BUILT_STAGES.includes(p.stage);
+}
+function isPitched(p: Project): boolean {
+  return PITCHED_STAGES.includes(p.stage) || PITCHED_TYPES.includes(p.type);
+}
+function isWaiting(p: Project): boolean {
+  return WAITING_STAGES.includes(p.stage);
+}
+
+export interface ProjectCounts {
+  built: number;
+  pitched: number;
+  waiting: number;
+}
+
+export function projectCounts(projects: Project[]): ProjectCounts {
+  return {
+    built: projects.filter(isBuilt).length,
+    pitched: projects.filter(isPitched).length,
+    waiting: projects.filter(isWaiting).length,
+  };
+}
+
+/** Cumulative count of qualifying projects over time, by createdAt (ascending). */
+export function projectSeries(
+  projects: Project[],
+  kind: "built" | "pitched" | "waiting",
+): { label: string; value: number }[] {
+  const pred = kind === "built" ? isBuilt : kind === "pitched" ? isPitched : isWaiting;
+  const dates = projects
+    .filter(pred)
+    .map((p) => p.createdAt.slice(0, 10))
+    .sort((a, b) => a.localeCompare(b));
+  let cum = 0;
+  return dates.map((d) => ({ label: d, value: ++cum }));
 }

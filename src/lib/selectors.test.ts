@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { Scorecard, Project } from "@/lib/types";
-import { allTimeMetrics } from "./selectors";
+import { allTimeMetrics, metricView, findMetricEntry, projectCounts, projectSeries } from "./selectors";
+import type { Scorecard, Project, MetricEntry, MetricKey } from "@/lib/types";
 
 function scorecard(over: Partial<Scorecard>): Scorecard {
   return {
@@ -49,6 +49,15 @@ function project(over: Partial<Project>): Project {
   };
 }
 
+function metricEntry(over: Partial<MetricEntry> & { metric: MetricKey; date: string; value: number }): MetricEntry {
+  return {
+    id: over.id ?? `${over.metric}-${over.date}`,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:00.000Z",
+    ...over,
+  };
+}
+
 describe("allTimeMetrics", () => {
   it("sums scorecard counters across all days", () => {
     const m = allTimeMetrics(
@@ -88,5 +97,75 @@ describe("allTimeMetrics", () => {
     expect(m.projectsBuilt).toBe(4);       // ids 2,3,4,5
     expect(m.projectsPitched).toBe(4);     // ids 3,4,5 (stage) + 6 (type)
     expect(m.waitingForFeedback).toBe(2);  // ids 3,4
+  });
+});
+
+describe("metricView", () => {
+  it("returns 0 current and empty series when no entries", () => {
+    const v = metricView([], "callsMade");
+    expect(v.current).toBe(0);
+    expect(v.series).toEqual([]);
+  });
+
+  it("current is the latest-dated entry; series is ascending by date and metric-filtered", () => {
+    const entries: MetricEntry[] = [
+      metricEntry({ metric: "callsMade", date: "2026-07-03", value: 30 }),
+      metricEntry({ metric: "callsMade", date: "2026-07-01", value: 10 }),
+      metricEntry({ metric: "callsMade", date: "2026-07-02", value: 20 }),
+      metricEntry({ metric: "meetingsBooked", date: "2026-07-05", value: 99 }),
+    ];
+    const v = metricView(entries, "callsMade");
+    expect(v.current).toBe(30);
+    expect(v.series.map((p) => p.value)).toEqual([10, 20, 30]);
+    expect(v.series.map((p) => p.label)).toEqual(["2026-07-01", "2026-07-02", "2026-07-03"]);
+  });
+});
+
+describe("findMetricEntry", () => {
+  const entries: MetricEntry[] = [
+    metricEntry({ metric: "callsMade", date: "2026-07-01", value: 5 }),
+    metricEntry({ metric: "callsMade", date: "2026-07-02", value: 8 }),
+  ];
+  it("finds the entry for a metric+date", () => {
+    expect(findMetricEntry(entries, "callsMade", "2026-07-02")?.value).toBe(8);
+  });
+  it("returns undefined when absent", () => {
+    expect(findMetricEntry(entries, "callsMade", "2026-07-09")).toBeUndefined();
+    expect(findMetricEntry(entries, "meetingsBooked", "2026-07-01")).toBeUndefined();
+  });
+});
+
+describe("projectCounts", () => {
+  it("classifies built / pitched / waiting", () => {
+    const c = projectCounts([
+      project({ id: "1", stage: "idea", type: "research" }),
+      project({ id: "2", stage: "building", type: "paid project" }),
+      project({ id: "3", stage: "sent", type: "paid project" }),
+      project({ id: "4", stage: "demo-ready", type: "demo" }),
+      project({ id: "5", stage: "closed", type: "paid project" }),
+      project({ id: "6", stage: "discovery", type: "proposal" }),
+    ]);
+    expect(c.built).toBe(4);
+    expect(c.pitched).toBe(4);
+    expect(c.waiting).toBe(2);
+  });
+});
+
+describe("projectSeries", () => {
+  it("cumulative count of qualifying projects, ascending by createdAt", () => {
+    const s = projectSeries(
+      [
+        project({ id: "a", stage: "building", createdAt: "2026-05-10T00:00:00.000Z" }),
+        project({ id: "b", stage: "idea", createdAt: "2026-05-11T00:00:00.000Z" }), // not built
+        project({ id: "c", stage: "closed", createdAt: "2026-06-01T00:00:00.000Z" }),
+      ],
+      "built",
+    );
+    expect(s.map((p) => p.value)).toEqual([1, 2]);
+    expect(s.map((p) => p.label)).toEqual(["2026-05-10", "2026-06-01"]);
+  });
+
+  it("empty when nothing qualifies", () => {
+    expect(projectSeries([project({ id: "x", stage: "idea", type: "research" })], "built")).toEqual([]);
   });
 });
