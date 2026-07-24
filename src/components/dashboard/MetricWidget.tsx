@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Pencil } from "lucide-react";
 import { fmtCompact } from "@/lib/utils";
@@ -28,18 +28,25 @@ export function MetricWidget({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const handledRef = useRef(false);
 
   const startEdit = () => {
     if (!editable) return;
     setDraft(String(value));
+    handledRef.current = false;
     setEditing(true);
   };
   const commit = () => {
+    if (handledRef.current) return;
+    handledRef.current = true;
     const n = Number(draft);
     if (Number.isFinite(n) && onCommit) onCommit(Math.max(0, n));
     setEditing(false);
   };
-  const cancel = () => setEditing(false);
+  const cancel = () => {
+    handledRef.current = true;
+    setEditing(false);
+  };
 
   return (
     <div className="panel p-4 flex flex-col gap-3 hover:border-[var(--color-line-strong)] transition-colors">
