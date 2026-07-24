@@ -179,6 +179,7 @@ export interface Scorecard extends BaseRecord {
   dials: number;
   emails: number;
   linkedinMessages: number;
+  linkedinPosts: number;
   replies: number;
   conversations: number;
   leadsCreated: number;

@@ -102,6 +102,7 @@ export default function DialPage() {
         dials: 1,
         emails: 0,
         linkedinMessages: 0,
+        linkedinPosts: 0,
         replies: 0,
         conversations: 0,
         leadsCreated: 0,

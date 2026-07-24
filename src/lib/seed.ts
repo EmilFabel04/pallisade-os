@@ -578,6 +578,7 @@ function buildScorecards(): Scorecard[] {
     const dials = Math.max(0, Math.round((18 + ramp * 22 + wobble) * base));
     const emails = Math.max(0, Math.round((12 + ramp * 16 + wobble) * base));
     const linkedinMessages = Math.max(0, Math.round((8 + ramp * 12 + wobble / 2) * base));
+    const linkedinPosts = !weekend && i % 3 === 0 ? 1 : 0;
     const replies = Math.max(0, Math.round((dials + emails + linkedinMessages) * 0.12));
     const conversations = Math.max(0, Math.round(replies * 0.6));
     const leadsCreated = Math.max(0, Math.round(conversations * 0.5 + (ramp > 0.5 ? 1 : 0)));
@@ -593,6 +594,7 @@ function buildScorecards(): Scorecard[] {
           dials,
           emails,
           linkedinMessages,
+          linkedinPosts,
           replies,
           conversations,
           leadsCreated,
