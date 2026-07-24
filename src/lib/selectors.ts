@@ -182,3 +182,38 @@ export function dashboardMetrics(
     followUpsDue: followUpsDueToday(leads, tasks),
   };
 }
+
+export interface AllTimeMetrics {
+  meetingsBooked: number;
+  callsMade: number;
+  linkedinPosts: number;
+  projectsBuilt: number;
+  projectsPitched: number;
+  waitingForFeedback: number;
+  cashCollected: number;
+}
+
+const BUILT_STAGES: string[] = ["building", "testing", "demo-ready", "sent", "closed"];
+const PITCHED_STAGES: string[] = ["demo-ready", "sent", "closed"];
+const PITCHED_TYPES: string[] = ["proposal", "demo"];
+const WAITING_STAGES: string[] = ["sent", "demo-ready"];
+
+export function allTimeMetrics(
+  scorecards: Scorecard[],
+  projects: Project[],
+): AllTimeMetrics {
+  const sum = (pick: (s: Scorecard) => number) =>
+    scorecards.reduce((acc, s) => acc + (pick(s) || 0), 0);
+
+  return {
+    meetingsBooked: sum((s) => s.meetingsBooked),
+    callsMade: sum((s) => s.dials),
+    linkedinPosts: sum((s) => s.linkedinPosts),
+    projectsBuilt: projects.filter((p) => BUILT_STAGES.includes(p.stage)).length,
+    projectsPitched: projects.filter(
+      (p) => PITCHED_STAGES.includes(p.stage) || PITCHED_TYPES.includes(p.type),
+    ).length,
+    waitingForFeedback: projects.filter((p) => WAITING_STAGES.includes(p.stage)).length,
+    cashCollected: sum((s) => s.revenueClosed),
+  };
+}
