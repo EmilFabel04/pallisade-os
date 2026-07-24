@@ -48,7 +48,7 @@ type NewRecord<K extends CollectionKey> = Omit<
 >;
 
 export interface SearchHit {
-  kind: CollectionKey | "painPoints";
+  kind: Exclude<CollectionKey, "metricEntries"> | "painPoints";
   id: string;
   title: string;
   subtitle: string;
@@ -90,6 +90,7 @@ const EMPTY: DataShape = {
   newsInterests: [],
   newsBookmarks: [],
   notes: [],
+  metricEntries: [],
   settings: DEFAULT_SETTINGS,
 };
 

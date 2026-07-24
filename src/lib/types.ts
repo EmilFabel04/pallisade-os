@@ -412,6 +412,21 @@ export interface Note extends BaseRecord {
   pinned: boolean; // pinned notes sort first
 }
 
+export const METRIC_KEYS = [
+  "callsMade",
+  "meetingsBooked",
+  "linkedinPosts",
+  "cashCollected",
+] as const;
+export type MetricKey = (typeof METRIC_KEYS)[number];
+
+/** One editable dashboard metric's value on one day (one record per metric+date). */
+export interface MetricEntry extends BaseRecord {
+  metric: MetricKey;
+  date: string; // ISO date (YYYY-MM-DD)
+  value: number;
+}
+
 /* ---------- collections registry ---------- */
 
 export interface DataShape {
@@ -432,6 +447,7 @@ export interface DataShape {
   newsInterests: NewsInterests[];
   newsBookmarks: NewsBookmark[];
   notes: Note[];
+  metricEntries: MetricEntry[];
   settings: Settings;
 }
 
@@ -443,5 +459,5 @@ export type AdvisorSnapshot = Omit<
   | "conversations" | "playbooks" | "targets" | "positioningProfiles"
   | "contentThreads" | "brainThreads"
   | "newsFeed" | "newsInterests" | "newsBookmarks"
-  | "notes"
+  | "notes" | "metricEntries"
 >;

@@ -746,6 +746,7 @@ export function seedData(): DataShape {
     newsInterests: [],
     newsBookmarks: [],
     notes: [],
+    metricEntries: [],
     settings: DEFAULT_SETTINGS,
   };
 }

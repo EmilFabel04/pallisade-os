@@ -31,6 +31,7 @@ export const COLLECTIONS = [
   "newsInterests",
   "newsBookmarks",
   "notes",
+  "metricEntries",
 ] as const;
 export type Coll = (typeof COLLECTIONS)[number];
 
