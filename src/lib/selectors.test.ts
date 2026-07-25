@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { metricView, findMetricEntry, projectCounts, projectSeries } from "./selectors";
+import { metricView, findMetricEntry, projectCounts } from "./selectors";
 import type { Project, MetricEntry, MetricKey } from "@/lib/types";
 
 function project(over: Partial<Project>): Project {
@@ -80,24 +80,5 @@ describe("projectCounts", () => {
     expect(c.built).toBe(4);
     expect(c.pitched).toBe(4);
     expect(c.waiting).toBe(2);
-  });
-});
-
-describe("projectSeries", () => {
-  it("cumulative count of qualifying projects, ascending by createdAt", () => {
-    const s = projectSeries(
-      [
-        project({ id: "a", stage: "building", createdAt: "2026-05-10T00:00:00.000Z" }),
-        project({ id: "b", stage: "idea", createdAt: "2026-05-11T00:00:00.000Z" }), // not built
-        project({ id: "c", stage: "closed", createdAt: "2026-06-01T00:00:00.000Z" }),
-      ],
-      "built",
-    );
-    expect(s.map((p) => p.value)).toEqual([1, 2]);
-    expect(s.map((p) => p.label)).toEqual(["2026-05-10", "2026-06-01"]);
-  });
-
-  it("empty when nothing qualifies", () => {
-    expect(projectSeries([project({ id: "x", stage: "idea", type: "research" })], "built")).toEqual([]);
   });
 });

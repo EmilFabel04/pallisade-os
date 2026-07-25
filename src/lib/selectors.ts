@@ -240,17 +240,3 @@ export function projectCounts(projects: Project[]): ProjectCounts {
     waiting: projects.filter(isWaiting).length,
   };
 }
-
-/** Cumulative count of qualifying projects over time, by createdAt (ascending). */
-export function projectSeries(
-  projects: Project[],
-  kind: "built" | "pitched" | "waiting",
-): { label: string; value: number }[] {
-  const pred = kind === "built" ? isBuilt : kind === "pitched" ? isPitched : isWaiting;
-  const dates = projects
-    .filter(pred)
-    .map((p) => p.createdAt.slice(0, 10))
-    .sort((a, b) => a.localeCompare(b));
-  let cum = 0;
-  return dates.map((d) => ({ label: d, value: ++cum }));
-}
