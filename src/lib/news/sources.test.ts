@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { fetchStructured } from "./sources";
 import { itemId } from "./normalize";
 import type { NewsItem } from "@/lib/types";
@@ -22,5 +22,20 @@ describe("fetchStructured", () => {
     expect(out.degraded).toEqual(["Reddit"]);
     const urls = out.items.map((i) => i.url).sort();
     expect(urls).toEqual(["https://dup", "https://g/1"]); // dup collapsed
+  });
+
+  it("logs why a source failed instead of swallowing the error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await fetchStructured(interests, {
+      github: async () => [],
+      reddit: async () => { throw new Error("Reddit r/SaaS 403"); },
+      rss: async () => [],
+    });
+
+    expect(warn).toHaveBeenCalled();
+    const logged = warn.mock.calls.flat().map(String).join(" ");
+    expect(logged).toContain("Reddit");
+    expect(logged).toContain("403"); // the real cause must survive, not just the name
   });
 });

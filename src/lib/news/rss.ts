@@ -46,11 +46,15 @@ function host(url: string): string {
   return m ? m[1] : "rss";
 }
 
+/** Split a feed into its raw <item>/<entry> blocks. */
+export function rssBlocks(xml: string): string[] {
+  return xml.match(/<(item|entry)\b[\s\S]*?<\/\1>/gi) ?? [];
+}
+
 export function parseRssXml(
   xml: string,
 ): { title: string; link: string; description: string; pubDate: string | null }[] {
-  const blocks = xml.match(/<(item|entry)\b[\s\S]*?<\/\1>/gi) ?? [];
-  return blocks.map((b) => ({
+  return rssBlocks(xml).map((b) => ({
     title: stripTags(pick(b, "title")),
     link: pickLink(b),
     description: stripTags(pick(b, "description") || pick(b, "summary") || pick(b, "content")).slice(0, 240),
@@ -58,7 +62,7 @@ export function parseRssXml(
   }));
 }
 
-function toISO(pubDate: string | null): string | null {
+export function toISO(pubDate: string | null): string | null {
   if (!pubDate) return null;
   const d = new Date(pubDate);
   return isNaN(d.getTime()) ? null : d.toISOString();

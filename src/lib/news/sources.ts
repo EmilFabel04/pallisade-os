@@ -33,7 +33,10 @@ export async function fetchStructured(
     jobs.map(async (j) => {
       try {
         items.push(...(await j.run(interests)));
-      } catch {
+      } catch (err) {
+        // The UI only surfaces the source name, so log the cause — otherwise a
+        // failing source is undiagnosable.
+        console.warn(`[news] source ${j.name} failed:`, err instanceof Error ? err.message : err);
         degraded.push(j.name);
       }
     }),
