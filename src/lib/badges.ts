@@ -2,6 +2,7 @@ import type {
   InteractionType,
   LeadQuality,
   LeadStatus,
+  MilestoneStatus,
   Priority,
   ProjectStage,
   TaskStatus,
@@ -67,6 +68,21 @@ export function taskStatusTone(s: TaskStatus): Tone {
     case "blocked":
       return "accent";
     case "not started":
+      return "neutral";
+    default:
+      return "neutral";
+  }
+}
+
+export function milestoneStatusTone(s: MilestoneStatus): Tone {
+  switch (s) {
+    case "done":
+      return "positive";
+    case "in progress":
+      return "accent";
+    case "blocked":
+      return "warning";
+    case "planned":
       return "neutral";
     default:
       return "neutral";
