@@ -58,6 +58,7 @@ describe("callbackTask", () => {
       status: "not started",
       dueDate: "2026-07-21",
       notes: "",
+      milestoneId: null,
     });
   });
 

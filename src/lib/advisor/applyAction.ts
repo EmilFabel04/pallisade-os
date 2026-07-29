@@ -27,6 +27,7 @@ export function buildTask(a: Args): New<Task> {
     status: (a.status as TaskStatus) ?? "not started",
     dueDate: orNull(a.dueDate),
     notes: str(a.notes),
+    milestoneId: orNull(a.milestoneId),
   };
 }
 
@@ -107,6 +108,7 @@ export function buildProject(a: Args): New<Project> {
     nextAction: str(a.nextAction),
     deliverables: str(a.deliverables),
     notes: str(a.notes),
+    repoPath: orNull(a.repoPath),
   };
 }
 

@@ -15,6 +15,7 @@ import type {
   DialList,
   Interaction,
   Lead,
+  Milestone,
   NewsFeed,
   NewsInterests,
   NewsBookmark,
@@ -22,6 +23,7 @@ import type {
   PainPoint,
   Playbook,
   Project,
+  ProjectThread,
   Scorecard,
   Settings,
   Target,
@@ -91,6 +93,8 @@ const EMPTY: DataShape = {
   newsBookmarks: [],
   notes: [],
   metricEntries: [],
+  milestones: [],
+  projectThreads: [],
   settings: DEFAULT_SETTINGS,
 };
 

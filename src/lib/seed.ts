@@ -370,6 +370,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     nextAction: "Chase Riaan for the CSV exports and finalise matching rules",
     deliverables: "Reconciliation tool, admin dashboard, 1h handover session",
     notes: "First paid build. Get it right — strong referral potential.",
+    repoPath: null,
   },
   {
     name: "Investor Reporting Pilot",
@@ -384,6 +385,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     nextAction: "Send the security one-pager Johan asked for",
     deliverables: "Automated report pipeline demo + branded PDF sample",
     notes: "If the pilot lands this becomes a retained build.",
+    repoPath: null,
   },
   {
     name: "Onboarding Workflow Demo",
@@ -398,6 +400,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     nextAction: "Map their current onboarding steps from the call notes",
     deliverables: "Clickable onboarding flow mockup",
     notes: "Prep a sharp demo for the discovery call next week.",
+    repoPath: null,
   },
   {
     name: "Pallisade Outreach Engine",
@@ -412,6 +415,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     nextAction: "Test the new email warm-up settings",
     deliverables: "Internal tool to run my own outreach at scale",
     notes: "Dogfood it — also a potential productised offering later.",
+    repoPath: null,
   },
   {
     name: "Contract Assistant Proposal",
@@ -426,6 +430,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     nextAction: "Follow up to confirm receipt and offer a walkthrough",
     deliverables: "Written proposal with ROI breakdown",
     notes: "ROI-led proposal. Follow up today.",
+    repoPath: null,
   },
 ];
 
@@ -445,6 +450,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "not started",
     dueDate: D(0),
     notes: "He flagged data security — send the one-pager then call.",
+    milestoneId: null,
   },
   {
     title: "Confirm Thornveld Legal received the proposal",
@@ -455,6 +461,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "not started",
     dueDate: D(0),
     notes: "Offer a 15-min walkthrough of the ROI numbers.",
+    milestoneId: null,
   },
   {
     title: "Chase Riaan for reconciliation sample data",
@@ -465,6 +472,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "blocked",
     dueDate: D(-1),
     notes: "Build is blocked until the CSV exports arrive.",
+    milestoneId: null,
   },
   {
     title: "Send value-led follow-up to Dunewright Logistics",
@@ -475,6 +483,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "not started",
     dueDate: D(1),
     notes: "Opened twice, no reply. Lead with the dispatch pain.",
+    milestoneId: null,
   },
   {
     title: "Map Sugarbird Wealth onboarding flow",
@@ -485,6 +494,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "in progress",
     dueDate: D(3),
     notes: "Use the call notes to draft the flow before discovery call.",
+    milestoneId: null,
   },
   {
     title: "Build core matching engine",
@@ -495,6 +505,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "in progress",
     dueDate: D(5),
     notes: "Bank vs ledger matching with tolerance rules.",
+    milestoneId: null,
   },
   {
     title: "Write 5 cold LinkedIn messages",
@@ -505,6 +516,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "not started",
     dueDate: D(0),
     notes: "Target boutique asset managers in Cape Town.",
+    milestoneId: null,
   },
   {
     title: "Publish SEO article: 'Automating fund reporting'",
@@ -515,6 +527,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "not started",
     dueDate: D(6),
     notes: "Target keyword: automated investor reporting South Africa.",
+    milestoneId: null,
   },
   {
     title: "Invoice Tallyhook Audit for deposit",
@@ -525,6 +538,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "done",
     dueDate: D(-2),
     notes: "50% deposit invoice sent and paid.",
+    milestoneId: null,
   },
   {
     title: "Tune outreach engine email deliverability",
@@ -535,6 +549,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "in progress",
     dueDate: D(2),
     notes: "Adjust warm-up volume and SPF/DKIM.",
+    milestoneId: null,
   },
   {
     title: "Prep Sugarbird Wealth discovery call agenda",
@@ -545,6 +560,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "not started",
     dueDate: D(1),
     notes: "Three sharp questions + a teaser of the onboarding demo.",
+    milestoneId: null,
   },
   {
     title: "Reconcile this week's expenses",
@@ -555,6 +571,7 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
     status: "not started",
     dueDate: D(4),
     notes: "",
+    milestoneId: null,
   },
 ];
 
@@ -747,6 +764,8 @@ export function seedData(): DataShape {
     newsBookmarks: [],
     notes: [],
     metricEntries: [],
+    milestones: [],
+    projectThreads: [],
     settings: DEFAULT_SETTINGS,
   };
 }

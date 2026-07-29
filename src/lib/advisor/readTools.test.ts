@@ -4,7 +4,7 @@ import type { AdvisorSnapshot } from "@/lib/types";
 
 function emptySnapshot(): AdvisorSnapshot {
   return {
-    leads: [], interactions: [], projects: [], tasks: [], scorecards: [], painPoints: [], dialLists: [],
+    leads: [], interactions: [], projects: [], tasks: [], scorecards: [], painPoints: [], dialLists: [], milestones: [],
     settings: {
       businessName: "X", founderName: "Y", mainMarket: "Z", services: "S",
       accentColor: "#000", currency: "ZAR", secondaryCurrencyEnabled: false,
@@ -51,9 +51,9 @@ describe("queryTasks", () => {
     const snap = emptySnapshot();
     snap.tasks = [
       { ...base, id: "t1", title: "Call Acme", linkKind: "none", linkId: null, category: "follow-up",
-        priority: "high", status: "not started", dueDate: "2026-06-12", notes: "" },
+        priority: "high", status: "not started", dueDate: "2026-06-12", notes: "", milestoneId: null },
       { ...base, id: "t2", title: "Done thing", linkKind: "none", linkId: null, category: "admin",
-        priority: "low", status: "done", dueDate: null, notes: "" },
+        priority: "low", status: "done", dueDate: null, notes: "", milestoneId: null },
     ];
     const out = queryTasks(snap, { status: "not started" });
     expect(out).toHaveLength(1);

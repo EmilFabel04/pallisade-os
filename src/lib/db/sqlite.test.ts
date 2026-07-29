@@ -8,3 +8,10 @@ describe("sqlite COLLECTIONS registry", () => {
     expect(COLLECTIONS).toContain("newsBookmarks");
   });
 });
+
+describe("sqlite COLLECTIONS registry — project tracker", () => {
+  it("includes the milestone and project-thread collections so they persist", () => {
+    expect(COLLECTIONS).toContain("milestones");
+    expect(COLLECTIONS).toContain("projectThreads");
+  });
+});
