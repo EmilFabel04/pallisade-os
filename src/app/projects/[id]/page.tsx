@@ -15,13 +15,14 @@ import { OverviewTab } from "@/components/projects/OverviewTab";
 import { MilestonesTab } from "@/components/projects/MilestonesTab";
 import { TasksTab } from "@/components/projects/TasksTab";
 import { RepoTab } from "@/components/projects/RepoTab";
+import { ChatTab } from "@/components/projects/ChatTab";
 import { useRepo } from "@/components/projects/useRepo";
 import { matchCommits } from "@/lib/git/milestoneProgress";
 import type { Milestone } from "@/lib/types";
 import { priorityTone, projectStageTone } from "@/lib/badges";
 import { cn } from "@/lib/utils";
 
-const TABS = ["Overview", "Milestones", "Tasks", "Repo"] as const;
+const TABS = ["Overview", "Milestones", "Tasks", "Repo", "Chat"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -150,6 +151,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       )}
 
       {tab === "Repo" && <RepoTab project={project} repo={repo} />}
+
+      {tab === "Chat" && (
+        <ChatTab project={project} projectMilestones={projectMilestones} projectTasks={projectTasks} />
+      )}
 
       <Modal open={editing} onClose={() => setEditing(false)} title={`Edit — ${project.name}`}>
         <ProjectForm initial={project} onClose={() => setEditing(false)} />
