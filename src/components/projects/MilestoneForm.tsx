@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { MILESTONE_STATUSES, type Milestone } from "@/lib/types";
 import { useStore } from "@/lib/store";
+import { detectCycles } from "@/lib/projects/schedule";
 import { Field, FormGrid, NumberInput, Select, TextArea, TextInput } from "@/components/ui/Field";
 import { FormActions } from "@/components/forms/FormActions";
 
@@ -19,7 +20,7 @@ export function MilestoneForm({
   nextOrder?: number;
   onClose: () => void;
 }) {
-  const { create, update } = useStore();
+  const { milestones, create, update } = useStore();
   const [d, setD] = useState<Draft>(() => ({
     projectId,
     name: initial?.name ?? "",
@@ -36,9 +37,24 @@ export function MilestoneForm({
 
   const datesInvalid = !!d.startDate && !!d.endDate && d.endDate < d.startDate;
 
+  const siblings = milestones
+    .filter((m) => m.projectId === projectId && m.id !== initial?.id)
+    .sort((a, b) => a.order - b.order);
+
+  // Validate against the graph as it WOULD be after this save.
+  const wouldCycle = useMemo(() => {
+    const draftAsRecord: Milestone = {
+      ...(initial ?? { id: "__draft", createdAt: "", updatedAt: "" }),
+      ...d,
+      id: initial?.id ?? "__draft",
+    } as Milestone;
+    const next = [...siblings, draftAsRecord];
+    return detectCycles(next).length > 0;
+  }, [d, initial, siblings]);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!d.name.trim() || datesInvalid) return;
+    if (!d.name.trim() || datesInvalid || wouldCycle) return;
     if (initial) update("milestones", initial.id, d);
     else create("milestones", d);
     onClose();
@@ -73,6 +89,27 @@ export function MilestoneForm({
         </Field>
       </FormGrid>
 
+      {siblings.length > 0 && (
+        <Field
+          label="Depends on"
+          className="mt-3.5"
+          hint={wouldCycle ? "That would create a dependency loop." : "Cmd/Ctrl-click to select several."}
+        >
+          <select
+            multiple
+            className="select h-24"
+            value={d.dependsOn}
+            onChange={(e) =>
+              set("dependsOn", Array.from(e.target.selectedOptions, (o) => o.value))
+            }
+          >
+            {siblings.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </Field>
+      )}
+
       <Field label="Notes" className="mt-3.5">
         <TextArea value={d.notes} onChange={(e) => set("notes", e.target.value)} rows={2} />
       </Field>
@@ -80,7 +117,7 @@ export function MilestoneForm({
       <FormActions
         onCancel={onClose}
         saveLabel={initial ? "Save changes" : "Add milestone"}
-        saveDisabled={!d.name.trim() || datesInvalid}
+        saveDisabled={!d.name.trim() || datesInvalid || wouldCycle}
       />
     </form>
   );

@@ -20,6 +20,7 @@ import { Modal, ConfirmDialog } from "@/components/ui/Modal";
 import { DetailGrid, DetailRow } from "@/components/ui/Detail";
 import { ProjectForm } from "@/components/forms/ProjectForm";
 import { TaskForm } from "@/components/forms/TaskForm";
+import { GanttChart } from "@/components/projects/GanttChart";
 import { MilestoneForm } from "@/components/projects/MilestoneForm";
 import { MilestoneList } from "@/components/projects/MilestoneList";
 import type { Milestone, Task } from "@/lib/types";
@@ -103,7 +104,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
       {tab === "Overview" && (
         <div className="space-y-4">
-          {/* Gantt slot — filled in Task 13 */}
+          <Panel title="Timeline">
+            <GanttChart
+              groups={[{ key: project.id, milestones: projectMilestones }]}
+              onSelect={setEditMilestone}
+            />
+          </Panel>
           <Panel title="Status">
             <DetailGrid>
               <DetailRow label="Start date">{fmtDate(project.startDate)}</DetailRow>
@@ -133,21 +139,29 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       )}
 
       {tab === "Milestones" && (
-        <Panel
-          title="Milestones"
-          action={
-            <button className="btn btn-sm" onClick={() => setAddingMilestone(true)}>
-              <Plus size={13} /> Add
-            </button>
-          }
-        >
-          <MilestoneList
-            milestones={projectMilestones}
-            tasks={projectTasks}
-            onEdit={setEditMilestone}
-            onDelete={setDeleteMilestone}
-          />
-        </Panel>
+        <div className="space-y-4">
+          <Panel title="Timeline">
+            <GanttChart
+              groups={[{ key: project.id, milestones: projectMilestones }]}
+              onSelect={setEditMilestone}
+            />
+          </Panel>
+          <Panel
+            title="Milestones"
+            action={
+              <button className="btn btn-sm" onClick={() => setAddingMilestone(true)}>
+                <Plus size={13} /> Add
+              </button>
+            }
+          >
+            <MilestoneList
+              milestones={projectMilestones}
+              tasks={projectTasks}
+              onEdit={setEditMilestone}
+              onDelete={setDeleteMilestone}
+            />
+          </Panel>
+        </div>
       )}
 
       {tab === "Tasks" && (
