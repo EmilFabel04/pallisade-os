@@ -23,11 +23,13 @@ import { TaskForm } from "@/components/forms/TaskForm";
 import { GanttChart } from "@/components/projects/GanttChart";
 import { MilestoneForm } from "@/components/projects/MilestoneForm";
 import { MilestoneList } from "@/components/projects/MilestoneList";
+import { RepoLink } from "@/components/projects/RepoLink";
+import { useRepo } from "@/components/projects/useRepo";
 import type { Milestone, Task } from "@/lib/types";
 import { priorityTone, projectStageTone, taskStatusTone } from "@/lib/badges";
 import { fmtDate, relativeDay, cn } from "@/lib/utils";
 
-const TABS = ["Overview", "Milestones", "Tasks"] as const;
+const TABS = ["Overview", "Milestones", "Tasks", "Repo"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -49,6 +51,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     () => tasks.filter((t) => t.linkKind === "project" && t.linkId === id),
     [tasks, id],
   );
+  const repo = useRepo(project?.repoPath ?? null);
 
   if (!project)
     return (
@@ -73,6 +76,25 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </Link>
           <h1 className="text-[1.35rem] font-semibold text-[var(--color-ink)] truncate">{project.name}</h1>
           <p className="text-[0.8rem] text-[var(--color-dim)]">{project.company}</p>
+          {project.repoPath && (
+            <p className="text-[0.74rem] text-[var(--color-dim)] tnum mt-0.5">
+              {repo.error ? (
+                <span className="text-[var(--color-accent-soft)]">
+                  Repo not found at {project.repoPath}
+                </span>
+              ) : repo.status ? (
+                <>
+                  {repo.status.branch || "(detached)"}
+                  {repo.status.staged + repo.status.unstaged + repo.status.untracked > 0 &&
+                    ` · ${repo.status.staged + repo.status.unstaged + repo.status.untracked} uncommitted`}
+                  {repo.status.ahead > 0 && ` · ${repo.status.ahead} ahead`}
+                  {repo.status.behind > 0 && ` · ${repo.status.behind} behind`}
+                </>
+              ) : (
+                "Reading repo…"
+              )}
+            </p>
+          )}
         </div>
         <button className="btn shrink-0" onClick={() => setEditing(true)}>
           <Pencil size={15} /> Edit
@@ -178,6 +200,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             tasks={projectTasks}
             onToggle={(t) => update("tasks", t.id, { status: t.status === "done" ? "not started" : "done" })}
           />
+        </Panel>
+      )}
+
+      {tab === "Repo" && (
+        <Panel title="Repository">
+          <RepoLink project={project} />
         </Panel>
       )}
 

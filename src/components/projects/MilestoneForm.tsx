@@ -89,6 +89,19 @@ export function MilestoneForm({
         </Field>
       </FormGrid>
 
+      <Field
+        label="Commit scope"
+        className="mt-3.5"
+        hint="Optional. Matches feat(scope): or [scope] in commit subjects. Leave blank to match by date."
+      >
+        <TextInput
+          value={d.commitScope}
+          onChange={(e) => set("commitScope", e.target.value)}
+          placeholder="gantt"
+          spellCheck={false}
+        />
+      </Field>
+
       {siblings.length > 0 && (
         <Field
           label="Depends on"
