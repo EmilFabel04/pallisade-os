@@ -159,8 +159,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             </button>
           }
         >
-          {/* Flat for now; Task 8 groups these by milestone. */}
-          <FlatTasks
+          <GroupedTasks
+            milestones={projectMilestones}
             tasks={projectTasks}
             onToggle={(t) => update("tasks", t.id, { status: t.status === "done" ? "not started" : "done" })}
           />
@@ -200,26 +200,49 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   );
 }
 
-/** A working flat task list. Task 8 replaces this with a milestone-grouped one. */
-function FlatTasks({ tasks, onToggle }: { tasks: Task[]; onToggle: (t: Task) => void }) {
-  if (tasks.length === 0)
+function GroupedTasks({
+  milestones,
+  tasks,
+  onToggle,
+}: {
+  milestones: Milestone[];
+  tasks: Task[];
+  onToggle: (t: Task) => void;
+}) {
+  const groups = [
+    ...milestones.map((m) => ({ key: m.id, label: m.name, items: tasks.filter((t) => t.milestoneId === m.id) })),
+    {
+      key: "unassigned",
+      label: "Unassigned",
+      items: tasks.filter((t) => !t.milestoneId || !milestones.some((m) => m.id === t.milestoneId)),
+    },
+  ].filter((g) => g.items.length > 0);
+
+  if (groups.length === 0)
     return <p className="text-[0.8rem] text-[var(--color-muted)]">No tasks linked yet.</p>;
 
   return (
-    <ul className="space-y-1.5">
-      {tasks.map((t) => (
-        <li key={t.id} className="flex items-center gap-2.5 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-2)] px-3 py-2">
-          <button onClick={() => onToggle(t)} className="shrink-0" aria-label="Toggle done">
-            {t.status === "done"
-              ? <CheckCircle2 size={16} className="text-[var(--color-positive)]" />
-              : <Circle size={16} className="text-[var(--color-dim)] hover:text-[var(--color-ink)]" />}
-          </button>
-          <span className={cn("flex-1 text-[0.83rem]", t.status === "done" ? "line-through text-[var(--color-dim)]" : "text-[var(--color-ink-soft)]")}>
-            {t.title}
-          </span>
-          <Badge tone={taskStatusTone(t.status)} dot={false}>{t.status}</Badge>
-        </li>
+    <div className="space-y-4">
+      {groups.map((g) => (
+        <div key={g.key}>
+          <p className="eyebrow mb-2">{g.label}</p>
+          <ul className="space-y-1.5">
+            {g.items.map((t) => (
+              <li key={t.id} className="flex items-center gap-2.5 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-2)] px-3 py-2">
+                <button onClick={() => onToggle(t)} className="shrink-0" aria-label="Toggle done">
+                  {t.status === "done"
+                    ? <CheckCircle2 size={16} className="text-[var(--color-positive)]" />
+                    : <Circle size={16} className="text-[var(--color-dim)] hover:text-[var(--color-ink)]" />}
+                </button>
+                <span className={cn("flex-1 text-[0.83rem]", t.status === "done" ? "line-through text-[var(--color-dim)]" : "text-[var(--color-ink-soft)]")}>
+                  {t.title}
+                </span>
+                <Badge tone={taskStatusTone(t.status)} dot={false}>{t.status}</Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
       ))}
-    </ul>
+    </div>
   );
 }

@@ -22,7 +22,7 @@ export function TaskForm({
   presetLink?: { kind: "lead" | "project"; id: string };
   onClose: () => void;
 }) {
-  const { create, update, leads, projects } = useStore();
+  const { create, update, leads, projects, milestones } = useStore();
 
   const initialLinkValue = initial
     ? initial.linkKind === "none"
@@ -33,6 +33,7 @@ export function TaskForm({
       : "";
 
   const [linkValue, setLinkValue] = useState(initialLinkValue);
+  const [linkKind, linkId] = linkValue ? linkValue.split(":") : ["none", ""];
   const [d, setD] = useState<Omit<Draft, "linkKind" | "linkId">>(() => ({
     title: initial?.title ?? "",
     category: initial?.category ?? "follow-up",
@@ -40,6 +41,7 @@ export function TaskForm({
     status: initial?.status ?? "not started",
     dueDate: initial?.dueDate ?? null,
     notes: initial?.notes ?? "",
+    milestoneId: initial?.milestoneId ?? null,
   }));
 
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => setD((p) => ({ ...p, [k]: v }));
@@ -73,7 +75,14 @@ export function TaskForm({
 
       <FormGrid>
         <Field label="Related lead / project" className="mt-3.5 sm:col-span-2">
-          <select className="select" value={linkValue} onChange={(e) => setLinkValue(e.target.value)}>
+          <select
+            className="select"
+            value={linkValue}
+            onChange={(e) => {
+              setLinkValue(e.target.value);
+              set("milestoneId", null);
+            }}
+          >
             <option value="">— None —</option>
             {leads.length > 0 && (
               <optgroup label="Leads">
@@ -95,6 +104,23 @@ export function TaskForm({
             )}
           </select>
         </Field>
+        {linkKind === "project" && linkId && (
+          <Field label="Milestone" className="mt-3.5">
+            <select
+              className="select"
+              value={d.milestoneId ?? ""}
+              onChange={(e) => set("milestoneId", e.target.value || null)}
+            >
+              <option value="">Unassigned</option>
+              {milestones
+                .filter((m) => m.projectId === linkId)
+                .sort((a, b) => a.order - b.order)
+                .map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+            </select>
+          </Field>
+        )}
         <Field label="Category">
           <Select options={TASK_CATEGORIES} value={d.category} onChange={(e) => set("category", e.target.value as Draft["category"])} />
         </Field>
