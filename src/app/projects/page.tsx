@@ -13,18 +13,20 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { FilterSelect } from "@/components/ui/Detail";
 import { ProjectForm } from "@/components/forms/ProjectForm";
+import { GanttChart, type GanttGroup } from "@/components/projects/GanttChart";
 import { PROJECT_STAGES, PROJECT_TYPES } from "@/lib/types";
 import { priorityTone, projectStageTone } from "@/lib/badges";
 import { relativeDay, isOverdue, cn } from "@/lib/utils";
 
 function ProjectsView() {
-  const { projects, tasks } = useStore();
+  const { projects, tasks, milestones } = useStore();
   const focusId = useFocusParam();
   const router = useRouter();
 
   const [fStage, setFStage] = useState("all");
   const [fType, setFType] = useState("all");
   const [creating, setCreating] = useState(false);
+  const [view, setView] = useState<"board" | "timeline">("board");
 
   useEffect(() => {
     if (focusId) router.replace(`/projects/${focusId}`);
@@ -38,6 +40,16 @@ function ProjectsView() {
         return true;
       }),
     [projects, fStage, fType],
+  );
+
+  const groups: GanttGroup[] = useMemo(
+    () =>
+      filtered.map((p) => ({
+        key: p.id,
+        label: `${p.name}${p.company ? ` · ${p.company}` : ""}`,
+        milestones: milestones.filter((m) => m.projectId === p.id),
+      })),
+    [filtered, milestones],
   );
 
   const tasksFor = (id: string) => tasks.filter((t) => t.linkKind === "project" && t.linkId === id);
@@ -57,9 +69,24 @@ function ProjectsView() {
       <div className="flex flex-wrap items-center gap-2.5">
         <FilterSelect label="Stage" value={fStage} onChange={setFStage} options={[{ value: "all", label: "All stages" }, ...PROJECT_STAGES.map((s) => ({ value: s, label: s }))]} />
         <FilterSelect label="Type" value={fType} onChange={setFType} options={[{ value: "all", label: "All types" }, ...PROJECT_TYPES.map((s) => ({ value: s, label: s }))]} />
+        <div className="ml-auto flex gap-1">
+          {(["board", "timeline"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={cn("btn btn-sm capitalize", view === v && "btn-accent")}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {view === "timeline" ? (
+        <Panel>
+          <GanttChart groups={groups} onSelect={(m) => router.push(`/projects/${m.projectId}`)} />
+        </Panel>
+      ) : filtered.length === 0 ? (
         <Panel noPad>
           <EmptyState
             icon={FolderKanban}
