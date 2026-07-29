@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildTask, buildLead, buildLeadPatch, buildMilestone, applyAction } from "@/lib/advisor/applyAction";
+import { buildTask, buildLead, buildLeadPatch, buildMilestone, buildMilestonePatch, buildProjectPatch, applyAction } from "@/lib/advisor/applyAction";
 import type { ProposedAction } from "@/lib/types";
 
 describe("buildTask", () => {
@@ -101,6 +101,34 @@ describe("buildMilestone", () => {
   });
 });
 
+describe("buildMilestonePatch", () => {
+  it("produces an empty patch for empty args", () => {
+    expect(buildMilestonePatch({})).toEqual({});
+  });
+
+  it("only includes provided keys", () => {
+    expect(buildMilestonePatch({ status: "done" })).toEqual({ status: "done" });
+  });
+
+  it("includes a field explicitly cleared to an empty string", () => {
+    expect(buildMilestonePatch({ notes: "" })).toEqual({ notes: "" });
+  });
+});
+
+describe("buildProjectPatch", () => {
+  it("produces an empty patch for empty args", () => {
+    expect(buildProjectPatch({})).toEqual({});
+  });
+
+  it("only includes provided keys", () => {
+    expect(buildProjectPatch({ currentBlocker: "Waiting on creds" })).toEqual({ currentBlocker: "Waiting on creds" });
+  });
+
+  it("includes a field explicitly cleared to an empty string", () => {
+    expect(buildProjectPatch({ notes: "" })).toEqual({ notes: "" });
+  });
+});
+
 describe("applyAction — milestones", () => {
   function fakeStore() {
     const calls: { op: string; key: string; id?: string; value?: unknown }[] = [];
@@ -133,10 +161,33 @@ describe("applyAction — milestones", () => {
   });
 
   it("returns null for a milestone update with no id", () => {
-    expect(applyAction(fakeStore(), {
+    const store = fakeStore();
+    const result = applyAction(store, {
       id: "a3", tool: "update_milestone", description: "", status: "confirmed",
       args: { projectId: "p1" },
-    })).toBeNull();
+    });
+    expect(result).toBeNull();
+    expect(store.calls).toEqual([]);
+  });
+
+  it("returns null for a milestone update with an id but no projectId", () => {
+    const store = fakeStore();
+    const result = applyAction(store, {
+      id: "a3b", tool: "update_milestone", description: "", status: "confirmed",
+      args: { id: "m1" },
+    });
+    expect(result).toBeNull();
+    expect(store.calls).toEqual([]);
+  });
+
+  it("returns null for a milestone create with no projectId", () => {
+    const store = fakeStore();
+    const result = applyAction(store, {
+      id: "a3c", tool: "create_milestone", description: "", status: "confirmed",
+      args: { name: "Discovery" },
+    });
+    expect(result).toBeNull();
+    expect(store.calls).toEqual([]);
   });
 
   it("updates a project", () => {
@@ -147,5 +198,15 @@ describe("applyAction — milestones", () => {
     });
     expect(store.calls[0]).toMatchObject({ op: "update", key: "projects", id: "p1" });
     expect(result).toEqual({ kind: "projects", id: "p1" });
+  });
+
+  it("returns null for a project update with no id", () => {
+    const store = fakeStore();
+    const result = applyAction(store, {
+      id: "a4b", tool: "update_project", description: "", status: "confirmed",
+      args: { currentBlocker: "Waiting on creds" },
+    });
+    expect(result).toBeNull();
+    expect(store.calls).toEqual([]);
   });
 });
