@@ -1,6 +1,6 @@
 import type { Milestone, Project, ProposedAction, Task } from "@/lib/types";
 import type { ToolDef } from "@/lib/advisor/tools";
-import { MILESTONE_STATUSES, TASK_STATUSES } from "@/lib/types";
+import { MILESTONE_STATUSES, PROJECT_STAGES, TASK_CATEGORIES, TASK_STATUSES } from "@/lib/types";
 import { detectCycles } from "./schedule";
 import { uid } from "@/lib/utils";
 
@@ -53,7 +53,7 @@ export const PROJECT_TOOLS: ToolDef[] = [
     }, ["id"]) },
   { name: "create_task", description: "Propose a task on this project, optionally under a milestone.",
     input_schema: obj({
-      title: s(), milestoneId: s("id from list_milestones"), category: s(),
+      title: s(), milestoneId: s("id from list_milestones"), category: enumStr(TASK_CATEGORIES),
       priority: enumStr(["low", "medium", "high"]), dueDate: dateStr(), notes: s(),
     }, ["title"]) },
   { name: "update_task", description: "Propose changes to a task. Use an id from list_tasks.",
@@ -64,7 +64,7 @@ export const PROJECT_TOOLS: ToolDef[] = [
     }, ["id"]) },
   { name: "update_project", description: "Propose changes to the project itself — stage, blocker, next action, dates.",
     input_schema: obj({
-      stage: s(), priority: enumStr(["low", "medium", "high"]),
+      stage: enumStr(PROJECT_STAGES), priority: enumStr(["low", "medium", "high"]),
       startDate: dateStr(), dueDate: dateStr(), currentBlocker: s(),
       nextAction: s(), deliverables: s(), notes: s(),
     }) },
