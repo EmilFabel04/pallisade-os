@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseStatus } from "./parse";
+import { parseStatus, parseLog, LOG_FORMAT } from "./parse";
 
 describe("parseStatus", () => {
   it("reads branch, ahead/behind and the three change counts", () => {
@@ -51,5 +51,48 @@ describe("parseStatus", () => {
     expect(parseStatus("")).toEqual({
       branch: "", ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0,
     });
+  });
+});
+
+const RS = "\x1e";
+const US = "\x1f";
+
+describe("parseLog", () => {
+  it("parses several commits with their changed files", () => {
+    const out =
+      `${RS}9f8e7d6${US}9f8e7d6${US}2026-07-28T14:02:11+02:00${US}feat(gantt): add bar geometry${US}${US}\n` +
+      "src/lib/projects/schedule.ts\nsrc/lib/projects/schedule.test.ts\n" +
+      `${RS}1a2b3c4${US}1a2b3c4${US}2026-07-27T09:15:00+02:00${US}fix(git): count renames${US}Body line one.\nBody line two.${US}\n` +
+      "src/lib/git/parse.ts\n";
+
+    const commits = parseLog(out);
+    expect(commits).toHaveLength(2);
+    expect(commits[0]).toEqual({
+      hash: "9f8e7d6",
+      shortHash: "9f8e7d6",
+      authorDate: "2026-07-28T14:02:11+02:00",
+      subject: "feat(gantt): add bar geometry",
+      body: "",
+      files: ["src/lib/projects/schedule.ts", "src/lib/projects/schedule.test.ts"],
+    });
+    expect(commits[1].body).toBe("Body line one.\nBody line two.");
+    expect(commits[1].files).toEqual(["src/lib/git/parse.ts"]);
+  });
+
+  it("handles a commit with no changed files (e.g. a merge)", () => {
+    const out = `${RS}abc${US}abc${US}2026-07-01T00:00:00Z${US}Merge branch 'x'${US}${US}\n`;
+    expect(parseLog(out)[0].files).toEqual([]);
+  });
+
+  it("returns an empty array for empty output", () => {
+    expect(parseLog("")).toEqual([]);
+    expect(parseLog("\n")).toEqual([]);
+  });
+
+  it("exposes a format string using the record and unit separators", () => {
+    expect(LOG_FORMAT).toContain("%x1e");
+    expect(LOG_FORMAT).toContain("%x1f");
+    expect(LOG_FORMAT).toContain("%H");
+    expect(LOG_FORMAT).toContain("%aI");
   });
 });

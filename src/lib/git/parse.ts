@@ -1,4 +1,4 @@
-import type { RepoStatus } from "./types";
+import type { Commit, RepoStatus } from "./types";
 
 const EMPTY_STATUS: RepoStatus = {
   branch: "", ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0,
@@ -50,4 +50,34 @@ export function parseStatus(stdout: string): RepoStatus {
   }
 
   return out;
+}
+
+/**
+ * The exact `--format` `readCommits` must pass. Fields, in order:
+ * full hash, short hash, author date (ISO), subject, body — each preceded by
+ * a record separator for the commit and separated by unit separators. The
+ * trailing %x1f closes the body so `--name-only` file paths that follow are
+ * unambiguously outside the fields.
+ */
+export const LOG_FORMAT = "%x1e%H%x1f%h%x1f%aI%x1f%s%x1f%b%x1f";
+
+export function parseLog(stdout: string): Commit[] {
+  return stdout
+    .split("\x1e")
+    .slice(1) // text before the first record separator is never a commit
+    .map((record) => {
+      const [hash, shortHash, authorDate, subject, body, filesBlob] = record.split("\x1f");
+      return {
+        hash: (hash ?? "").trim(),
+        shortHash: (shortHash ?? "").trim(),
+        authorDate: (authorDate ?? "").trim(),
+        subject: subject ?? "",
+        body: body ?? "",
+        files: (filesBlob ?? "")
+          .split("\n")
+          .map((f) => f.trim())
+          .filter(Boolean),
+      };
+    })
+    .filter((c) => !!c.hash);
 }
