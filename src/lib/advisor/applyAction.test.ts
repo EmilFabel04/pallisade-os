@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildTask, buildLead, buildLeadPatch, buildMilestone, buildMilestonePatch, buildProjectPatch, applyAction } from "@/lib/advisor/applyAction";
+import { buildTask, buildTaskPatch, buildLead, buildLeadPatch, buildMilestone, buildMilestonePatch, buildProjectPatch, applyAction } from "@/lib/advisor/applyAction";
 import type { ProposedAction } from "@/lib/types";
 
 describe("buildTask", () => {
@@ -29,6 +29,24 @@ describe("buildLeadPatch", () => {
   it("only includes provided keys", () => {
     expect(buildLeadPatch({ status: "won" })).toEqual({ status: "won" });
     expect(buildLeadPatch({})).toEqual({});
+  });
+});
+
+describe("buildTaskPatch", () => {
+  it("includes a milestone reassignment", () => {
+    expect(buildTaskPatch({ milestoneId: "m1" })).toEqual({ milestoneId: "m1" });
+  });
+
+  it("allows an explicit null through, to unassign a task from its milestone", () => {
+    expect(buildTaskPatch({ milestoneId: null })).toEqual({ milestoneId: null });
+  });
+
+  it("produces an empty patch for empty args", () => {
+    expect(buildTaskPatch({})).toEqual({});
+  });
+
+  it("drops an out-of-schema key", () => {
+    expect(buildTaskPatch({ linkId: "other-project" })).toEqual({});
   });
 });
 

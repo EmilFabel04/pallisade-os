@@ -92,6 +92,7 @@ export function buildTaskPatch(a: Args): Partial<Task> {
   if (a.status != null) p.status = a.status as TaskStatus;
   if (a.dueDate !== undefined) p.dueDate = orNull(a.dueDate);
   if (a.notes != null) p.notes = str(a.notes);
+  if (a.milestoneId !== undefined) p.milestoneId = orNull(a.milestoneId);
   return p;
 }
 
