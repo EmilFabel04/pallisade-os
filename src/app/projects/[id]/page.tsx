@@ -114,7 +114,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       </div>
 
       {tab === "Overview" && (
-        <OverviewTab project={project} projectMilestones={projectMilestones} onEditMilestone={setEditMilestone} />
+        <OverviewTab
+          project={project}
+          projectMilestones={projectMilestones}
+          repo={repo}
+          onEditMilestone={setEditMilestone}
+        />
       )}
 
       {tab === "Milestones" && (
@@ -137,7 +142,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         />
       )}
 
-      {tab === "Repo" && <RepoTab project={project} />}
+      {tab === "Repo" && <RepoTab project={project} repo={repo} />}
 
       <Modal open={editing} onClose={() => setEditing(false)} title={`Edit — ${project.name}`}>
         <ProjectForm initial={project} onClose={() => setEditing(false)} />

@@ -4,16 +4,20 @@ import { AlertOctagon, ArrowRight } from "lucide-react";
 import { Panel } from "@/components/ui/Panel";
 import { DetailGrid, DetailRow } from "@/components/ui/Detail";
 import { GanttChart } from "@/components/projects/GanttChart";
+import { CommitFeed } from "@/components/projects/CommitFeed";
+import type { RepoState } from "@/components/projects/useRepo";
 import type { Milestone, Project } from "@/lib/types";
 import { fmtDate, relativeDay } from "@/lib/utils";
 
 export function OverviewTab({
   project,
   projectMilestones,
+  repo,
   onEditMilestone,
 }: {
   project: Project;
   projectMilestones: Milestone[];
+  repo: RepoState;
   onEditMilestone: (m: Milestone) => void;
 }) {
   const nextMilestone = projectMilestones.find((m) => m.status !== "done") ?? null;
@@ -50,6 +54,11 @@ export function OverviewTab({
           <ArrowRight size={13} className="text-[var(--color-accent)] mt-0.5 shrink-0" />
           {project.nextAction}
         </p>
+      )}
+      {project.repoPath && !repo.error && repo.commits.length > 0 && (
+        <Panel title="Recent commits">
+          <CommitFeed commits={repo.commits} limit={5} />
+        </Panel>
       )}
     </div>
   );
