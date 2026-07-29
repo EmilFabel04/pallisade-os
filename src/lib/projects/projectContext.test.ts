@@ -80,6 +80,26 @@ describe("formatProjectContext", () => {
     for (let i = 0; i < 25; i++) expect(has(i)).toBe(false);
   });
 
+  it("excludes threads belonging to a different project", () => {
+    // resolveProjectContextTool deliberately passes ALL projectThreads in and
+    // relies entirely on this filter — a solo agency's confidentiality
+    // boundary between clients lives here. The foreign thread is made NEWER
+    // than the p1 thread so that, if the `t.projectId === p.id` filter were
+    // ever deleted, the newest-thread-wins logic would surface the sentinel
+    // and this test would fail.
+    const foreignThread: ProjectThread = {
+      id: "th-foreign", createdAt: "", updatedAt: "2026-07-29T10:00:00Z", projectId: "p2",
+      title: "Someone else's project", messages: [
+        { id: "1", role: "user", content: "SENTINEL_OTHER_CLIENT_DECISION", createdAt: "" },
+      ],
+    };
+    const out = formatProjectContext({ ...base, threads: [thread, foreignThread] });
+    expect(out).not.toContain("SENTINEL_OTHER_CLIENT_DECISION");
+    // Discriminating check: p1's own content must still be present, proving
+    // the omission above is filtering, not an empty-threads bug.
+    expect(out).toContain("defer export to v2");
+  });
+
   it("says so plainly when there are no threads", () => {
     expect(formatProjectContext({ ...base, threads: [] })).toMatch(/no .*(chat|decision|thread)/i);
   });

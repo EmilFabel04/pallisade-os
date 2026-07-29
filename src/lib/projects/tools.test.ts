@@ -66,6 +66,32 @@ describe("resolveProjectTool — writes queue proposals", () => {
     expect(out).toMatch(/confirm/i);
   });
 
+  it("defaults an omitted order to the end of the list, not 0", () => {
+    // snapshot already has one milestone at order 0. If an agent-created
+    // milestone also lands at order 0, it sorts ABOVE the existing one and
+    // displaces it as the project's "current" / next milestone.
+    const proposals: ProposedAction[] = [];
+    resolveProjectTool("create_milestone", { name: "Handover" }, snapshot, proposals);
+    expect(proposals[0].args.order).toBe(snapshot.milestones.length);
+    expect(proposals[0].args.order as number).toBeGreaterThan(
+      Math.max(...snapshot.milestones.map((m) => m.order)),
+    );
+  });
+
+  it("respects an explicitly-passed order", () => {
+    const proposals: ProposedAction[] = [];
+    resolveProjectTool("create_milestone", { name: "Handover", order: 3 }, snapshot, proposals);
+    expect(proposals[0].args.order).toBe(3);
+  });
+
+  it("respects an explicit order of 0 rather than treating it as omitted", () => {
+    // Guards against `??` regressing to `||`, which would treat 0 as falsy
+    // and re-introduce the same displacement bug for a deliberate order: 0.
+    const proposals: ProposedAction[] = [];
+    resolveProjectTool("create_milestone", { name: "Kickoff", order: 0 }, snapshot, proposals);
+    expect(proposals[0].args.order).toBe(0);
+  });
+
   it("injects the project id so the agent cannot target another project", () => {
     const proposals: ProposedAction[] = [];
     resolveProjectTool("create_milestone", { name: "X", projectId: "SOMEWHERE_ELSE" }, snapshot, proposals);
@@ -83,5 +109,34 @@ describe("resolveProjectTool — writes queue proposals", () => {
 
   it("refuses an unknown tool by name", () => {
     expect(resolveProjectTool("delete_everything", {}, snapshot, [])).toMatch(/unknown tool/i);
+  });
+});
+
+describe("resolveProjectTool — cross-project write guard", () => {
+  // The snapshot-membership check is the ONLY thing standing between a
+  // hallucinated/foreign id and a write that lands on another project's
+  // record (applyAction performs the store write with no ownership check
+  // of its own). These tests must fail if `if (!target) return ...` is
+  // ever deleted from resolveProjectTool.
+  it("rejects update_milestone for an id not in the snapshot and queues nothing", () => {
+    const proposals: ProposedAction[] = [];
+    const out = resolveProjectTool(
+      "update_milestone", { id: "FOREIGN_MILESTONE", name: "Hijacked" }, snapshot, proposals,
+    );
+    expect(out).toMatch(/no milestone with id/i);
+    // Assert on the proposals array itself, not just the return string — a
+    // proposal pushed before the guard check would still return a rejection
+    // string via a later code path, but a return-value-only assertion would
+    // miss that a write got queued anyway.
+    expect(proposals).toHaveLength(0);
+  });
+
+  it("rejects update_task for an id not in the snapshot and queues nothing", () => {
+    const proposals: ProposedAction[] = [];
+    const out = resolveProjectTool(
+      "update_task", { id: "FOREIGN_TASK", title: "Hijacked" }, snapshot, proposals,
+    );
+    expect(out).toMatch(/no task with id/i);
+    expect(proposals).toHaveLength(0);
   });
 });
