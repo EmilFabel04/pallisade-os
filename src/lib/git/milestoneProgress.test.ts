@@ -53,6 +53,31 @@ describe("matchCommits — scope matching", () => {
     const m = milestone({ id: "m1", commitScope: "gantt", startDate: "2026-01-01", endDate: "2026-01-02" });
     expect(matchCommits([commit({ subject: "feat(gantt): x" })], [m]).get("m1")).toHaveLength(1);
   });
+
+  it("escapes a dot in the scope so it matches literally, not as a wildcard", () => {
+    const m = milestone({ id: "m1", commitScope: "a.b" });
+    const commits = [
+      commit({ hash: "1", subject: "feat(a.b): exact scope" }),
+      commit({ hash: "2", subject: "feat(axb): dot is not a wildcard" }),
+    ];
+    expect(matchCommits(commits, [m]).get("m1")!.map((c) => c.hash)).toEqual(["1"]);
+  });
+
+  it("escapes an unbalanced paren in the scope instead of throwing", () => {
+    const m = milestone({ id: "m1", commitScope: "a(b" });
+    const commits = [commit({ subject: "[a(b] fix" })];
+    expect(() => matchCommits(commits, [m])).not.toThrow();
+    expect(matchCommits(commits, [m]).get("m1")).toHaveLength(1);
+  });
+
+  it("treats other regex metacharacters in the scope literally", () => {
+    const m = milestone({ id: "m1", commitScope: "a+b*c[d]\\e" });
+    const commits = [
+      commit({ hash: "1", subject: "[a+b*c[d]\\e] literal scope" }),
+      commit({ hash: "2", subject: "[aaacde] would match if unescaped" }),
+    ];
+    expect(matchCommits(commits, [m]).get("m1")!.map((c) => c.hash)).toEqual(["1"]);
+  });
 });
 
 describe("matchCommits — date-range fallback", () => {
