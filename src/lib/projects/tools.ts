@@ -117,8 +117,11 @@ export function resolveProjectTool(
     }
 
     case "create_milestone":
+      // Default to the end of the list when the model omits `order` — a bare
+      // `order: 0` fallback would sort above whatever milestone already holds
+      // order 0, displacing it as the project's "current" milestone.
       return queue(proposals, name, `Add milestone "${String(args.name ?? "")}"`, {
-        ...args, projectId,
+        ...args, projectId, order: args.order ?? snap.milestones.length,
       });
 
     case "update_milestone": {

@@ -40,6 +40,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     () => milestones.filter((m) => m.projectId === id).sort((a, b) => a.order - b.order),
     [milestones, id],
   );
+  // Highest existing order + 1, not the count — a mid-list delete otherwise
+  // collides a newly-added milestone's order with a surviving one.
+  const nextMilestoneOrder = useMemo(
+    () => Math.max(-1, ...projectMilestones.map((m) => m.order)) + 1,
+    [projectMilestones],
+  );
   const projectTasks = useMemo(
     () => tasks.filter((t) => t.linkKind === "project" && t.linkId === id),
     [tasks, id],
@@ -162,7 +168,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       <Modal open={addingMilestone} onClose={() => setAddingMilestone(false)} title="Add Milestone" subtitle={project.name}>
         <MilestoneForm
           projectId={project.id}
-          nextOrder={projectMilestones.length}
+          nextOrder={nextMilestoneOrder}
           onClose={() => setAddingMilestone(false)}
         />
       </Modal>
