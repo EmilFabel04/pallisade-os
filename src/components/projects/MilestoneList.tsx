@@ -1,21 +1,26 @@
 "use client";
 
 import { Pencil, Trash2, ListChecks } from "lucide-react";
-import type { Milestone, Task } from "@/lib/types";
+import type { Milestone, MilestoneStatus, Task } from "@/lib/types";
+import type { Commit } from "@/lib/git/types";
 import { Badge } from "@/components/ui/Badge";
 import { milestoneStatusTone } from "@/lib/badges";
-import { fmtDate } from "@/lib/utils";
+import { fmtDate, relativeDay } from "@/lib/utils";
 
 export function MilestoneList({
   milestones,
   tasks,
+  commitsByMilestone,
   onEdit,
   onDelete,
+  onSuggest,
 }: {
   milestones: Milestone[];
   tasks: Task[];
+  commitsByMilestone?: Map<string, Commit[]>;
   onEdit: (m: Milestone) => void;
   onDelete: (m: Milestone) => void;
+  onSuggest?: (m: Milestone, status: MilestoneStatus) => void;
 }) {
   if (milestones.length === 0)
     return <p className="text-[0.8rem] text-[var(--color-muted)]">No milestones yet.</p>;
@@ -27,6 +32,10 @@ export function MilestoneList({
       {sorted.map((m) => {
         const mt = tasks.filter((t) => t.milestoneId === m.id);
         const done = mt.filter((t) => t.status === "done").length;
+        const commits = commitsByMilestone?.get(m.id) ?? [];
+        const latest = commits[0]; // git log is newest-first
+        const suggestion =
+          commits.length > 0 && m.status === "planned" ? ("in progress" as const) : null;
         return (
           <li
             key={m.id}
@@ -37,6 +46,12 @@ export function MilestoneList({
               <p className="text-[0.73rem] text-[var(--color-dim)] tnum">
                 {m.startDate || m.endDate ? `${fmtDate(m.startDate)} → ${fmtDate(m.endDate)}` : "No dates set"}
               </p>
+              {commits.length > 0 && (
+                <p className="text-[0.72rem] text-[var(--color-dim)] tnum">
+                  {commits.length} commit{commits.length === 1 ? "" : "s"}
+                  {latest && ` · last ${relativeDay(latest.authorDate.slice(0, 10))}`}
+                </p>
+              )}
             </div>
             {mt.length > 0 && (
               <span className="inline-flex items-center gap-1.5 text-[0.73rem] text-[var(--color-dim)] tnum shrink-0">
@@ -44,6 +59,15 @@ export function MilestoneList({
               </span>
             )}
             <Badge tone={milestoneStatusTone(m.status)}>{m.status}</Badge>
+            {suggestion && onSuggest && (
+              <button
+                className="btn btn-sm shrink-0"
+                onClick={() => onSuggest(m, suggestion)}
+                title="Suggested from commit activity — applies only when you click"
+              >
+                Mark {suggestion}?
+              </button>
+            )}
             <button onClick={() => onEdit(m)} aria-label="Edit milestone" className="shrink-0 text-[var(--color-dim)] hover:text-[var(--color-ink)]">
               <Pencil size={14} />
             </button>

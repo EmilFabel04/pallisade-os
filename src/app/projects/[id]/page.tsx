@@ -16,6 +16,7 @@ import { MilestonesTab } from "@/components/projects/MilestonesTab";
 import { TasksTab } from "@/components/projects/TasksTab";
 import { RepoTab } from "@/components/projects/RepoTab";
 import { useRepo } from "@/components/projects/useRepo";
+import { matchCommits } from "@/lib/git/milestoneProgress";
 import type { Milestone } from "@/lib/types";
 import { priorityTone, projectStageTone } from "@/lib/badges";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     [tasks, id],
   );
   const repo = useRepo(project?.repoPath ?? null);
+  const commitsByMilestone = useMemo(
+    () => matchCommits(repo.commits, projectMilestones),
+    [repo.commits, projectMilestones],
+  );
 
   if (!project)
     return (
@@ -127,9 +132,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           project={project}
           projectMilestones={projectMilestones}
           projectTasks={projectTasks}
+          commitsByMilestone={commitsByMilestone}
           onAddMilestone={() => setAddingMilestone(true)}
           onEditMilestone={setEditMilestone}
           onDeleteMilestone={setDeleteMilestone}
+          onSuggestMilestoneStatus={(m, status) => update("milestones", m.id, { status })}
         />
       )}
 
