@@ -2,6 +2,7 @@ import type {
   Lead, Task, Project, Interaction, ProposedAction, CollectionKey,
   LeadSource, LeadStatus, LeadQuality, InteractionType,
   ProjectType, ProjectStage, Priority, TaskCategory, TaskStatus,
+  Milestone, MilestoneStatus,
 } from "@/lib/types";
 import { todayISO } from "@/lib/utils";
 
@@ -112,6 +113,51 @@ export function buildProject(a: Args): New<Project> {
   };
 }
 
+const strArray = (v: unknown): string[] =>
+  Array.isArray(v) ? v.map((x) => String(x)) : [];
+
+export function buildMilestone(a: Args): New<Milestone> {
+  return {
+    projectId: str(a.projectId),
+    name: str(a.name),
+    startDate: orNull(a.startDate),
+    endDate: orNull(a.endDate),
+    status: (a.status as MilestoneStatus) ?? "planned",
+    order: Number(a.order) || 0,
+    dependsOn: strArray(a.dependsOn),
+    commitScope: str(a.commitScope),
+    notes: str(a.notes),
+  };
+}
+
+/** Only the keys actually present, so an update never blanks a field by omission. */
+export function buildMilestonePatch(a: Args): Partial<Milestone> {
+  const p: Partial<Milestone> = {};
+  if (a.name !== undefined) p.name = str(a.name);
+  if (a.startDate !== undefined) p.startDate = orNull(a.startDate);
+  if (a.endDate !== undefined) p.endDate = orNull(a.endDate);
+  if (a.status !== undefined) p.status = a.status as MilestoneStatus;
+  if (a.order !== undefined) p.order = Number(a.order) || 0;
+  if (a.dependsOn !== undefined) p.dependsOn = strArray(a.dependsOn);
+  if (a.commitScope !== undefined) p.commitScope = str(a.commitScope);
+  if (a.notes !== undefined) p.notes = str(a.notes);
+  return p;
+}
+
+export function buildProjectPatch(a: Args): Partial<Project> {
+  const p: Partial<Project> = {};
+  if (a.name !== undefined) p.name = str(a.name);
+  if (a.stage !== undefined) p.stage = a.stage as ProjectStage;
+  if (a.priority !== undefined) p.priority = a.priority as Priority;
+  if (a.startDate !== undefined) p.startDate = orNull(a.startDate);
+  if (a.dueDate !== undefined) p.dueDate = orNull(a.dueDate);
+  if (a.currentBlocker !== undefined) p.currentBlocker = str(a.currentBlocker);
+  if (a.nextAction !== undefined) p.nextAction = str(a.nextAction);
+  if (a.deliverables !== undefined) p.deliverables = str(a.deliverables);
+  if (a.notes !== undefined) p.notes = str(a.notes);
+  return p;
+}
+
 export function buildInteraction(a: Args): New<Interaction> {
   return {
     leadId: orNull(a.leadId),
@@ -162,6 +208,27 @@ export function applyAction(
       if (!id) return null;
       store.update("tasks", id, buildTaskPatch(a));
       return { kind: "tasks", id };
+    }
+    // Milestones have no page of their own, so every milestone write deep-links
+    // to its project. /projects?focus=<projectId> redirects to /projects/<id>.
+    case "create_milestone": {
+      const projectId = str(a.projectId);
+      if (!projectId) return null;
+      store.create("milestones", buildMilestone(a));
+      return { kind: "projects", id: projectId };
+    }
+    case "update_milestone": {
+      const id = str(a.id);
+      const projectId = str(a.projectId);
+      if (!id || !projectId) return null;
+      store.update("milestones", id, buildMilestonePatch(a));
+      return { kind: "projects", id: projectId };
+    }
+    case "update_project": {
+      const id = str(a.id);
+      if (!id) return null;
+      store.update("projects", id, buildProjectPatch(a));
+      return { kind: "projects", id };
     }
     default:
       return null;
