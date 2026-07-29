@@ -40,11 +40,16 @@ export function GanttChart({
   const all = useMemo(() => groups.flatMap((g) => g.milestones), [groups]);
   const range = useMemo(() => ganttRange(all), [all]);
 
+  // The ref-bearing wrapper must render on every path — including the
+  // empty state — so the ResizeObserver attaches on first mount even when
+  // `range` starts out null (e.g. a project with no dated milestones yet).
   if (!range)
     return (
-      <p className="text-[0.8rem] text-[var(--color-muted)]">
-        No dated milestones yet — add start and end dates to see the timeline.
-      </p>
+      <div ref={wrapRef} className="w-full overflow-x-auto">
+        <p className="text-[0.8rem] text-[var(--color-muted)]">
+          No dated milestones yet — add start and end dates to see the timeline.
+        </p>
+      </div>
     );
 
   const barsW = Math.max(0, w - LABEL_W);
