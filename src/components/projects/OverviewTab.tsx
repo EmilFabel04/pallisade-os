@@ -37,8 +37,6 @@ export function OverviewTab({
             {project.dueDate ? `${fmtDate(project.dueDate)} (${relativeDay(project.dueDate)})` : "—"}
           </DetailRow>
           <DetailRow label="Next milestone" full>{nextMilestone?.name ?? "—"}</DetailRow>
-          <DetailRow label="Current blocker" full>{project.currentBlocker}</DetailRow>
-          <DetailRow label="Next action" full>{project.nextAction}</DetailRow>
           <DetailRow label="Deliverables" full>{project.deliverables}</DetailRow>
           <DetailRow label="Notes" full>{project.notes}</DetailRow>
         </DetailGrid>
