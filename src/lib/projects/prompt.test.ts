@@ -82,4 +82,47 @@ describe("buildProjectSystemPrompt", () => {
   it("forbids inventing project facts", () => {
     expect(buildProjectSystemPrompt(base)).toMatch(/never invent/i);
   });
+
+  it("states writes are queued as proposals awaiting confirmation", () => {
+    const p = buildProjectSystemPrompt(base);
+    expect(p).toMatch(/proposals?.*(awaiting|await|must confirm)/is);
+  });
+
+  it("instructs the agent not to claim a proposed write is already done", () => {
+    const p = buildProjectSystemPrompt(base);
+    expect(p).toMatch(/never claim it is already done/i);
+  });
+
+  it("instructs passing an id from the state block for updates", () => {
+    const p = buildProjectSystemPrompt(base);
+    expect(p).toMatch(/pass an id from the state/i);
+  });
+
+  it("instructs changing only the fields intended", () => {
+    const p = buildProjectSystemPrompt(base);
+    expect(p).toMatch(/only the fields you intend to change/i);
+  });
+
+  it("says the repo could not be read when linked but unreadable, distinct from no commits or no repo", () => {
+    const p = buildProjectSystemPrompt({
+      ...base,
+      project: { ...project, repoPath: "/Users/e/code/acme" },
+      repo: null,
+      commits: [],
+    });
+    expect(p).toMatch(/could not be read/i);
+    expect(p).not.toMatch(/\(none\)/i);
+    expect(p).not.toMatch(/no (linked )?repo/i);
+  });
+
+  it("reports no commits when linked and read but the log is empty, distinct from unreadable", () => {
+    const p = buildProjectSystemPrompt({
+      ...base,
+      project: { ...project, repoPath: "/Users/e/code/acme" },
+      repo: { branch: "main", ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0 },
+      commits: [],
+    });
+    expect(p).toMatch(/recent commits:\s*\(none\)/i);
+    expect(p).not.toMatch(/could not be read/i);
+  });
 });
