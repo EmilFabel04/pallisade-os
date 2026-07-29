@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildBrainSystemPrompt, formatAttachmentsBlock } from "@/lib/brain/prompt";
 import { DRIVE_TOOLS, DRIVE_TOOL_NAMES, resolveBrainTool } from "@/lib/brain/tools";
+import {
+  PROJECT_CONTEXT_TOOLS, PROJECT_CONTEXT_TOOL_NAMES, resolveProjectContextTool,
+} from "@/lib/projects/projectContext";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,14 +49,42 @@ export async function POST(req: Request) {
     content: m.content,
   }));
 
-  // ---- strategist: single call (unchanged behaviour) ----
+  // ---- strategist: tool loop (project context only) ----
   if (mode === "strategist") {
     const system = buildBrainSystemPrompt({ businessName, founderName, today });
     try {
-      const response = await client.messages.create({ model: MODEL, max_tokens: 4096, system, messages });
-      const finalText = response.content
-        .filter((blk): blk is Anthropic.TextBlock => blk.type === "text")
-        .map((blk) => blk.text).join("\n").trim();
+      let finalText = "";
+      for (let i = 0; i < MAX_ITERATIONS; i++) {
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 4096,
+          system,
+          tools: PROJECT_CONTEXT_TOOLS as unknown as Anthropic.Tool[],
+          messages,
+        });
+
+        const textParts = response.content
+          .filter((blk): blk is Anthropic.TextBlock => blk.type === "text")
+          .map((blk) => blk.text);
+        if (textParts.length) finalText = textParts.join("\n").trim();
+
+        const toolUses = response.content.filter(
+          (blk): blk is Anthropic.ToolUseBlock => blk.type === "tool_use",
+        );
+        if (response.stop_reason !== "tool_use" || toolUses.length === 0) break;
+
+        messages.push({ role: "assistant", content: response.content });
+        messages.push({
+          role: "user",
+          content: await Promise.all(
+            toolUses.map(async (tu) => ({
+              type: "tool_result" as const,
+              tool_use_id: tu.id,
+              content: await resolveProjectContextTool(tu.name, (tu.input ?? {}) as Record<string, unknown>),
+            })),
+          ),
+        });
+      }
       return NextResponse.json({ content: finalText || "I couldn't produce a response — try rephrasing." });
     } catch (err) {
       return NextResponse.json({ error: (err as Error).message }, { status: 502 });
@@ -69,6 +100,7 @@ export async function POST(req: Request) {
   const tools = [
     { type: "web_search_20250305", name: "web_search", max_uses: 5 },
     ...DRIVE_TOOLS,
+    ...PROJECT_CONTEXT_TOOLS,
   ] as unknown as Anthropic.Tool[];
 
   try {
@@ -87,11 +119,12 @@ export async function POST(req: Request) {
         .map((blk) => blk.text);
       if (textParts.length) finalText = textParts.join("\n").trim();
 
-      // Only our local Drive tools need a tool_result; web_search is executed
-      // server-side by Anthropic and already resolved in `response.content`.
-      const driveUses = response.content.filter(
+      // Only our local tools (Drive + project context) need a tool_result; web_search is
+      // executed server-side by Anthropic and already resolved in `response.content`.
+      const localUses = response.content.filter(
         (blk): blk is Anthropic.ToolUseBlock =>
-          blk.type === "tool_use" && DRIVE_TOOL_NAMES.has(blk.name),
+          blk.type === "tool_use" &&
+          (DRIVE_TOOL_NAMES.has(blk.name) || PROJECT_CONTEXT_TOOL_NAMES.has(blk.name)),
       );
 
       // web_search may pause its server-side loop; resume by re-requesting with the
@@ -101,14 +134,16 @@ export async function POST(req: Request) {
         continue;
       }
 
-      if (response.stop_reason !== "tool_use" || driveUses.length === 0) break;
+      if (response.stop_reason !== "tool_use" || localUses.length === 0) break;
 
       messages.push({ role: "assistant", content: response.content });
       const results: Anthropic.ToolResultBlockParam[] = await Promise.all(
-        driveUses.map(async (tu) => ({
+        localUses.map(async (tu) => ({
           type: "tool_result" as const,
           tool_use_id: tu.id,
-          content: await resolveBrainTool(tu.name, (tu.input ?? {}) as Record<string, unknown>, driveAccountId),
+          content: PROJECT_CONTEXT_TOOL_NAMES.has(tu.name)
+            ? await resolveProjectContextTool(tu.name, (tu.input ?? {}) as Record<string, unknown>)
+            : await resolveBrainTool(tu.name, (tu.input ?? {}) as Record<string, unknown>, driveAccountId),
         })),
       );
       messages.push({ role: "user", content: results });
