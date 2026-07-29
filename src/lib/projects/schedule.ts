@@ -72,3 +72,85 @@ export function barGeometry(
 
   return { x, w };
 }
+
+export interface Edge {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+/**
+ * Every dependency cycle in the graph, each as an ordered list of milestone ids.
+ * Iterative-safe DFS with three colours: 0 unvisited, 1 on the current path,
+ * 2 fully explored. Dependencies pointing at deleted milestones are ignored —
+ * they are dangling, not cyclic.
+ */
+export function detectCycles(milestones: Milestone[]): string[][] {
+  const byId = new Map(milestones.map((m) => [m.id, m]));
+  const colour = new Map<string, 0 | 1 | 2>();
+  const cycles: string[][] = [];
+  const path: string[] = [];
+
+  function visit(id: string): void {
+    if (colour.get(id) === 2) return;
+
+    if (colour.get(id) === 1) {
+      // Found a back-edge — slice the loop out of the current path.
+      const from = path.indexOf(id);
+      if (from !== -1) cycles.push(path.slice(from));
+      return;
+    }
+
+    colour.set(id, 1);
+    path.push(id);
+
+    for (const dep of byId.get(id)?.dependsOn ?? []) {
+      if (byId.has(dep)) visit(dep);
+    }
+
+    path.pop();
+    colour.set(id, 2);
+  }
+
+  for (const m of milestones) visit(m.id);
+  return cycles;
+}
+
+/**
+ * Connector lines from each dependency's right edge to its dependant's left
+ * edge, at each bar's vertical centre. Rows follow `order`, matching the
+ * chart's own row sort. Undated or deleted endpoints produce no edge.
+ */
+export function dependencyEdges(
+  milestones: Milestone[],
+  range: GanttRange,
+  width: number,
+  rowHeight: number,
+): Edge[] {
+  const rows = [...milestones].sort((a, b) => a.order - b.order);
+  const rowOf = new Map(rows.map((m, i) => [m.id, i]));
+  const byId = new Map(rows.map((m) => [m.id, m]));
+  const centre = (id: string) => (rowOf.get(id) ?? 0) * rowHeight + rowHeight / 2;
+
+  const edges: Edge[] = [];
+  for (const m of rows) {
+    const to = barGeometry(m, range, width);
+    if (!to) continue;
+
+    for (const depId of m.dependsOn) {
+      const dep = byId.get(depId);
+      if (!dep) continue;
+      const from = barGeometry(dep, range, width);
+      if (!from) continue;
+
+      edges.push({
+        x1: from.x + from.w,
+        y1: centre(depId),
+        x2: to.x,
+        y2: centre(m.id),
+      });
+    }
+  }
+  return edges;
+}
