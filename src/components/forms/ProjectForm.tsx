@@ -28,6 +28,7 @@ export function ProjectForm({ initial, onClose }: { initial?: Project; onClose: 
     nextAction: initial?.nextAction ?? "",
     deliverables: initial?.deliverables ?? "",
     notes: initial?.notes ?? "",
+    repoPath: initial?.repoPath ?? null,
   }));
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((p) => ({ ...p, [k]: v }));
@@ -67,14 +68,9 @@ export function ProjectForm({ initial, onClose }: { initial?: Project; onClose: 
         </Field>
       </FormGrid>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5 mt-3.5">
-        <Field label="Current milestone">
-          <TextInput value={d.currentMilestone} onChange={(e) => set("currentMilestone", e.target.value)} />
-        </Field>
-        <Field label="Current blocker">
-          <TextInput value={d.currentBlocker} onChange={(e) => set("currentBlocker", e.target.value)} />
-        </Field>
-      </div>
+      <Field label="Current blocker" className="mt-3.5">
+        <TextInput value={d.currentBlocker} onChange={(e) => set("currentBlocker", e.target.value)} />
+      </Field>
       <Field label="Next action" className="mt-3.5">
         <TextInput value={d.nextAction} onChange={(e) => set("nextAction", e.target.value)} />
       </Field>

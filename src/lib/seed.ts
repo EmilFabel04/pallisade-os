@@ -2,6 +2,7 @@ import type {
   DataShape,
   Interaction,
   Lead,
+  Milestone,
   PainPoint,
   Project,
   Scorecard,
@@ -365,7 +366,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     priority: "high",
     startDate: D(-5),
     dueDate: D(12),
-    currentMilestone: "Core matching engine for bank vs ledger",
+    currentMilestone: "",
     currentBlocker: "Waiting on sample data export from client",
     nextAction: "Chase Riaan for the CSV exports and finalise matching rules",
     deliverables: "Reconciliation tool, admin dashboard, 1h handover session",
@@ -380,7 +381,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     priority: "high",
     startDate: D(-1),
     dueDate: D(9),
-    currentMilestone: "Scoped pilot covering one fund's month-end report",
+    currentMilestone: "",
     currentBlocker: "Need sign-off on data-security approach",
     nextAction: "Send the security one-pager Johan asked for",
     deliverables: "Automated report pipeline demo + branded PDF sample",
@@ -395,7 +396,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     priority: "medium",
     startDate: null,
     dueDate: D(14),
-    currentMilestone: "Outline the onboarding flow before the discovery call",
+    currentMilestone: "",
     currentBlocker: "",
     nextAction: "Map their current onboarding steps from the call notes",
     deliverables: "Clickable onboarding flow mockup",
@@ -410,7 +411,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     priority: "medium",
     startDate: D(-20),
     dueDate: null,
-    currentMilestone: "Automated LinkedIn + email sequencing",
+    currentMilestone: "",
     currentBlocker: "Deliverability tuning on the email side",
     nextAction: "Test the new email warm-up settings",
     deliverables: "Internal tool to run my own outreach at scale",
@@ -425,7 +426,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     priority: "high",
     startDate: D(-3),
     dueDate: D(0),
-    currentMilestone: "Proposal delivered, awaiting decision",
+    currentMilestone: "",
     currentBlocker: "Awaiting Thabo's review",
     nextAction: "Follow up to confirm receipt and offer a walkthrough",
     deliverables: "Written proposal with ROI breakdown",
@@ -576,6 +577,102 @@ const taskSeeds: Array<Omit<Task, "id" | "createdAt" | "updatedAt">> = [
 ];
 
 const tasks: Task[] = taskSeeds.map((t, i) => rec(t, 8 - (i % 8)));
+
+/* ---------------- Milestones ---------------- */
+
+const reconciliationId = projectByName("Reconciliation Automation").id;
+const pilotId = projectByName("Investor Reporting Pilot").id;
+const milestoneTs = nowISO();
+
+const milestones: Milestone[] = [
+  // Reconciliation Automation — done -> in progress -> planned, with a dependency chain.
+  {
+    id: "mil_recon_1",
+    createdAt: milestoneTs,
+    updatedAt: milestoneTs,
+    projectId: reconciliationId,
+    name: "Discovery & data mapping",
+    startDate: D(-5),
+    endDate: D(-2),
+    status: "done",
+    order: 0,
+    dependsOn: [],
+    commitScope: "",
+    notes: "",
+  },
+  {
+    id: "mil_recon_2",
+    createdAt: milestoneTs,
+    updatedAt: milestoneTs,
+    projectId: reconciliationId,
+    name: "Bank feed ingestion",
+    startDate: D(-1),
+    endDate: D(4),
+    status: "in progress",
+    order: 1,
+    dependsOn: ["mil_recon_1"],
+    commitScope: "",
+    notes: "",
+  },
+  {
+    id: "mil_recon_3",
+    createdAt: milestoneTs,
+    updatedAt: milestoneTs,
+    projectId: reconciliationId,
+    name: "Matching engine build",
+    startDate: D(5),
+    endDate: D(9),
+    status: "planned",
+    order: 2,
+    dependsOn: ["mil_recon_2"],
+    commitScope: "",
+    notes: "",
+  },
+  {
+    id: "mil_recon_4",
+    createdAt: milestoneTs,
+    updatedAt: milestoneTs,
+    projectId: reconciliationId,
+    name: "Admin dashboard & handover",
+    startDate: D(10),
+    endDate: D(12),
+    status: "planned",
+    order: 3,
+    dependsOn: ["mil_recon_3"],
+    commitScope: "",
+    notes: "",
+  },
+
+  // Investor Reporting Pilot — scope done, build blocked on the client's security sign-off.
+  {
+    id: "mil_pilot_1",
+    createdAt: milestoneTs,
+    updatedAt: milestoneTs,
+    projectId: pilotId,
+    name: "Scope & security review",
+    startDate: D(-1),
+    endDate: D(2),
+    status: "done",
+    order: 0,
+    dependsOn: [],
+    commitScope: "",
+    notes: "",
+  },
+  {
+    id: "mil_pilot_2",
+    createdAt: milestoneTs,
+    updatedAt: milestoneTs,
+    projectId: pilotId,
+    name: "Pilot report build",
+    startDate: D(3),
+    endDate: D(9),
+    status: "blocked",
+    order: 1,
+    dependsOn: ["mil_pilot_1"],
+    commitScope: "",
+    notes: "Waiting on Johan's sign-off on the data-security approach.",
+  },
+];
 
 /* ---------------- Scorecards (last 16 days) ---------------- */
 
@@ -764,7 +861,7 @@ export function seedData(): DataShape {
     newsBookmarks: [],
     notes: [],
     metricEntries: [],
-    milestones: [],
+    milestones,
     projectThreads: [],
     settings: DEFAULT_SETTINGS,
   };
