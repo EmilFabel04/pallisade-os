@@ -130,4 +130,18 @@ describe("reconcileProjects", () => {
     const input = shape({ projects: [project({ currentMilestone: "" })] });
     expect(reconcileProjects(input)).toBe(input);
   });
+
+  it("does not throw and skips a project missing currentMilestone entirely", () => {
+    // `currentMilestone` is non-optional on `Project`, so this cast is the point:
+    // it simulates exactly the untyped/historical/restored data this migration
+    // exists to handle (see Finding 1). Do not "fix" the cast away — a project
+    // object built without the field is what a restored/foreign payload looks
+    // like at runtime, even though the compiler otherwise guarantees it here.
+    const { currentMilestone: _omitted, ...rest } = project();
+    const malformed = rest as Project;
+
+    expect(() => reconcileProjects(shape({ projects: [malformed] }))).not.toThrow();
+    const out = reconcileProjects(shape({ projects: [malformed] }));
+    expect(out.milestones).toHaveLength(0);
+  });
 });

@@ -52,7 +52,15 @@ export function reconcileFollowUps(data: DataShape): DataShape {
 export function reconcileProjects(data: DataShape): DataShape {
   const withMilestones = new Set(data.milestones.map((m) => m.projectId));
   const needing = data.projects.filter(
-    (p) => p.currentMilestone.trim() && !withMilestones.has(p.id),
+    // Defensive: this runs on restored/foreign/historical payloads, so a field
+    // typed as non-optional on `Project` (`currentMilestone`) can't be trusted
+    // to actually be present. `.trim()` on undefined threw here, which bricks
+    // hydration (see store.tsx) — never let a malformed record escape as an
+    // exception. The other fields this function reads (`id`, `startDate`,
+    // `dueDate`) are only read/compared, never method-called, so a missing
+    // value can't throw — but the constructor below still defaults them
+    // rather than propagate `undefined` into a `string | null` field.
+    (p) => (p.currentMilestone ?? "").trim() && !withMilestones.has(p.id),
   );
   if (needing.length === 0) return data;
 
@@ -62,9 +70,9 @@ export function reconcileProjects(data: DataShape): DataShape {
     createdAt: ts,
     updatedAt: ts,
     projectId: p.id,
-    name: p.currentMilestone.trim(),
-    startDate: p.startDate,
-    endDate: p.dueDate,
+    name: (p.currentMilestone ?? "").trim(),
+    startDate: p.startDate ?? null,
+    endDate: p.dueDate ?? null,
     status: "in progress",
     order: 0,
     dependsOn: [],
