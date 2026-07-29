@@ -161,12 +161,22 @@ Backfills a real `Milestone` from the legacy `currentMilestone` string, then bla
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `src/lib/reconcile.test.ts`. Note the `DataShape` helper — build it from the module's own `EMPTY`-shaped literal so adding collections later doesn't break these tests:
+Append to `src/lib/reconcile.test.ts`.
+
+**Do not add new import statements.** The file already has
+`import { reconcileFollowUps } from "@/lib/reconcile";` and
+`import type { DataShape, Lead, Task } from "@/lib/types";` — re-importing `DataShape`
+is a duplicate-identifier error. Extend those two existing lines in place:
 
 ```ts
-import { reconcileProjects } from "./reconcile";
-import type { DataShape, Project } from "./types";
+import { reconcileFollowUps, reconcileProjects } from "@/lib/reconcile";
+import type { DataShape, Lead, Project, Task } from "@/lib/types";
+```
 
+Then append the tests. Note the `shape` helper builds a full `DataShape` so adding
+collections later doesn't break these tests:
+
+```ts
 function shape(over: Partial<DataShape>): DataShape {
   return {
     leads: [], interactions: [], projects: [], tasks: [], scorecards: [],
@@ -751,8 +761,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             </button>
           }
         >
-          {/* Grouped by milestone in Task 8 */}
-          <MilestoneTasksPlaceholder count={projectTasks.length} />
+          {/* Flat for now; Task 8 groups these by milestone. */}
+          <FlatTasks
+            tasks={projectTasks}
+            onToggle={(t) => update("tasks", t.id, { status: t.status === "done" ? "not started" : "done" })}
+          />
         </Panel>
       )}
 
@@ -789,10 +802,32 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   );
 }
 
-function MilestoneTasksPlaceholder({ count }: { count: number }) {
-  return <p className="text-[0.8rem] text-[var(--color-muted)]">{count} linked task(s).</p>;
+/** A working flat task list. Task 8 replaces this with a milestone-grouped one. */
+function FlatTasks({ tasks, onToggle }: { tasks: Task[]; onToggle: (t: Task) => void }) {
+  if (tasks.length === 0)
+    return <p className="text-[0.8rem] text-[var(--color-muted)]">No tasks linked yet.</p>;
+
+  return (
+    <ul className="space-y-1.5">
+      {tasks.map((t) => (
+        <li key={t.id} className="flex items-center gap-2.5 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-2)] px-3 py-2">
+          <button onClick={() => onToggle(t)} className="shrink-0" aria-label="Toggle done">
+            {t.status === "done"
+              ? <CheckCircle2 size={16} className="text-[var(--color-positive)]" />
+              : <Circle size={16} className="text-[var(--color-dim)] hover:text-[var(--color-ink)]" />}
+          </button>
+          <span className={cn("flex-1 text-[0.83rem]", t.status === "done" ? "line-through text-[var(--color-dim)]" : "text-[var(--color-ink-soft)]")}>
+            {t.title}
+          </span>
+          <Badge tone={taskStatusTone(t.status)} dot={false}>{t.status}</Badge>
+        </li>
+      ))}
+    </ul>
+  );
 }
 ```
+
+Import `CheckCircle2`, `Circle`, `taskStatusTone` and `type Task` alongside the others.
 
 - [ ] **Step 2: Verify the page renders**
 
@@ -895,7 +930,7 @@ Pull `milestones` from `useStore()`. Clear `milestoneId` to `null` whenever `lin
 
 - [ ] **Step 2: Group the Tasks tab**
 
-Replace `MilestoneTasksPlaceholder` in `src/app/projects/[id]/page.tsx` with a real grouped list:
+Replace `FlatTasks` in `src/app/projects/[id]/page.tsx` with a milestone-grouped list (delete `FlatTasks` — `GroupedTasks` fully supersedes it):
 
 ```tsx
 function GroupedTasks({
@@ -1254,11 +1289,16 @@ git commit -m "feat(projects): gantt date domain and bar geometry"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `src/lib/projects/schedule.test.ts`:
+Append to `src/lib/projects/schedule.test.ts`. Extend Task 10's existing import line
+rather than adding a second statement for the same module:
 
 ```ts
-import { detectCycles, dependencyEdges } from "./schedule";
+import { ganttRange, barGeometry, detectCycles, dependencyEdges } from "./schedule";
+```
 
+Then append the tests:
+
+```ts
 describe("detectCycles", () => {
   it("finds nothing in a clean chain", () => {
     expect(detectCycles([
@@ -2004,11 +2044,16 @@ Records are delimited by ASCII **RS** (`\x1e`) and fields by **US** (`\x1f`), so
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `src/lib/git/parse.test.ts`:
+Append to `src/lib/git/parse.test.ts`. Extend Task 15's existing import line rather
+than adding a second statement for the same module:
 
 ```ts
-import { parseLog, LOG_FORMAT } from "./parse";
+import { parseStatus, parseLog, LOG_FORMAT } from "./parse";
+```
 
+Then append the tests:
+
+```ts
 const RS = "\x1e";
 const US = "\x1f";
 
@@ -2709,9 +2754,21 @@ Now that git exists, add below the Order field in `MilestoneForm.tsx`:
 </Field>
 ```
 
-- [ ] **Step 4: Add the header chip**
+- [ ] **Step 4: Add the Repo tab and the header chip**
 
-In `src/app/projects/[id]/page.tsx`, call the hook and render the chip under the company line:
+In `src/app/projects/[id]/page.tsx`, extend `TABS` to
+`["Overview", "Milestones", "Tasks", "Repo"] as const` and add the tab body — this is
+`RepoLink`'s permanent home, so it goes straight there rather than into Overview:
+
+```tsx
+{tab === "Repo" && (
+  <Panel title="Repository">
+    <RepoLink project={project} />
+  </Panel>
+)}
+```
+
+Then call the hook and render the chip under the company line:
 
 ```tsx
 const repo = useRepo(project.repoPath);
@@ -2743,8 +2800,8 @@ Add `repoPath: initial?.repoPath ?? null` to `ProjectForm`'s draft if Task 9 Ste
 
 - [ ] **Step 5: Verify**
 
-Run: `npm run dev` → a project → Repo tab (added next task; for now use the Overview and a temporary `<RepoLink project={project} />`). Link `/Users/emilfabel/Pallisade_OS`.
-Expected: "Linked — on branch main." and a header chip showing the branch. Then link `/tmp` → "That folder isn't a git repository." and nothing saved.
+Run: `npm run dev` → a project → Repo tab. Link `/Users/emilfabel/Pallisade_OS`.
+Expected: "Linked — on branch feat/project-tracker-depth." and a header chip showing the branch. Then link `/tmp` → "That folder isn't a git repository." and nothing saved.
 
 - [ ] **Step 6: Commit**
 
@@ -2804,9 +2861,9 @@ export function CommitFeed({ commits, limit }: { commits: Commit[]; limit?: numb
 }
 ```
 
-- [ ] **Step 2: Add the Repo tab**
+- [ ] **Step 2: Add the commit feed to the Repo tab**
 
-Extend `TABS` to `["Overview", "Milestones", "Tasks", "Repo"] as const` and add the panel:
+Task 20 created the Repo tab holding `RepoLink`. Wrap it in a `<div className="space-y-4">` and add a second panel below:
 
 ```tsx
 {tab === "Repo" && (
@@ -2841,7 +2898,7 @@ Add the last-5 feed to Overview, below the Status panel:
 )}
 ```
 
-Remove the temporary `<RepoLink>` from Overview if Task 20 Step 5 left one there.
+`RepoLink` stays where Task 20 put it — do not move or duplicate it.
 
 - [ ] **Step 3: Verify the failure path**
 
@@ -3193,11 +3250,19 @@ git commit -m "feat(projects): project agent system prompt"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `src/lib/advisor/applyAction.test.ts`:
+Append to `src/lib/advisor/applyAction.test.ts`.
+
+**Do not add a new import statement.** Line 2 already reads
+`import { buildTask, buildLead, buildLeadPatch, applyAction } from "@/lib/advisor/applyAction";`
+— a second import of `applyAction` is a duplicate-identifier error. Extend that line:
 
 ```ts
-import { buildMilestone, applyAction } from "./applyAction";
+import { buildTask, buildLead, buildLeadPatch, buildMilestone, applyAction } from "@/lib/advisor/applyAction";
+```
 
+Then append the tests:
+
+```ts
 describe("buildMilestone", () => {
   it("fills sensible defaults", () => {
     expect(buildMilestone({ projectId: "p1", name: "Discovery" })).toEqual({
@@ -4062,7 +4127,7 @@ If `MessageBubble` / `ActionCard` take different prop names, match the advisor p
 
 - [ ] **Step 3: Add the Chat tab**
 
-Extend `TABS` to `["Overview", "Milestones", "Tasks", "Repo", "Chat"] as const` and add:
+Extend `TABS` (currently `["Overview", "Milestones", "Tasks", "Repo"]`) to `["Overview", "Milestones", "Tasks", "Repo", "Chat"] as const` and add:
 
 ```tsx
 {tab === "Chat" && (
