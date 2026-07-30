@@ -22,6 +22,12 @@
 - Buckets surfaced: `no_reply` and `awaiting_you` only. `stalled` is counted, never listed.
 - Tests: vitest, `import { describe, it, expect } from "vitest"`, `@/` path alias
 - Run tests with `npm test`; typecheck with `npx tsc --noEmit`
+- **Imports in appended snippets.** Tasks 2-4 append to files Task 1 created, and their
+  code blocks repeat the `import` line so each snippet reads standalone. That is a
+  presentation convenience, not an instruction: always merge the new names into the
+  file's existing import from that module. A second import from the same module is a
+  defect — it breaks the one-import-block-at-the-top convention and trips
+  `import/no-duplicates`.
 - Do not stage unrelated in-flight work. The tree already has modified API routes and a new `src/lib/api/` from a separate refactor — stage only the files each task names.
 
 ---
