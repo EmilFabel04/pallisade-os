@@ -6,6 +6,9 @@ import {
 } from "@/lib/advisor/tools";
 import { emailToolsAvailable, connectedEmails, resolveEmailTool } from "@/lib/gmail/advisorEmail";
 import { calendarToolsAvailable, resolveCalendarTool } from "@/lib/calendar/advisorCalendar";
+import {
+  PROJECT_CONTEXT_TOOLS, PROJECT_CONTEXT_TOOL_NAMES, resolveProjectContextTool,
+} from "@/lib/projects/projectContext";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,7 +70,10 @@ export async function POST(req: Request) {
     `must confirm in the UI. After proposing, briefly tell them what you've queued and that it's awaiting their ` +
     `confirmation; do not claim it is already done. For update_lead / update_task, always pass an id you ` +
     `obtained from query_leads / query_tasks, and only include the fields you intend to change. Be concise, ` +
-    `direct and practical.`;
+    `direct and practical.\n\n` +
+    `For delivery work, use list_projects and get_project_context. get_project_context returns a project's ` +
+    `milestones, open tasks, linked repo with recent commits, and what was decided in its most recent project ` +
+    `chat — reach for it whenever the founder asks how a build is going or what was agreed on a project.`;
 
   // Offer Gmail / calendar tools only when those are connected.
   const [emailEnabled, calendarEnabled] = await Promise.all([
@@ -76,6 +82,7 @@ export async function POST(req: Request) {
   ]);
   const tools = [
     ...TOOLS,
+    ...PROJECT_CONTEXT_TOOLS,
     ...(emailEnabled ? EMAIL_TOOLS : []),
     ...(calendarEnabled ? CALENDAR_TOOLS : []),
   ];
@@ -131,6 +138,8 @@ export async function POST(req: Request) {
             ? await resolveEmailTool(tu.name, input)
             : CALENDAR_READ_TOOL_NAMES.has(tu.name)
             ? await resolveCalendarTool(tu.name, input)
+            : PROJECT_CONTEXT_TOOL_NAMES.has(tu.name)
+            ? await resolveProjectContextTool(tu.name, input)
             : resolveTool(tu.name, input, snapshot, proposals);
           return { type: "tool_result" as const, tool_use_id: tu.id, content };
         }),

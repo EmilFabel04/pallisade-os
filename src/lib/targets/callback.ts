@@ -46,5 +46,6 @@ export function callbackTask(
     status: "not started",
     dueDate,
     notes: "",
+    milestoneId: null,
   };
 }

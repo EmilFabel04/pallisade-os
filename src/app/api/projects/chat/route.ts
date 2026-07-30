@@ -1,0 +1,125 @@
+import { NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
+import type { ProposedAction } from "@/lib/types";
+import { buildProjectSystemPrompt } from "@/lib/projects/prompt";
+import { PROJECT_TOOLS, SERVER_TOOL_NAMES, resolveProjectTool, type ProjectSnapshot } from "@/lib/projects/tools";
+import { readCommits, readStatus } from "@/lib/git/repo";
+import type { Commit, RepoStatus } from "@/lib/git/types";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const MODEL = "claude-sonnet-4-6";
+const MAX_ITERATIONS = 8;
+
+export async function GET() {
+  return NextResponse.json({ configured: !!process.env.ANTHROPIC_API_KEY, model: MODEL });
+}
+
+interface ChatRequest {
+  messages?: { role: "user" | "assistant"; content: string }[];
+  snapshot?: ProjectSnapshot;
+  context?: { businessName?: string; founderName?: string };
+}
+
+export async function POST(req: Request) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return NextResponse.json({ error: "no_key" }, { status: 503 });
+
+  let body: ChatRequest;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  const snapshot = body.snapshot;
+  if (!snapshot?.project) return NextResponse.json({ error: "missing_snapshot" }, { status: 400 });
+  if (!body.messages?.length) return NextResponse.json({ error: "missing_messages" }, { status: 400 });
+
+  // Repo reads are best-effort — a missing repo must never fail the request.
+  const repoPath = snapshot.project.repoPath;
+  let repo: RepoStatus | null = null;
+  let commits: Commit[] = [];
+  if (repoPath) {
+    [repo, commits] = await Promise.all([
+      readStatus(repoPath).catch(() => null),
+      readCommits(repoPath, { limit: 30 }).catch(() => [] as Commit[]),
+    ]);
+  }
+
+  const system = buildProjectSystemPrompt({
+    project: snapshot.project,
+    milestones: snapshot.milestones ?? [],
+    tasks: snapshot.tasks ?? [],
+    repo,
+    commits,
+    businessName: body.context?.businessName || "Pallisade Data",
+    founderName: body.context?.founderName || "the founder",
+    today: new Date().toISOString().slice(0, 10),
+  });
+
+  const client = new Anthropic({ apiKey });
+  const proposals: ProposedAction[] = [];
+  const messages: Anthropic.MessageParam[] = body.messages.map((m) => ({
+    role: m.role, content: m.content,
+  }));
+
+  /** Git tools read the filesystem, so they resolve here rather than in tools.ts. */
+  async function resolveServerTool(name: string, args: Record<string, unknown>): Promise<string> {
+    if (!repoPath) return "No repo is linked to this project.";
+    try {
+      if (name === "read_repo_status") return JSON.stringify(await readStatus(repoPath));
+      const limit = Number(args.limit) || 30;
+      const since = args.since ? String(args.since) : undefined;
+      return JSON.stringify(await readCommits(repoPath, { limit, since }));
+    } catch {
+      return `The repo at ${repoPath} could not be read right now.`;
+    }
+  }
+
+  try {
+    let finalText = "";
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      const response = await client.messages.create({
+        model: MODEL,
+        max_tokens: 2048,
+        system,
+        tools: PROJECT_TOOLS as unknown as Anthropic.Tool[],
+        messages,
+      });
+
+      const textParts = response.content
+        .filter((blk): blk is Anthropic.TextBlock => blk.type === "text")
+        .map((blk) => blk.text);
+      if (textParts.length) finalText = textParts.join("\n").trim();
+
+      const toolUses = response.content.filter(
+        (blk): blk is Anthropic.ToolUseBlock => blk.type === "tool_use",
+      );
+      if (response.stop_reason !== "tool_use" || toolUses.length === 0) break;
+
+      messages.push({ role: "assistant", content: response.content });
+      const results: Anthropic.ToolResultBlockParam[] = await Promise.all(
+        toolUses.map(async (tu) => {
+          const input = (tu.input ?? {}) as Record<string, unknown>;
+          const content = SERVER_TOOL_NAMES.has(tu.name)
+            ? await resolveServerTool(tu.name, input)
+            : resolveProjectTool(tu.name, input, snapshot, proposals);
+          return { type: "tool_result" as const, tool_use_id: tu.id, content };
+        }),
+      );
+      messages.push({ role: "user", content: results });
+    }
+
+    if (!finalText) {
+      finalText = proposals.length
+        ? "I've queued the action(s) below for your confirmation."
+        : "I couldn't produce a response — try rephrasing.";
+    }
+
+    return NextResponse.json({ content: finalText, actions: proposals });
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 502 });
+  }
+}

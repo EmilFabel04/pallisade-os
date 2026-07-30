@@ -1,4 +1,5 @@
-import type { DataShape } from "./types";
+import type { DataShape, Milestone } from "./types";
+import { nowISO, uid } from "./utils";
 
 /**
  * One-time, idempotent data reconciliation applied at hydration so existing
@@ -37,4 +38,52 @@ export function reconcileFollowUps(data: DataShape): DataShape {
   });
 
   return changed ? { ...data, leads } : data;
+}
+
+/**
+ * Migrates the legacy `Project.currentMilestone` string onto a real Milestone
+ * record. Runs on every hydrate alongside reconcileFollowUps.
+ *
+ * A project qualifies when it has a non-empty `currentMilestone` AND zero
+ * milestone records. After migrating we blank the string — that is what makes
+ * this idempotent, and it means the migration cannot re-fire after the founder
+ * deliberately deletes every milestone on a project.
+ */
+export function reconcileProjects(data: DataShape): DataShape {
+  const withMilestones = new Set(data.milestones.map((m) => m.projectId));
+  const needing = data.projects.filter(
+    // Defensive: this runs on restored/foreign/historical payloads, so a field
+    // typed as non-optional on `Project` (`currentMilestone`) can't be trusted
+    // to actually be present. `.trim()` on undefined threw here, which bricks
+    // hydration (see store.tsx) — never let a malformed record escape as an
+    // exception. The other fields this function reads (`id`, `startDate`,
+    // `dueDate`) are only read/compared, never method-called, so a missing
+    // value can't throw — but the constructor below still defaults them
+    // rather than propagate `undefined` into a `string | null` field.
+    (p) => (p.currentMilestone ?? "").trim() && !withMilestones.has(p.id),
+  );
+  if (needing.length === 0) return data;
+
+  const ts = nowISO();
+  const created: Milestone[] = needing.map((p) => ({
+    id: uid("mil"),
+    createdAt: ts,
+    updatedAt: ts,
+    projectId: p.id,
+    name: (p.currentMilestone ?? "").trim(),
+    startDate: p.startDate ?? null,
+    endDate: p.dueDate ?? null,
+    status: "in progress",
+    order: 0,
+    dependsOn: [],
+    commitScope: "",
+    notes: "",
+  }));
+
+  const migrated = new Set(needing.map((p) => p.id));
+  const projects = data.projects.map((p) =>
+    migrated.has(p.id) ? { ...p, currentMilestone: "" } : p,
+  );
+
+  return { ...data, projects, milestones: [...data.milestones, ...created] };
 }

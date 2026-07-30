@@ -11,6 +11,14 @@ export function buildBrainSystemPrompt(input: BrainPromptInput): string {
   return input.mode === "brainstorm" ? brainstormPrompt(input) : strategistPrompt(input);
 }
 
+const PROJECT_TOOLS_BLOCK =
+  `\n\nTHE FOUNDER'S REAL WORK:\n` +
+  `- Use list_projects to see every live project, and get_project_context for one project's ` +
+  `milestones, open tasks, linked repo with recent commits, and what was decided in its most ` +
+  `recent project chat.\n` +
+  `- Reach for them before advising on delivery, capacity or what to build next. Ground the ` +
+  `advice in what is actually running; never invent project state.`;
+
 function strategistPrompt(input: BrainPromptInput): string {
   const { businessName, founderName, today } = input;
 
@@ -40,7 +48,8 @@ function strategistPrompt(input: BrainPromptInput): string {
     `not name-drop for texture.\n\n` +
     `TONE:\n` +
     `- Direct, high-signal, concise. No flattery, no hedging, no filler. Tell ${founderName} what ` +
-    `they need to hear, the way a seasoned operator would over a short, honest conversation.`
+    `they need to hear, the way a seasoned operator would over a short, honest conversation.` +
+    PROJECT_TOOLS_BLOCK
   );
 }
 
@@ -73,7 +82,8 @@ function brainstormPrompt(input: BrainPromptInput): string {
     `## Stack / approach  — suggested architecture, models, key libraries\n` +
     `## Risks & unknowns  — what could kill it; what you couldn't verify\n` +
     `## First steps for Claude Code  — an ordered, buildable starting checklist\n\n` +
-    `TONE: direct, high-signal, concise. No flattery. Tell ${founderName} what they need to hear.`
+    `TONE: direct, high-signal, concise. No flattery. Tell ${founderName} what they need to hear.` +
+    PROJECT_TOOLS_BLOCK
   );
 }
 

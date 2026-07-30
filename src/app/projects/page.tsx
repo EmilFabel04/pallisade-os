@@ -1,46 +1,36 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import {
-  FolderKanban,
-  Plus,
-  Pencil,
-  Trash2,
-  AlertOctagon,
-  ArrowRight,
-  CheckCircle2,
-  Circle,
-  ListChecks,
-} from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { FolderKanban, Plus, AlertOctagon, ArrowRight, ListChecks } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useFocusParam } from "@/components/useFocus";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Modal, ConfirmDialog } from "@/components/ui/Modal";
-import { DetailGrid, DetailRow, FilterSelect } from "@/components/ui/Detail";
+import { Modal } from "@/components/ui/Modal";
+import { FilterSelect } from "@/components/ui/Detail";
 import { ProjectForm } from "@/components/forms/ProjectForm";
-import { TaskForm } from "@/components/forms/TaskForm";
-import { PROJECT_STAGES, PROJECT_TYPES, type Project, type Task } from "@/lib/types";
-import { priorityTone, projectStageTone, taskStatusTone } from "@/lib/badges";
-import { fmtDate, relativeDay, isOverdue, cn } from "@/lib/utils";
+import { GanttChart, type GanttGroup } from "@/components/projects/GanttChart";
+import { PROJECT_STAGES, PROJECT_TYPES } from "@/lib/types";
+import { priorityTone, projectStageTone } from "@/lib/badges";
+import { relativeDay, isOverdue, cn } from "@/lib/utils";
 
 function ProjectsView() {
-  const { projects, tasks, update, remove } = useStore();
+  const { projects, tasks, milestones } = useStore();
   const focusId = useFocusParam();
+  const router = useRouter();
 
   const [fStage, setFStage] = useState("all");
   const [fType, setFType] = useState("all");
-  const [viewId, setViewId] = useState<string | null>(null);
-  const [editId, setEditId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [addTaskFor, setAddTaskFor] = useState<Project | null>(null);
+  const [view, setView] = useState<"board" | "timeline">("board");
 
   useEffect(() => {
-    if (focusId) setViewId(focusId);
-  }, [focusId]);
+    if (focusId) router.replace(`/projects/${focusId}`);
+  }, [focusId, router]);
 
   const filtered = useMemo(
     () =>
@@ -52,9 +42,17 @@ function ProjectsView() {
     [projects, fStage, fType],
   );
 
+  const groups: GanttGroup[] = useMemo(
+    () =>
+      filtered.map((p) => ({
+        key: p.id,
+        label: `${p.name}${p.company ? ` · ${p.company}` : ""}`,
+        milestones: milestones.filter((m) => m.projectId === p.id),
+      })),
+    [filtered, milestones],
+  );
+
   const tasksFor = (id: string) => tasks.filter((t) => t.linkKind === "project" && t.linkId === id);
-  const view = projects.find((p) => p.id === viewId) ?? null;
-  const edit = projects.find((p) => p.id === editId) ?? null;
 
   return (
     <div className="space-y-5">
@@ -71,9 +69,24 @@ function ProjectsView() {
       <div className="flex flex-wrap items-center gap-2.5">
         <FilterSelect label="Stage" value={fStage} onChange={setFStage} options={[{ value: "all", label: "All stages" }, ...PROJECT_STAGES.map((s) => ({ value: s, label: s }))]} />
         <FilterSelect label="Type" value={fType} onChange={setFType} options={[{ value: "all", label: "All types" }, ...PROJECT_TYPES.map((s) => ({ value: s, label: s }))]} />
+        <div className="ml-auto flex gap-1">
+          {(["board", "timeline"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={cn("btn btn-sm capitalize", view === v && "btn-accent")}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {view === "timeline" ? (
+        <Panel>
+          <GanttChart groups={groups} onSelect={(m) => router.push(`/projects/${m.projectId}`)} />
+        </Panel>
+      ) : filtered.length === 0 ? (
         <Panel noPad>
           <EmptyState
             icon={FolderKanban}
@@ -88,7 +101,7 @@ function ProjectsView() {
             const pt = tasksFor(p.id);
             const done = pt.filter((t) => t.status === "done").length;
             return (
-              <button key={p.id} onClick={() => setViewId(p.id)} className="panel p-4 text-left hover:border-[var(--color-line-strong)] transition-colors flex flex-col gap-3">
+              <Link key={p.id} href={`/projects/${p.id}`} className="panel p-4 text-left hover:border-[var(--color-line-strong)] transition-colors flex flex-col gap-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <h3 className="text-[0.95rem] font-semibold text-[var(--color-ink)] truncate">{p.name}</h3>
@@ -123,101 +136,16 @@ function ProjectsView() {
                     </span>
                   )}
                 </div>
-              </button>
+              </Link>
             );
           })}
         </div>
       )}
 
-      {/* Detail */}
-      <Modal
-        open={!!view}
-        onClose={() => setViewId(null)}
-        title={view?.name ?? ""}
-        subtitle={view?.company}
-        size="lg"
-        footer={
-          view && (
-            <>
-              <button className="btn" onClick={() => setAddTaskFor(view)}><Plus size={15} /> Add task</button>
-              <button className="btn" onClick={() => { setEditId(view.id); setViewId(null); }}><Pencil size={15} /> Edit</button>
-              <button className="btn" onClick={() => setDeleteId(view.id)} style={{ color: "var(--color-accent-soft)" }}><Trash2 size={15} /> Delete</button>
-            </>
-          )
-        }
-      >
-        {view && (
-          <div className="space-y-5">
-            <div className="flex flex-wrap gap-2">
-              <Badge tone={projectStageTone(view.stage)}>{view.stage}</Badge>
-              <Badge tone={priorityTone(view.priority)} dot={false}>{view.priority} priority</Badge>
-              <span className="chip">{view.type}</span>
-            </div>
-
-            <DetailGrid>
-              <DetailRow label="Start date">{fmtDate(view.startDate)}</DetailRow>
-              <DetailRow label="Due date">{view.dueDate ? `${fmtDate(view.dueDate)} (${relativeDay(view.dueDate)})` : ""}</DetailRow>
-              <DetailRow label="Current milestone" full>{view.currentMilestone}</DetailRow>
-              <DetailRow label="Current blocker" full>{view.currentBlocker}</DetailRow>
-              <DetailRow label="Next action" full>{view.nextAction}</DetailRow>
-              <DetailRow label="Deliverables" full>{view.deliverables}</DetailRow>
-              <DetailRow label="Notes" full>{view.notes}</DetailRow>
-            </DetailGrid>
-
-            {/* Linked tasks */}
-            <div>
-              <div className="flex items-center justify-between mb-2.5">
-                <p className="eyebrow">Linked tasks</p>
-                <button className="btn btn-sm" onClick={() => setAddTaskFor(view)}><Plus size={13} /> Add</button>
-              </div>
-              <LinkedTasks tasks={tasksFor(view.id)} onToggle={(t) => update("tasks", t.id, { status: t.status === "done" ? "not started" : "done" })} />
-            </div>
-          </div>
-        )}
-      </Modal>
-
       <Modal open={creating} onClose={() => setCreating(false)} title="Add Project" subtitle="Track a new piece of work">
         <ProjectForm onClose={() => setCreating(false)} />
       </Modal>
-      <Modal open={!!edit} onClose={() => setEditId(null)} title={`Edit — ${edit?.name ?? ""}`}>
-        {edit && <ProjectForm initial={edit} onClose={() => setEditId(null)} />}
-      </Modal>
-      <Modal open={!!addTaskFor} onClose={() => setAddTaskFor(null)} title="Add Task" subtitle={addTaskFor ? `Linked to ${addTaskFor.name}` : ""}>
-        {addTaskFor && <TaskForm presetLink={{ kind: "project", id: addTaskFor.id }} onClose={() => setAddTaskFor(null)} />}
-      </Modal>
-
-      <ConfirmDialog
-        open={!!deleteId}
-        onClose={() => setDeleteId(null)}
-        onConfirm={() => { if (deleteId) remove("projects", deleteId); setViewId(null); }}
-        title="Delete project?"
-        message="This removes the project. Linked tasks are kept but will no longer be linked."
-      />
     </div>
-  );
-}
-
-function LinkedTasks({ tasks, onToggle }: { tasks: Task[]; onToggle: (t: Task) => void }) {
-  if (tasks.length === 0)
-    return <p className="text-[0.8rem] text-[var(--color-muted)]">No tasks linked yet.</p>;
-  return (
-    <ul className="space-y-1.5">
-      {tasks.map((t) => (
-        <li key={t.id} className="flex items-center gap-2.5 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-2)] px-3 py-2">
-          <button onClick={() => onToggle(t)} className="shrink-0" aria-label="Toggle done">
-            {t.status === "done" ? (
-              <CheckCircle2 size={16} className="text-[var(--color-positive)]" />
-            ) : (
-              <Circle size={16} className="text-[var(--color-dim)] hover:text-[var(--color-ink)]" />
-            )}
-          </button>
-          <span className={cn("flex-1 text-[0.83rem]", t.status === "done" ? "line-through text-[var(--color-dim)]" : "text-[var(--color-ink-soft)]")}>
-            {t.title}
-          </span>
-          <Badge tone={taskStatusTone(t.status)} dot={false}>{t.status}</Badge>
-        </li>
-      ))}
-    </ul>
   );
 }
 

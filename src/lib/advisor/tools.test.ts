@@ -4,7 +4,7 @@ import type { AdvisorSnapshot } from "@/lib/types";
 
 function emptySnapshot(): AdvisorSnapshot {
   return {
-    leads: [], interactions: [], projects: [], tasks: [], scorecards: [], painPoints: [], dialLists: [],
+    leads: [], interactions: [], projects: [], tasks: [], scorecards: [], painPoints: [], dialLists: [], milestones: [],
     settings: {
       businessName: "X", founderName: "Y", mainMarket: "Z", services: "S",
       accentColor: "#000", currency: "ZAR", secondaryCurrencyEnabled: false,

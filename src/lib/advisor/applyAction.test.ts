@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildTask, buildLead, buildLeadPatch, applyAction } from "@/lib/advisor/applyAction";
+import { buildTask, buildTaskPatch, buildLead, buildLeadPatch, buildMilestone, buildMilestonePatch, buildProjectPatch, applyAction } from "@/lib/advisor/applyAction";
 import type { ProposedAction } from "@/lib/types";
 
 describe("buildTask", () => {
@@ -29,6 +29,24 @@ describe("buildLeadPatch", () => {
   it("only includes provided keys", () => {
     expect(buildLeadPatch({ status: "won" })).toEqual({ status: "won" });
     expect(buildLeadPatch({})).toEqual({});
+  });
+});
+
+describe("buildTaskPatch", () => {
+  it("includes a milestone reassignment", () => {
+    expect(buildTaskPatch({ milestoneId: "m1" })).toEqual({ milestoneId: "m1" });
+  });
+
+  it("allows an explicit null through, to unassign a task from its milestone", () => {
+    expect(buildTaskPatch({ milestoneId: null })).toEqual({ milestoneId: null });
+  });
+
+  it("produces an empty patch for empty args", () => {
+    expect(buildTaskPatch({})).toEqual({});
+  });
+
+  it("drops an out-of-schema key", () => {
+    expect(buildTaskPatch({ linkId: "other-project" })).toEqual({});
   });
 });
 
@@ -71,5 +89,142 @@ describe("applyAction", () => {
       args: { company: "Acme" },
     };
     expect(applyAction(store as never, action)).toEqual({ kind: "leads", id: "new-1" });
+  });
+});
+
+describe("buildMilestone", () => {
+  it("fills sensible defaults", () => {
+    expect(buildMilestone({ projectId: "p1", name: "Discovery" })).toEqual({
+      projectId: "p1", name: "Discovery", startDate: null, endDate: null,
+      status: "planned", order: 0, dependsOn: [], commitScope: "", notes: "",
+    });
+  });
+
+  it("coerces the fields it is given", () => {
+    expect(buildMilestone({
+      projectId: "p1", name: "Build", startDate: "2026-07-01", endDate: "2026-07-20",
+      status: "in progress", order: 2, dependsOn: ["m0"], commitScope: "build", notes: "n",
+    })).toMatchObject({
+      startDate: "2026-07-01", endDate: "2026-07-20", status: "in progress",
+      order: 2, dependsOn: ["m0"], commitScope: "build",
+    });
+  });
+
+  it("turns an empty date string into null", () => {
+    expect(buildMilestone({ projectId: "p1", name: "X", startDate: "" }).startDate).toBeNull();
+  });
+
+  it("ignores a non-array dependsOn", () => {
+    expect(buildMilestone({ projectId: "p1", name: "X", dependsOn: "m0" }).dependsOn).toEqual([]);
+  });
+});
+
+describe("buildMilestonePatch", () => {
+  it("produces an empty patch for empty args", () => {
+    expect(buildMilestonePatch({})).toEqual({});
+  });
+
+  it("only includes provided keys", () => {
+    expect(buildMilestonePatch({ status: "done" })).toEqual({ status: "done" });
+  });
+
+  it("includes a field explicitly cleared to an empty string", () => {
+    expect(buildMilestonePatch({ notes: "" })).toEqual({ notes: "" });
+  });
+});
+
+describe("buildProjectPatch", () => {
+  it("produces an empty patch for empty args", () => {
+    expect(buildProjectPatch({})).toEqual({});
+  });
+
+  it("only includes provided keys", () => {
+    expect(buildProjectPatch({ currentBlocker: "Waiting on creds" })).toEqual({ currentBlocker: "Waiting on creds" });
+  });
+
+  it("includes a field explicitly cleared to an empty string", () => {
+    expect(buildProjectPatch({ notes: "" })).toEqual({ notes: "" });
+  });
+});
+
+describe("applyAction — milestones", () => {
+  function fakeStore() {
+    const calls: { op: string; key: string; id?: string; value?: unknown }[] = [];
+    return {
+      calls,
+      create: (key: string, value: unknown) => { calls.push({ op: "create", key, value }); return { id: "new1" }; },
+      update: (key: string, id: string, value: unknown) => { calls.push({ op: "update", key, id, value }); },
+    };
+  }
+
+  it("creates a milestone but deep-links to its project", () => {
+    const store = fakeStore();
+    const result = applyAction(store, {
+      id: "a1", tool: "create_milestone", description: "", status: "confirmed",
+      args: { projectId: "p1", name: "Discovery" },
+    });
+    expect(store.calls[0]).toMatchObject({ op: "create", key: "milestones" });
+    // Milestones have no page — link to the project so ?focus= resolves.
+    expect(result).toEqual({ kind: "projects", id: "p1" });
+  });
+
+  it("updates a milestone and deep-links to its project", () => {
+    const store = fakeStore();
+    const result = applyAction(store, {
+      id: "a2", tool: "update_milestone", description: "", status: "confirmed",
+      args: { id: "m1", projectId: "p1", status: "done" },
+    });
+    expect(store.calls[0]).toMatchObject({ op: "update", key: "milestones", id: "m1" });
+    expect(result).toEqual({ kind: "projects", id: "p1" });
+  });
+
+  it("returns null for a milestone update with no id", () => {
+    const store = fakeStore();
+    const result = applyAction(store, {
+      id: "a3", tool: "update_milestone", description: "", status: "confirmed",
+      args: { projectId: "p1" },
+    });
+    expect(result).toBeNull();
+    expect(store.calls).toEqual([]);
+  });
+
+  it("returns null for a milestone update with an id but no projectId", () => {
+    const store = fakeStore();
+    const result = applyAction(store, {
+      id: "a3b", tool: "update_milestone", description: "", status: "confirmed",
+      args: { id: "m1" },
+    });
+    expect(result).toBeNull();
+    expect(store.calls).toEqual([]);
+  });
+
+  it("returns null for a milestone create with no projectId", () => {
+    const store = fakeStore();
+    const result = applyAction(store, {
+      id: "a3c", tool: "create_milestone", description: "", status: "confirmed",
+      args: { name: "Discovery" },
+    });
+    expect(result).toBeNull();
+    expect(store.calls).toEqual([]);
+  });
+
+  it("updates a project", () => {
+    const store = fakeStore();
+    const result = applyAction(store, {
+      id: "a4", tool: "update_project", description: "", status: "confirmed",
+      args: { id: "p1", currentBlocker: "Waiting on creds" },
+    });
+    expect(store.calls[0]).toMatchObject({ op: "update", key: "projects", id: "p1" });
+    expect(result).toEqual({ kind: "projects", id: "p1" });
+  });
+
+  it("returns null for a project update with no id", () => {
+    const store = fakeStore();
+    const result = applyAction(store, {
+      id: "a4b", tool: "update_project", description: "", status: "confirmed",
+      args: { currentBlocker: "Waiting on creds" },
+    });
+    expect(result).toBeNull();
+    expect(store.calls).toEqual([]);
   });
 });

@@ -59,6 +59,21 @@ describe("buildBrainSystemPrompt — modes", () => {
   });
 });
 
+describe("brain prompt — project awareness", () => {
+  const input = { businessName: "Pallisade Data", founderName: "Emil", today: "2026-07-29" };
+
+  it("tells the strategist about the project tools", () => {
+    const p = buildBrainSystemPrompt(input);
+    expect(p).toContain("get_project_context");
+    expect(p).toContain("list_projects");
+  });
+
+  it("tells brainstorm mode too", () => {
+    const p = buildBrainSystemPrompt({ ...input, mode: "brainstorm" });
+    expect(p).toContain("get_project_context");
+  });
+});
+
 describe("formatAttachmentsBlock", () => {
   it("returns empty string with no attachments", () => {
     expect(formatAttachmentsBlock([])).toBe("");

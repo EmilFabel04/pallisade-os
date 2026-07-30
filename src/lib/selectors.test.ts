@@ -19,6 +19,7 @@ function project(over: Partial<Project>): Project {
     nextAction: "",
     deliverables: "",
     notes: "",
+    repoPath: null,
     ...over,
   };
 }

@@ -72,6 +72,14 @@ export type ProjectStage = (typeof PROJECT_STAGES)[number];
 export const PRIORITIES = ["low", "medium", "high"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
+export const MILESTONE_STATUSES = [
+  "planned",
+  "in progress",
+  "blocked",
+  "done",
+] as const;
+export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number];
+
 export const TASK_CATEGORIES = [
   "sales",
   "product",
@@ -155,11 +163,32 @@ export interface Project extends BaseRecord {
   priority: Priority;
   startDate: string | null;
   dueDate: string | null;
+  /** @deprecated Retired in favour of Milestone records. Kept so
+   *  reconcileProjects can still migrate a restored backup. */
   currentMilestone: string;
   currentBlocker: string;
   nextAction: string;
   deliverables: string;
   notes: string;
+  repoPath: string | null;
+}
+
+export interface Milestone extends BaseRecord {
+  projectId: string;
+  name: string;
+  startDate: string | null;   // ISO YYYY-MM-DD — the Gantt bar's left edge
+  endDate: string | null;     // ISO YYYY-MM-DD — right edge
+  status: MilestoneStatus;
+  order: number;              // manual sequence within the project
+  dependsOn: string[];        // milestone ids, same project only
+  commitScope: string;        // e.g. "gantt" → matches `feat(gantt):`. "" = date-range matching
+  notes: string;
+}
+
+export interface ProjectThread extends BaseRecord {
+  projectId: string;
+  title: string;              // auto-derived from the first user message
+  messages: ChatMessage[];
 }
 
 export interface Task extends BaseRecord {
@@ -172,6 +201,7 @@ export interface Task extends BaseRecord {
   status: TaskStatus;
   dueDate: string | null;
   notes: string;
+  milestoneId: string | null;
 }
 
 export interface Scorecard extends BaseRecord {
@@ -448,6 +478,8 @@ export interface DataShape {
   newsBookmarks: NewsBookmark[];
   notes: Note[];
   metricEntries: MetricEntry[];
+  milestones: Milestone[];
+  projectThreads: ProjectThread[];
   settings: Settings;
 }
 
@@ -457,7 +489,7 @@ export type CollectionKey = Exclude<keyof DataShape, "settings">;
 export type AdvisorSnapshot = Omit<
   DataShape,
   | "conversations" | "playbooks" | "targets" | "positioningProfiles"
-  | "contentThreads" | "brainThreads"
+  | "contentThreads" | "brainThreads" | "projectThreads"
   | "newsFeed" | "newsInterests" | "newsBookmarks"
   | "notes" | "metricEntries"
 >;
