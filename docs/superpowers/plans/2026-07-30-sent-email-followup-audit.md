@@ -482,6 +482,22 @@ describe("classifyThread", () => {
   it("returns no_reply for an empty thread", () => {
     expect(classifyThread([], own)).toBe("no_reply");
   });
+
+  it("keeps an undated message in Gmail's original position rather than first", () => {
+    const messages: ScanMessage[] = [
+      msg("jane@acme.com", "2026-07-02T09:00:00Z"),
+      { from: "emil@pallisade.com", to: [], date: "", text: "" },
+    ];
+    expect(classifyThread(messages, own)).toBe("stalled");
+  });
+
+  it("classifies an undated final reply from them as awaiting_you", () => {
+    const messages: ScanMessage[] = [
+      msg("emil@pallisade.com", "2026-07-01T09:00:00Z"),
+      { from: "jane@acme.com", to: [], date: "", text: "" },
+    ];
+    expect(classifyThread(messages, own)).toBe("awaiting_you");
+  });
 });
 ```
 
@@ -520,11 +536,26 @@ export function isOwn(email: string, ownEmails: Set<string>): boolean {
  *   no_reply     — nobody but the founder ever wrote
  *   awaiting_you — the other side wrote last; the ball is in his court
  *   stalled      — they replied, but the founder answered last
+ *
+ * Ordering falls back to the caller's message order whenever a date is missing.
  */
 export function classifyThread(messages: ScanMessage[], ownEmails: Set<string>): ThreadBucket {
   if (messages.length === 0) return "no_reply";
 
-  const ordered = [...messages].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const ordered = messages
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => {
+      // A message can carry an empty date when Gmail supplied neither a usable
+      // internalDate nor a parseable Date header. Empty strings sort before every
+      // ISO date, which would wrongly hoist such a message to the front and can
+      // flip the thread's bucket. Fall back to the original position instead —
+      // threads.get returns a thread's messages chronologically.
+      if (!a.m.date || !b.m.date) return a.i - b.i;
+      if (a.m.date < b.m.date) return -1;
+      if (a.m.date > b.m.date) return 1;
+      return a.i - b.i;
+    })
+    .map((x) => x.m);
   const theirs = ordered.filter((m) => !isOwn(m.from, ownEmails));
   if (theirs.length === 0) return "no_reply";
 
@@ -536,7 +567,7 @@ export function classifyThread(messages: ScanMessage[], ownEmails: Set<string>):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm test -- sentScan`
-Expected: PASS, 34 tests
+Expected: PASS, 36 tests
 
 - [ ] **Step 5: Commit**
 
@@ -738,7 +769,7 @@ export function groupByRecipient(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm test -- sentScan`
-Expected: PASS, 42 tests
+Expected: PASS, 44 tests
 
 - [ ] **Step 5: Commit**
 
