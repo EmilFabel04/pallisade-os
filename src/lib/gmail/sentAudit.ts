@@ -30,6 +30,10 @@ export interface SentAuditResult {
   scanned: number;
   matched: number;
   cap: number;
+  /** True when the scan stopped early — either the global cap was reached, or
+   *  any single inbox exhausted its share of it — so older mail went unread.
+   *  Conservative on purpose: an inbox that happened to have exactly its
+   *  allowance and nothing more will also read as capped. */
   capped: boolean;
   fetchFailures: number;
   /** Threads that failed both the subject and sign-off rules. A looser sign-off
@@ -126,6 +130,7 @@ export async function auditSentFollowUps(
   const perAccount = Math.max(1, Math.ceil(cap / Math.max(1, accounts.length)));
 
   let scanned = 0;
+  let capped = false;
   let fetchFailures = 0;
   let excludedSignoffOnly = 0;
   let excludedWarming = 0;
@@ -137,6 +142,10 @@ export async function auditSentFollowUps(
       listThreadIds(account.id, { q, max: perAccount }).catch(skipUnlessAuth([] as string[])),
       labelNames(account.id),
     ]);
+
+    // A full page-set for this account means its allowance ran out, so older
+    // threads went unread even if the global total stayed under `cap`.
+    if (ids.length >= perAccount) capped = true;
 
     const threads = await mapPool(ids, FETCH_CONCURRENCY, (id) =>
       gmailGet<RawThread>(account.id, `threads/${id}`, { format: "full" })
@@ -191,7 +200,7 @@ export async function auditSentFollowUps(
     scanned,
     matched: kept.length,
     cap,
-    capped: scanned >= cap,
+    capped: capped || scanned >= cap,
     fetchFailures,
     excludedSignoffOnly,
     excludedWarming,
