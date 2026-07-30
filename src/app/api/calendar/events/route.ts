@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import { isConfigured, hasCalendarScope } from "@/lib/gmail/config";
 import { listAccounts } from "@/lib/gmail/accounts";
 import { GmailAuthError } from "@/lib/gmail/client";
@@ -41,7 +42,7 @@ export async function GET(req: Request) {
     const events = lists.flat().sort((a, b) => (a.start < b.start ? -1 : 1));
     return NextResponse.json({ events, needsReconnect, hasAccounts: (await listAccounts()).length > 0 });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 502 });
+    return apiError(UPSTREAM_FAILED, 502, e);
   }
 }
 
@@ -85,6 +86,6 @@ export async function POST(req: Request) {
     if (e instanceof GmailAuthError) {
       return NextResponse.json({ error: "reconnect", accountId: e.accountId }, { status: 401 });
     }
-    return NextResponse.json({ error: (e as Error).message }, { status: 502 });
+    return apiError(UPSTREAM_FAILED, 502, e);
   }
 }

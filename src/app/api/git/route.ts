@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { realpath } from "node:fs/promises";
+import { apiError } from "@/lib/api/errors";
 import { GitError, readCommits, readStatus } from "@/lib/git/repo";
 import { isLinkedRepoPath, linkedRepoPaths, pathMatchesAny } from "@/lib/git/linkedRepos";
 import { loadAll } from "@/lib/db/sqlite";
@@ -61,8 +62,9 @@ export async function GET(req: Request) {
         : await readStatus(repoPath);
     return NextResponse.json({ data });
   } catch (err) {
-    // Never leak a stack trace or a raw fs error to the client.
+    // Never leak a stack trace or a raw fs error to the client — GitError.message
+    // carries the full command line and stderr.
     const code = err instanceof GitError ? err.code : "git_failed";
-    return NextResponse.json({ error: code }, { status: STATUS_FOR[code] ?? 502 });
+    return apiError(code, STATUS_FOR[code] ?? 502, err);
   }
 }

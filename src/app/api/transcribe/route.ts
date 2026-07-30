@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import { audioExtension } from "@/lib/voice/audioFormat";
 
 export const runtime = "nodejs";
@@ -52,6 +53,6 @@ export async function POST(req: Request) {
     const text = (await res.text()).trim();
     return NextResponse.json({ text });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 502 });
+    return apiError(UPSTREAM_FAILED, 502, e);
   }
 }

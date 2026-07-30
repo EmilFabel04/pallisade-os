@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import Anthropic from "@anthropic-ai/sdk";
 import type { ProposedAction } from "@/lib/types";
 import { buildProjectSystemPrompt } from "@/lib/projects/prompt";
@@ -141,6 +142,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ content: finalText, actions: proposals });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 502 });
+    return apiError(UPSTREAM_FAILED, 502, err);
   }
 }
