@@ -36,6 +36,11 @@ describe("unquotedBody", () => {
     const body = "From: the team at Pallisade\n\nWe build things.\n\nEmil";
     expect(unquotedBody(body)).toBe(body);
   });
+
+  it("keeps the text below a quoted testimonial", () => {
+    const body = "As one customer put it:\n> This saved us 10 hours a week.\n\nWorth a chat?\n\nBest,\nEmil";
+    expect(unquotedBody(body)).toBe("As one customer put it:\n\nWorth a chat?\n\nBest,\nEmil");
+  });
 });
 
 describe("signedByFounder", () => {
@@ -78,5 +83,15 @@ describe("signedByFounder", () => {
 
   it("returns false for an empty body", () => {
     expect(signedByFounder("")).toBe(false);
+  });
+
+  it("still finds the sign-off below a quoted testimonial", () => {
+    const body = "As one customer put it:\n> This saved us 10 hours a week.\n\nWorth a chat?\n\nBest,\nEmil";
+    expect(signedByFounder(body)).toBe(true);
+  });
+
+  it("still finds the sign-off in an interleaved point-by-point reply", () => {
+    const body = "> your first question\nAnswer one.\n\n> your second question\nAnswer two.\n\nBest,\nEmil";
+    expect(signedByFounder(body)).toBe(true);
   });
 });

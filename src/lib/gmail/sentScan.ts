@@ -22,24 +22,38 @@ export const SIGNOFF_SEARCH_LINES = 1;
 const VALEDICTION =
   /^(best regards|kind regards|all the best|thank you|best|thanks|cheers|regards|warmly|sincerely)\s*[,\-–—]?\s*/i;
 
-const QUOTE_MARKERS = [
-  /^>/,
+/** Regex for lines starting with >, which are filtered from the body. */
+const QUOTED_LINE = /^>/;
+
+/** Attribution markers that indicate a quoted thread should be truncated at this point. */
+const ATTRIBUTION_MARKERS = [
   /^-{2,}\s*original message\s*-{2,}$/i,
 ];
 
 /**
- * Return only the newly-written part of a message body, cutting the quoted
- * thread beneath it. Conservative on purpose: over-aggressive stripping would
- * discard a real signature and break the sign-off test.
+ * Return only the newly-written part of a message body, removing both quoted
+ * threads and interleaved quoted lines. Conservative on purpose: over-aggressive
+ * stripping would discard a real signature and break the sign-off test.
+ *
+ * Strategy:
+ * 1. Truncate at the first attribution marker (Gmail's "On...wrote:", Outlook's
+ *    "-----Original Message-----", or "From:/Sent:" blocks). These precede
+ *    trailing quote blocks, so truncation is safe.
+ * 2. Filter out any lines starting with > (quoted lines), even if they appear
+ *    mid-body as testimonials or interleaved replies.
  */
 export function unquotedBody(text: string): string {
   const lines = text.split(/\r?\n/);
+  let truncateAt = lines.length; // Default: don't truncate
 
+  // Find the first attribution marker (truncate, not filter)
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    if (QUOTE_MARKERS.some((re) => re.test(line))) {
-      return lines.slice(0, i).join("\n");
+    // Outlook-style divider
+    if (ATTRIBUTION_MARKERS.some((re) => re.test(line))) {
+      truncateAt = i;
+      break;
     }
 
     // Gmail attribution: "On <date> Name <addr> wrote:" — sometimes wrapped so
@@ -47,18 +61,26 @@ export function unquotedBody(text: string): string {
     if (/^on\b/i.test(line)) {
       const next = (lines[i + 1] ?? "").trim();
       if (/wrote:\s*$/i.test(line) || /^wrote:\s*$/i.test(next)) {
-        return lines.slice(0, i).join("\n");
+        truncateAt = i;
+        break;
       }
     }
 
     // Outlook-style header block: a From: line immediately followed by Sent:/Date:.
     // A lone From: line is left alone — it appears in ordinary prose.
     if (/^from:\s/i.test(line) && /^(sent|date):\s/i.test((lines[i + 1] ?? "").trim())) {
-      return lines.slice(0, i).join("\n");
+      truncateAt = i;
+      break;
     }
   }
 
-  return text;
+  // Take the lines before the first attribution marker
+  const truncated = lines.slice(0, truncateAt);
+
+  // Filter out quoted lines (lines starting with > after trimming)
+  const filtered = truncated.filter((line) => !QUOTED_LINE.test(line.trim()));
+
+  return filtered.join("\n");
 }
 
 /** Trim a line to a bare name for comparison. */
