@@ -64,12 +64,13 @@ describe("listThreadIds", () => {
     expect(gmailGet).toHaveBeenCalledTimes(2);
   });
 
-  it("asks for only the remaining budget on each page", async () => {
+  it("asks for only the remaining budget once a page is consumed", async () => {
+    const full = Array.from({ length: 100 }, (_, i) => ({ id: `id${i}` }));
     gmailGet
-      .mockResolvedValueOnce({ threads: [{ id: "a" }, { id: "b" }], nextPageToken: "p2" })
-      .mockResolvedValueOnce({ threads: [{ id: "c" }] });
+      .mockResolvedValueOnce({ threads: full, nextPageToken: "p2" })
+      .mockResolvedValueOnce({ threads: [{ id: "last" }] });
     await listThreadIds("acct", { max: 150 });
     expect(gmailGet.mock.calls[0][2]).toMatchObject({ maxResults: 100 });
-    expect(gmailGet.mock.calls[1][2]).toMatchObject({ maxResults: 100 });
+    expect(gmailGet.mock.calls[1][2]).toMatchObject({ maxResults: 50 });
   });
 });
