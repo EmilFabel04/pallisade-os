@@ -49,4 +49,27 @@ describe("listThreadIds", () => {
     gmailGet.mockResolvedValueOnce({});
     expect(await listThreadIds("acct")).toEqual([]);
   });
+
+  it("stops following tokens after a run of empty pages", async () => {
+    gmailGet.mockResolvedValue({ threads: [], nextPageToken: "more" });
+    expect(await listThreadIds("acct", { max: 400 })).toEqual([]);
+    expect(gmailGet).toHaveBeenCalledTimes(5);
+  });
+
+  it("keeps paging through an occasional empty page", async () => {
+    gmailGet
+      .mockResolvedValueOnce({ threads: [], nextPageToken: "p2" })
+      .mockResolvedValueOnce({ threads: [{ id: "a" }] });
+    expect(await listThreadIds("acct", { max: 400 })).toEqual(["a"]);
+    expect(gmailGet).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks for only the remaining budget on each page", async () => {
+    gmailGet
+      .mockResolvedValueOnce({ threads: [{ id: "a" }, { id: "b" }], nextPageToken: "p2" })
+      .mockResolvedValueOnce({ threads: [{ id: "c" }] });
+    await listThreadIds("acct", { max: 150 });
+    expect(gmailGet.mock.calls[0][2]).toMatchObject({ maxResults: 100 });
+    expect(gmailGet.mock.calls[1][2]).toMatchObject({ maxResults: 100 });
+  });
 });

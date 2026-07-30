@@ -154,6 +154,12 @@ export async function profileEmail(accessToken: string): Promise<string> {
   return data.emailAddress ?? "";
 }
 
+/** Gmail can return a page carrying a nextPageToken but no threads when the query
+ *  filters everything out of that page. A few in a row is normal on a narrow query;
+ *  an unbounded run means something is wrong, and following tokens forever would
+ *  hang while burning quota. Tolerate a short run, then stop. */
+const MAX_EMPTY_PAGES = 5;
+
 /**
  * Thread ids matching a Gmail search, paged. No labelIds — the `q` selects the
  * mailbox (e.g. "in:sent"), unlike listThreads which is pinned to INBOX.
@@ -165,6 +171,7 @@ export async function listThreadIds(
   const max = opts.max ?? 100;
   const ids: string[] = [];
   let pageToken: string | undefined;
+  let emptyPages = 0;
 
   while (ids.length < max) {
     const page = await gmailGet<{ threads?: { id: string }[]; nextPageToken?: string }>(
@@ -172,10 +179,19 @@ export async function listThreadIds(
       "threads",
       { maxResults: Math.min(100, max - ids.length), q: opts.q, pageToken },
     );
+
+    const before = ids.length;
     for (const t of page.threads ?? []) {
       if (ids.length >= max) break;
       ids.push(t.id);
     }
+
+    if (ids.length === before) {
+      if (++emptyPages >= MAX_EMPTY_PAGES) break;
+    } else {
+      emptyPages = 0;
+    }
+
     if (!page.nextPageToken || ids.length >= max) break;
     pageToken = page.nextPageToken;
   }
