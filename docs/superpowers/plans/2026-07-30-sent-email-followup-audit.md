@@ -381,7 +381,7 @@ git commit -m "feat(gmail): thread inclusion rule with exclusion diagnostics"
 - Consumes: nothing from earlier tasks
 - Produces:
   - `type ThreadBucket = "no_reply" | "awaiting_you" | "stalled"`
-  - `interface ScanMessage { from: string; to: string[]; date: string; text: string }`
+  - `interface ScanMessage { from: string; to: MailAddress[]; date: string; text: string }` — `MailAddress` is the existing type from `./parse`; keeping it (rather than bare address strings) is what lets real recipient display names reach the output
   - `isOwn(email: string, ownEmails: Set<string>): boolean`
   - `classifyThread(messages: ScanMessage[], ownEmails: Set<string>): ThreadBucket`
 
@@ -394,8 +394,9 @@ import { classifyThread, type ScanMessage } from "@/lib/gmail/sentScan";
 
 const own = new Set(["emil@pallisade.com"]);
 
-const msg = (from: string, date: string, to: string[] = []): ScanMessage =>
-  ({ from, to, date, text: "" });
+// classifyThread only reads `from` and `date`, so recipients stay empty here.
+const msg = (from: string, date: string): ScanMessage =>
+  ({ from, to: [], date, text: "" });
 
 describe("classifyThread", () => {
   it("returns no_reply when only the founder has written", () => {
@@ -461,14 +462,19 @@ Expected: FAIL — `classifyThread` is not exported
 
 - [ ] **Step 3: Write the implementation**
 
-Append to `src/lib/gmail/sentScan.ts`:
+Append to `src/lib/gmail/sentScan.ts`. The `MailAddress` type import belongs at the
+top of the file with the other imports:
 
 ```ts
+// add to the top of src/lib/gmail/sentScan.ts:
+// import type { MailAddress } from "./parse";
+
 export type ThreadBucket = "no_reply" | "awaiting_you" | "stalled";
 
 export interface ScanMessage {
   from: string;
-  to: string[];
+  /** Full addresses, names preserved — the audit surfaces these to the founder. */
+  to: MailAddress[];
   /** ISO date string. */
   date: string;
   text: string;
@@ -523,7 +529,7 @@ ordering the most actionable first.
 **Interfaces:**
 - Consumes: `ThreadBucket`, `isOwn` from Task 3
 - Produces:
-  - `interface ScannedThread { threadId: string; subject: string; bucket: ThreadBucket; lastSent: string; recipients: { name: string; email: string }[] }`
+  - `interface ScannedThread { threadId: string; subject: string; bucket: ThreadBucket; lastSent: string; recipients: MailAddress[] }`
   - `interface FollowUp { email: string; name: string; company: string; lastSent: string; daysSince: number; subject: string; threadId: string; bucket: ThreadBucket }`
   - `groupByRecipient(threads: ScannedThread[], ownEmails: Set<string>, todayIso: string): FollowUp[]`
 
@@ -636,7 +642,7 @@ export interface ScannedThread {
   bucket: ThreadBucket;
   /** ISO date of the founder's most recent message in the thread. */
   lastSent: string;
-  recipients: { name: string; email: string }[];
+  recipients: MailAddress[];
 }
 
 export interface FollowUp {
@@ -725,7 +731,9 @@ depends on its current behaviour.
 
 **Interfaces:**
 - Consumes: `gmailGet` from `./client`
-- Produces: `listThreadIds(accountId: string, opts?: { q?: string; max?: number }): Promise<string[]>`
+- Produces:
+  - `listThreadIds(accountId: string, opts?: { q?: string; max?: number }): Promise<string[]>`
+  - `isoFromInternal` promoted from private to **exported** so Task 6 reuses it instead of duplicating the same internalDate/Date-header fallback
 
 This introduces `vi.mock` — a pattern not yet used in this repo. It is warranted
 here because paging has off-by-one risks around the cap that are worth pinning
@@ -797,7 +805,20 @@ Expected: FAIL — `listThreadIds` is not exported
 
 - [ ] **Step 3: Write the implementation**
 
-Append to `src/lib/gmail/gmailApi.ts`:
+Two changes in `src/lib/gmail/gmailApi.ts`.
+
+First, export the existing `isoFromInternal` helper (around line 56) by adding the
+`export` keyword — Task 6 needs the same internalDate-with-Date-header-fallback
+logic, and duplicating it would be a defect:
+
+```ts
+export function isoFromInternal(ms: string | undefined, fallbackHeader: string): string {
+```
+
+Change nothing else about that function — its body and every existing caller stay
+as they are.
+
+Second, append `listThreadIds`:
 
 ```ts
 /**
@@ -855,7 +876,7 @@ Task 7.
 - Create: `src/lib/gmail/sentAudit.ts`
 
 **Interfaces:**
-- Consumes: `listAccountInfo` from `./accounts`; `gmailGet` and `GmailAuthError` from `./client`; `listThreadIds` from Task 5; `judgeThread`, `classifyThread`, `groupByRecipient`, `WARMING_LABEL` and the `FollowUp` / `ScanMessage` / `ScannedThread` types from `./sentScan` (Tasks 1–4); `header`, `parseAddress`, `parseAddressList`, `extractText`, `GmailPayload` from `./parse`
+- Consumes: `listAccountInfo` from `./accounts`; `gmailGet` and `GmailAuthError` from `./client`; `listThreadIds` and the newly-exported `isoFromInternal` from Task 5; `judgeThread`, `classifyThread`, `groupByRecipient`, `WARMING_LABEL` and the `FollowUp` / `ScanMessage` / `ScannedThread` types from `./sentScan` (Tasks 1–4); `header`, `parseAddress`, `parseAddressList`, `extractText`, `GmailPayload` from `./parse`
 - Note: the existing `getThread` is deliberately **not** reused — it discards `labelIds`, which the warming safety net needs. This module fetches the raw thread instead.
 - Error handling: a failed thread or listing request is skipped and counted in `fetchFailures`, but a `GmailAuthError` is rethrown so a revoked token surfaces as reconnect-needed rather than as an empty audit.
 - Produces:
@@ -879,7 +900,7 @@ Create `src/lib/gmail/sentAudit.ts`:
 
 import { listAccountInfo } from "./accounts";
 import { gmailGet, GmailAuthError } from "./client";
-import { listThreadIds } from "./gmailApi";
+import { listThreadIds, isoFromInternal } from "./gmailApi";
 import {
   header, parseAddress, parseAddressList, extractText,
   type GmailPayload,
@@ -957,22 +978,14 @@ async function labelNames(accountId: string): Promise<Map<string, string>> {
   return new Map((res.labels ?? []).map((l) => [l.id, l.name]));
 }
 
-function isoDate(ms: string | undefined, fallback: string): string {
-  if (ms) {
-    const n = Number(ms);
-    if (Number.isFinite(n)) return new Date(n).toISOString();
-  }
-  const d = new Date(fallback);
-  return Number.isNaN(d.getTime()) ? "" : d.toISOString();
-}
-
 function toScanMessages(messages: RawMessage[]): ScanMessage[] {
   return messages.map((m) => {
     const h = m.payload?.headers;
     return {
       from: parseAddress(header(h, "From")).email,
-      to: parseAddressList(header(h, "To")).map((a) => a.email),
-      date: isoDate(m.internalDate, header(h, "Date")),
+      // Full addresses, not bare emails — display names reach the founder's report.
+      to: parseAddressList(header(h, "To")),
+      date: isoFromInternal(m.internalDate, header(h, "Date")),
       text: extractText(m.payload),
     };
   });
@@ -1047,9 +1060,7 @@ export async function auditSentFollowUps(
         subject: subject || "(no subject)",
         bucket,
         lastSent: lastOurs,
-        recipients: ourMessages.flatMap((m) =>
-          m.to.map((email) => ({ name: parseAddress(email).name, email })),
-        ),
+        recipients: ourMessages.flatMap((m) => m.to),
       });
     }
   }
@@ -1070,10 +1081,18 @@ export async function auditSentFollowUps(
 }
 ```
 
-Note on recipient names: `To` headers are parsed to bare addresses in
-`toScanMessages`, so display names are not preserved. `groupByRecipient` falls
-back to the address when the name is empty, which is the intended behaviour here —
-the advisor cross-references real names via `query_leads`.
+Note on recipient names: `toScanMessages` keeps full `MailAddress` values, so a
+`To` header of `Jane Roe <jane@acme.com>` reaches the output as the name "Jane Roe".
+`groupByRecipient` falls back to the bare address only when the header carried no
+display name.
+
+Note on test coverage: this module has no unit tests, and that is deliberate. Every
+decision that can be wrong — quote cutting, sign-off matching, inclusion, bucketing,
+aggregation — lives in `sentScan.ts` and is tested there. What remains here is Gmail
+paging and glue, matching the existing convention that server-only Gmail modules
+(`advisorEmail.ts`, `calendar/advisorCalendar.ts`) carry no unit tests. Task 5 tests
+`listThreadIds` specifically because pagination has off-by-one risk around the cap
+that pure review cannot settle.
 
 - [ ] **Step 2: Typecheck**
 
