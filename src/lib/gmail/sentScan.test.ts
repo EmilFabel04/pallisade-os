@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { unquotedBody, signedByFounder, judgeThread, classifyThread, type ScanMessage } from "@/lib/gmail/sentScan";
+import { unquotedBody, signedByFounder, judgeThread, classifyThread, groupByRecipient, type ScanMessage, type ScannedThread } from "@/lib/gmail/sentScan";
 
 describe("unquotedBody", () => {
   it("cuts at a leading > quote marker", () => {
@@ -220,8 +220,6 @@ describe("classifyThread", () => {
     expect(classifyThread(messages, own)).toBe("stalled");
   });
 });
-
-import { groupByRecipient, type ScannedThread } from "@/lib/gmail/sentScan";
 
 const TODAY = "2026-07-30T12:00:00Z";
 const ownSet = new Set(["emil@pallisade.com"]);
