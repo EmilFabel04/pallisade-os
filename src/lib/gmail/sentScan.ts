@@ -3,6 +3,8 @@
    No I/O — unit-tested. Mirrors the parse.ts convention.
    ============================================================ */
 
+import type { MailAddress } from "./parse";
+
 /** Gmail label whose threads are Apollo mailwarming traffic, never real outreach. */
 export const WARMING_LABEL = "Apollo Mailwarming";
 
@@ -144,4 +146,37 @@ export function judgeThread(input: InclusionInput): InclusionResult {
   }
 
   return { included: false, reason: "no_subject_no_signoff" };
+}
+
+export type ThreadBucket = "no_reply" | "awaiting_you" | "stalled";
+
+export interface ScanMessage {
+  from: string;
+  /** Full addresses, names preserved — the audit surfaces these to the founder. */
+  to: MailAddress[];
+  /** ISO date string. */
+  date: string;
+  text: string;
+}
+
+/** True when an address belongs to one of the founder's connected inboxes. */
+export function isOwn(email: string, ownEmails: Set<string>): boolean {
+  return ownEmails.has(email.trim().toLowerCase());
+}
+
+/**
+ * Work out where a thread stands.
+ *   no_reply     — nobody but the founder ever wrote
+ *   awaiting_you — the other side wrote last; the ball is in his court
+ *   stalled      — they replied, but the founder answered last
+ */
+export function classifyThread(messages: ScanMessage[], ownEmails: Set<string>): ThreadBucket {
+  if (messages.length === 0) return "no_reply";
+
+  const ordered = [...messages].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const theirs = ordered.filter((m) => !isOwn(m.from, ownEmails));
+  if (theirs.length === 0) return "no_reply";
+
+  const last = ordered[ordered.length - 1];
+  return isOwn(last.from, ownEmails) ? "stalled" : "awaiting_you";
 }

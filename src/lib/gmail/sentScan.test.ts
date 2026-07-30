@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { unquotedBody, signedByFounder, judgeThread } from "@/lib/gmail/sentScan";
+import { unquotedBody, signedByFounder, judgeThread, classifyThread, type ScanMessage } from "@/lib/gmail/sentScan";
 
 describe("unquotedBody", () => {
   it("cuts at a leading > quote marker", () => {
@@ -131,5 +131,67 @@ describe("judgeThread", () => {
   it("excludes a thread with no messages from the founder", () => {
     expect(judgeThread({ ...base, subject: "Re: intro", ownMessageBodies: [] }))
       .toEqual({ included: false, reason: "no_subject_no_signoff" });
+  });
+});
+
+const own = new Set(["emil@pallisade.com"]);
+
+// classifyThread only reads `from` and `date`, so recipients stay empty here.
+const msg = (from: string, date: string): ScanMessage =>
+  ({ from, to: [], date, text: "" });
+
+describe("classifyThread", () => {
+  it("returns no_reply when only the founder has written", () => {
+    const messages = [
+      msg("emil@pallisade.com", "2026-07-01T09:00:00Z"),
+      msg("emil@pallisade.com", "2026-07-08T09:00:00Z"),
+    ];
+    expect(classifyThread(messages, own)).toBe("no_reply");
+  });
+
+  it("returns awaiting_you when their message is last", () => {
+    const messages = [
+      msg("emil@pallisade.com", "2026-07-01T09:00:00Z"),
+      msg("jane@acme.com", "2026-07-02T09:00:00Z"),
+    ];
+    expect(classifyThread(messages, own)).toBe("awaiting_you");
+  });
+
+  it("returns stalled when they replied but the founder answered last", () => {
+    const messages = [
+      msg("emil@pallisade.com", "2026-07-01T09:00:00Z"),
+      msg("jane@acme.com", "2026-07-02T09:00:00Z"),
+      msg("emil@pallisade.com", "2026-07-03T09:00:00Z"),
+    ];
+    expect(classifyThread(messages, own)).toBe("stalled");
+  });
+
+  it("orders by date rather than trusting array order", () => {
+    const messages = [
+      msg("jane@acme.com", "2026-07-02T09:00:00Z"),
+      msg("emil@pallisade.com", "2026-07-01T09:00:00Z"),
+    ];
+    expect(classifyThread(messages, own)).toBe("awaiting_you");
+  });
+
+  it("matches the founder's own address case-insensitively", () => {
+    const messages = [
+      msg("Emil@Pallisade.com", "2026-07-01T09:00:00Z"),
+      msg("emil@pallisade.com", "2026-07-02T09:00:00Z"),
+    ];
+    expect(classifyThread(messages, own)).toBe("no_reply");
+  });
+
+  it("treats every connected inbox as the founder", () => {
+    const multi = new Set(["emil@pallisade.com", "emil@pallisadedata.io"]);
+    const messages = [
+      msg("emil@pallisade.com", "2026-07-01T09:00:00Z"),
+      msg("emil@pallisadedata.io", "2026-07-02T09:00:00Z"),
+    ];
+    expect(classifyThread(messages, multi)).toBe("no_reply");
+  });
+
+  it("returns no_reply for an empty thread", () => {
+    expect(classifyThread([], own)).toBe("no_reply");
   });
 });
