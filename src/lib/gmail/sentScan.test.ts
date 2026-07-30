@@ -220,3 +220,86 @@ describe("classifyThread", () => {
     expect(classifyThread(messages, own)).toBe("stalled");
   });
 });
+
+import { groupByRecipient, type ScannedThread } from "@/lib/gmail/sentScan";
+
+const TODAY = "2026-07-30T12:00:00Z";
+const ownSet = new Set(["emil@pallisade.com"]);
+
+const thread = (over: Partial<ScannedThread> = {}): ScannedThread => ({
+  threadId: "t1",
+  subject: "Pallisade intro",
+  bucket: "no_reply",
+  lastSent: "2026-07-20T09:00:00Z",
+  recipients: [{ name: "Jane Roe", email: "jane@acme.com" }],
+  ...over,
+});
+
+describe("groupByRecipient", () => {
+  it("derives company and days since last contact", () => {
+    const [row] = groupByRecipient([thread()], ownSet, TODAY);
+    expect(row).toEqual({
+      email: "jane@acme.com",
+      name: "Jane Roe",
+      company: "Acme",
+      lastSent: "2026-07-20T09:00:00Z",
+      daysSince: 10,
+      subject: "Pallisade intro",
+      threadId: "t1",
+      bucket: "no_reply",
+    });
+  });
+
+  it("keeps only the most recent thread per recipient", () => {
+    const rows = groupByRecipient([
+      thread({ threadId: "old", lastSent: "2026-06-01T09:00:00Z", subject: "First" }),
+      thread({ threadId: "new", lastSent: "2026-07-25T09:00:00Z", subject: "Second" }),
+    ], ownSet, TODAY);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].threadId).toBe("new");
+    expect(rows[0].subject).toBe("Second");
+  });
+
+  it("drops the founder's own addresses from recipients", () => {
+    const rows = groupByRecipient([
+      thread({ recipients: [{ name: "Emil", email: "emil@pallisade.com" }, { name: "Jane Roe", email: "jane@acme.com" }] }),
+    ], ownSet, TODAY);
+    expect(rows.map((r) => r.email)).toEqual(["jane@acme.com"]);
+  });
+
+  it("emits a row per recipient on a multi-recipient thread", () => {
+    const rows = groupByRecipient([
+      thread({ recipients: [{ name: "Jane", email: "jane@acme.com" }, { name: "Bob", email: "bob@beta.io" }] }),
+    ], ownSet, TODAY);
+    expect(rows.map((r) => r.email).sort()).toEqual(["bob@beta.io", "jane@acme.com"]);
+  });
+
+  it("lowercases recipient addresses so duplicates collapse", () => {
+    const rows = groupByRecipient([
+      thread({ threadId: "a", recipients: [{ name: "Jane", email: "Jane@Acme.com" }] }),
+      thread({ threadId: "b", lastSent: "2026-07-28T09:00:00Z", recipients: [{ name: "Jane", email: "jane@acme.com" }] }),
+    ], ownSet, TODAY);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].threadId).toBe("b");
+  });
+
+  it("puts awaiting_you ahead of no_reply, then the longest neglected first", () => {
+    const rows = groupByRecipient([
+      thread({ threadId: "a", bucket: "no_reply", lastSent: "2026-05-01T09:00:00Z", recipients: [{ name: "A", email: "a@x.com" }] }),
+      thread({ threadId: "b", bucket: "awaiting_you", lastSent: "2026-07-28T09:00:00Z", recipients: [{ name: "B", email: "b@x.com" }] }),
+      thread({ threadId: "c", bucket: "awaiting_you", lastSent: "2026-06-01T09:00:00Z", recipients: [{ name: "C", email: "c@x.com" }] }),
+    ], ownSet, TODAY);
+    expect(rows.map((r) => r.threadId)).toEqual(["c", "b", "a"]);
+  });
+
+  it("returns an empty company for a free email provider", () => {
+    const rows = groupByRecipient([
+      thread({ recipients: [{ name: "Jane", email: "jane@gmail.com" }] }),
+    ], ownSet, TODAY);
+    expect(rows[0].company).toBe("");
+  });
+
+  it("returns [] for no threads", () => {
+    expect(groupByRecipient([], ownSet, TODAY)).toEqual([]);
+  });
+});

@@ -4,6 +4,7 @@
    ============================================================ */
 
 import type { MailAddress } from "./parse";
+import { companyFromEmail } from "./parse";
 
 /** Gmail label whose threads are Apollo mailwarming traffic, never real outreach. */
 export const WARMING_LABEL = "Apollo Mailwarming";
@@ -198,4 +199,72 @@ export function classifyThread(messages: ScanMessage[], ownEmails: Set<string>):
 
   const last = ordered[ordered.length - 1];
   return isOwn(last.from, ownEmails) ? "stalled" : "awaiting_you";
+}
+
+export interface ScannedThread {
+  threadId: string;
+  subject: string;
+  bucket: ThreadBucket;
+  /** ISO date of the founder's most recent message in the thread. */
+  lastSent: string;
+  recipients: MailAddress[];
+}
+
+export interface FollowUp {
+  email: string;
+  name: string;
+  company: string;
+  lastSent: string;
+  daysSince: number;
+  subject: string;
+  threadId: string;
+  bucket: ThreadBucket;
+}
+
+/** Whole days between two ISO dates, floored at 0. */
+function daysBetween(fromIso: string, toIso: string): number {
+  const from = Date.parse(fromIso);
+  const to = Date.parse(toIso);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return 0;
+  return Math.max(0, Math.round((to - from) / 86_400_000));
+}
+
+/** awaiting_you is the costlier miss, so it sorts first. */
+const BUCKET_RANK: Record<ThreadBucket, number> = { awaiting_you: 0, no_reply: 1, stalled: 2 };
+
+/**
+ * One row per recipient, carrying their most recent thread. `todayIso` is passed
+ * in rather than read from the clock so this stays pure and testable.
+ */
+export function groupByRecipient(
+  threads: ScannedThread[],
+  ownEmails: Set<string>,
+  todayIso: string,
+): FollowUp[] {
+  const latest = new Map<string, FollowUp>();
+
+  for (const t of threads) {
+    for (const r of t.recipients) {
+      const email = r.email.trim().toLowerCase();
+      if (!email.includes("@") || isOwn(email, ownEmails)) continue;
+
+      const existing = latest.get(email);
+      if (existing && existing.lastSent >= t.lastSent) continue;
+
+      latest.set(email, {
+        email,
+        name: r.name || email,
+        company: companyFromEmail(email),
+        lastSent: t.lastSent,
+        daysSince: daysBetween(t.lastSent, todayIso),
+        subject: t.subject,
+        threadId: t.threadId,
+        bucket: t.bucket,
+      });
+    }
+  }
+
+  return [...latest.values()].sort(
+    (a, b) => BUCKET_RANK[a.bucket] - BUCKET_RANK[b.bucket] || b.daysSince - a.daysSince,
+  );
 }
