@@ -53,7 +53,7 @@ interface RawThread {
   messages?: RawMessage[];
 }
 
-function isoFromInternal(ms: string | undefined, fallbackHeader: string): string {
+export function isoFromInternal(ms: string | undefined, fallbackHeader: string): string {
   if (ms) {
     const n = Number(ms);
     if (Number.isFinite(n)) return new Date(n).toISOString();
@@ -152,4 +152,61 @@ export async function profileEmail(accessToken: string): Promise<string> {
   }
   const data = (await res.json()) as { emailAddress?: string };
   return data.emailAddress ?? "";
+}
+
+/** Gmail can return a page carrying a nextPageToken but no threads when the query
+ *  filters everything out of that page. A few in a row is normal on a narrow query;
+ *  an unbounded run means something is wrong, and following tokens forever would
+ *  hang while burning quota. Tolerate a short run, then stop. */
+const MAX_EMPTY_PAGES = 5;
+
+/**
+ * Thread ids matching a Gmail search, paged. No labelIds — the `q` selects the
+ * mailbox (e.g. "in:sent"), unlike listThreads which is pinned to INBOX.
+ *
+ * Returns `{ ids, truncated }`:
+ *  - `ids` — the thread ids collected, newest first, up to `max`.
+ *  - `truncated` — true only when paging bailed out via the MAX_EMPTY_PAGES
+ *    guard (a run of empty-but-tokened pages), meaning there may be more
+ *    matches behind the point where paging stopped. Reaching `max` normally
+ *    is not truncation in this sense — callers that care about that already
+ *    compare `ids.length` against their own budget.
+ */
+export async function listThreadIds(
+  accountId: string,
+  opts: { q?: string; max?: number } = {},
+): Promise<{ ids: string[]; truncated: boolean }> {
+  const max = opts.max ?? 100;
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  let emptyPages = 0;
+  let truncated = false;
+
+  while (ids.length < max) {
+    const page = await gmailGet<{ threads?: { id: string }[]; nextPageToken?: string }>(
+      accountId,
+      "threads",
+      { maxResults: Math.min(100, max - ids.length), q: opts.q, pageToken },
+    );
+
+    const before = ids.length;
+    for (const t of page.threads ?? []) {
+      if (ids.length >= max) break;
+      ids.push(t.id);
+    }
+
+    if (ids.length === before) {
+      if (++emptyPages >= MAX_EMPTY_PAGES) {
+        truncated = true;
+        break;
+      }
+    } else {
+      emptyPages = 0;
+    }
+
+    if (!page.nextPageToken || ids.length >= max) break;
+    pageToken = page.nextPageToken;
+  }
+
+  return { ids, truncated };
 }

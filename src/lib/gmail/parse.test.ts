@@ -59,6 +59,13 @@ describe("decodeBody / extractText", () => {
     };
     expect(extractText(payload)).toBe("Hi\nthere");
   });
+  it("turns <br> into newlines in html-only mail", () => {
+    const payload = {
+      mimeType: "text/html",
+      body: { data: Buffer.from("Worth a chat?<br><br>Best,<br>Emil").toString("base64url") },
+    };
+    expect(extractText(payload)).toBe("Worth a chat?\n\nBest,\nEmil");
+  });
 });
 
 describe("companyFromEmail", () => {

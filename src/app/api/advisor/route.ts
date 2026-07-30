@@ -93,6 +93,23 @@ export async function POST(req: Request) {
       `\n\nConnected Gmail inboxes: ${(await connectedEmails()).join(", ")}. Use query_emails ` +
       `(Gmail search syntax) or list_inboxes to read real email when the founder asks about their inbox, ` +
       `a sender, or recent messages — never invent email content.`;
+    systemFull +=
+      `\n\nTo find people who have gone quiet, use audit_sent_followups — it reads real SENT mail, ` +
+      `excludes Apollo mailwarming, and buckets each recipient as 'awaiting_you' (they replied and are ` +
+      `waiting on the founder — lead with these) or 'no_reply' (never came back). Report the names and ` +
+      `days since contact it returns; the company is derived from the email domain, so treat it as a ` +
+      `hint rather than a verified name. Then propose a create_task follow-up for each person worth ` +
+      `chasing, so the founder can confirm them. Cross-reference query_leads to say whether each person ` +
+      `is already in the pipeline. If followUps is empty but excludedSignoffOnly is large, say that ` +
+      `too: it means the strict "signed off as Emil" rule filtered almost everything out, which is a ` +
+      `tuning problem, not an empty pipeline. And say plainly, in your own words, whenever any of these ` +
+      `are set — coverage may be incomplete and the founder should know why: cappedReasons "cap" or ` +
+      `"per_inbox" means the thread ceiling (cite the cap value) was reached and older mail wasn't read; ` +
+      `"listing_failure" means an inbox couldn't be read at all — a failure, not a coverage limit; ` +
+      `"empty_page_bail" means paging stopped early on a narrow query and there may be more behind it; ` +
+      `listingFailures > 0 means that many inboxes couldn't be read; fetchFailures > 0 means that many ` +
+      `threads were skipped; labelLookupFailed means the mailwarming safety net was inactive for an ` +
+      `inbox, so a warming thread could have slipped through.`;
   }
   if (calendarEnabled) {
     systemFull +=

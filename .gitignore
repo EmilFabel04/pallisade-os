@@ -17,3 +17,7 @@ next-env.d.ts
 
 # Turso migration credentials (never commit)
 .turso.env
+
+# Isolated worktrees and SDD scratch space
+/.claude/worktrees
+/.superpowers

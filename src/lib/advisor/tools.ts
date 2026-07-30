@@ -118,6 +118,16 @@ export const EMAIL_TOOLS: ToolDef[] = [
       account: s("limit to one inbox by its email address, optional"),
       limit: n("default 10"),
     }) },
+  { name: "audit_sent_followups", description:
+      "Audit the founder's SENT mail to find people who owe him a reply or who he left hanging. " +
+      "Scans sent threads newest-first, skips Apollo mailwarming, and keeps threads whose subject " +
+      "mentions Pallisade or where he signed off as Emil. Returns one row per recipient with a bucket: " +
+      "'awaiting_you' (they replied last — most urgent) or 'no_reply' (they never replied). " +
+      "Also returns scan diagnostics. Never invent recipients.",
+    input_schema: obj({
+      query: s("extra Gmail search terms to narrow the scan, e.g. 'subject:Pallisade' or 'newer_than:90d'. Optional."),
+      limit: n("max threads to scan, default and maximum 400"),
+    }) },
 ];
 
 export const EMAIL_TOOL_NAMES = new Set(EMAIL_TOOLS.map((t) => t.name));

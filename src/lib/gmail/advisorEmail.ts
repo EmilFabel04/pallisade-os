@@ -7,6 +7,7 @@
 import { isConfigured } from "./config";
 import { listAccountInfo } from "./accounts";
 import { listThreads } from "./gmailApi";
+import { auditSentFollowUps } from "./sentAudit";
 
 type Args = Record<string, unknown>;
 
@@ -50,6 +51,14 @@ export async function resolveEmailTool(name: string, args: Args): Promise<string
       }));
 
     return JSON.stringify({ emails });
+  }
+
+  if (name === "audit_sent_followups") {
+    const result = await auditSentFollowUps({
+      query: args.query ? String(args.query) : undefined,
+      limit: args.limit == null ? undefined : Number(args.limit),
+    });
+    return JSON.stringify(result);
   }
 
   return JSON.stringify({ error: `unknown email tool: ${name}` });
