@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isLinkedRepoPath,
+  linkedRepoPathFor,
   linkedRepoPaths,
   normalizeRepoPath,
   pathMatchesAny,
@@ -157,5 +158,43 @@ describe("isLinkedRepoPath", () => {
   // on a hand-typed URL.
   it("compares case-sensitively", () => {
     expect(isLinkedRepoPath("/users/e/code/ACME", projects)).toBe(false);
+  });
+});
+
+describe("linkedRepoPathFor", () => {
+  const projects = [
+    project({ id: "a", repoPath: "/Users/e/code/acme" }),
+    project({ id: "b", repoPath: "/Users/e/code/beta" }),
+    project({ id: "c", repoPath: null }),
+  ];
+
+  it("returns the repo stored on that project", () => {
+    expect(linkedRepoPathFor("a", projects)).toBe("/Users/e/code/acme");
+  });
+
+  it("never returns another project's repo", () => {
+    expect(linkedRepoPathFor("c", projects)).toBeNull();
+  });
+
+  it("returns null for a project with no repo linked", () => {
+    expect(linkedRepoPathFor("c", projects)).toBeNull();
+  });
+
+  it("returns null for an unknown project id", () => {
+    expect(linkedRepoPathFor("does-not-exist", projects)).toBeNull();
+    expect(linkedRepoPathFor("", projects)).toBeNull();
+  });
+
+  it("returns null for a blank stored path rather than an empty string", () => {
+    expect(linkedRepoPathFor("d", [project({ id: "d", repoPath: "   " })])).toBeNull();
+  });
+
+  it("normalizes the stored path", () => {
+    expect(linkedRepoPathFor("d", [project({ id: "d", repoPath: "/Users/e/code/acme/" })]))
+      .toBe("/Users/e/code/acme");
+  });
+
+  it("returns null when there are no projects at all", () => {
+    expect(linkedRepoPathFor("a", [])).toBeNull();
   });
 });

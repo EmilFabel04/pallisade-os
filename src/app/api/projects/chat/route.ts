@@ -4,6 +4,8 @@ import type { ProposedAction } from "@/lib/types";
 import { buildProjectSystemPrompt } from "@/lib/projects/prompt";
 import { PROJECT_TOOLS, SERVER_TOOL_NAMES, resolveProjectTool, type ProjectSnapshot } from "@/lib/projects/tools";
 import { readCommits, readStatus } from "@/lib/git/repo";
+import { linkedRepoPathFor } from "@/lib/git/linkedRepos";
+import { loadAll } from "@/lib/db/sqlite";
 import type { Commit, RepoStatus } from "@/lib/git/types";
 
 export const runtime = "nodejs";
@@ -22,6 +24,16 @@ interface ChatRequest {
   context?: { businessName?: string; founderName?: string };
 }
 
+/** The repo actually on record for this project, or null. Never trusts the request. */
+async function storedRepoPath(projectId: string): Promise<string | null> {
+  try {
+    const { projects } = await loadAll();
+    return linkedRepoPathFor(projectId, projects);
+  } catch {
+    return null; // fail closed
+  }
+}
+
 export async function POST(req: Request) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "no_key" }, { status: 503 });
@@ -33,12 +45,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const snapshot = body.snapshot;
-  if (!snapshot?.project) return NextResponse.json({ error: "missing_snapshot" }, { status: 400 });
+  if (!body.snapshot?.project) return NextResponse.json({ error: "missing_snapshot" }, { status: 400 });
   if (!body.messages?.length) return NextResponse.json({ error: "missing_messages" }, { status: 400 });
 
+  // The snapshot is client-supplied, so its repoPath is a claim, not a fact.
+  // Take the path from the database keyed on the project id instead: a crafted
+  // snapshot then can't aim these git reads at an arbitrary repo on this Mac,
+  // and the model can't relay a repo it was never linked to back in prose.
+  // A db failure just means no repo context — git is never load-bearing.
+  const repoPath = await storedRepoPath(body.snapshot.project.id);
+  const snapshot: ProjectSnapshot = {
+    ...body.snapshot,
+    project: { ...body.snapshot.project, repoPath },
+  };
+
   // Repo reads are best-effort — a missing repo must never fail the request.
-  const repoPath = snapshot.project.repoPath;
   let repo: RepoStatus | null = null;
   let commits: Commit[] = [];
   if (repoPath) {

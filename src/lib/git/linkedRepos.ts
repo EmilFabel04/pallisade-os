@@ -52,3 +52,14 @@ export function isLinkedRepoPath(candidate: string, projects: Project[]): boolea
   return pathMatchesAny(candidate, linkedRepoPaths(projects));
 }
 
+/**
+ * The repo stored on one specific project, or null. Use this instead of a
+ * client-supplied path: it reads whatever is actually on record for that id,
+ * so a caller can neither point a project's git reads at an unlinked repo nor
+ * borrow another project's.
+ */
+export function linkedRepoPathFor(projectId: string, projects: Project[]): string | null {
+  if (!projectId) return null;
+  const match = projects.find((p) => p.id === projectId);
+  return normalizeRepoPath(match?.repoPath) || null;
+}
