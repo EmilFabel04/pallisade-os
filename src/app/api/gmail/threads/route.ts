@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import { isConfigured } from "@/lib/gmail/config";
 import { listAccountInfo } from "@/lib/gmail/accounts";
 import { listThreads } from "@/lib/gmail/gmailApi";
@@ -37,6 +38,6 @@ export async function GET(req: Request) {
     const threads = lists.flat().sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 40);
     return NextResponse.json({ threads, needsReconnect });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 502 });
+    return apiError(UPSTREAM_FAILED, 502, e);
   }
 }

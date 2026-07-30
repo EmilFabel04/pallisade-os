@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, DB_FAILED } from "@/lib/api/errors";
 import { loadAll, saveAll } from "@/lib/db/sqlite";
 import type { DataShape } from "@/lib/types";
 
@@ -10,10 +11,7 @@ export async function GET() {
   try {
     return NextResponse.json(await loadAll());
   } catch (err) {
-    return NextResponse.json(
-      { error: (err as Error).message },
-      { status: 500 },
-    );
+    return apiError(DB_FAILED, 500, err);
   }
 }
 
@@ -27,7 +25,7 @@ export async function PUT(req: Request) {
   try {
     return await persist(req);
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError(DB_FAILED, 500, err);
   }
 }
 
@@ -36,6 +34,6 @@ export async function POST(req: Request) {
   try {
     return await persist(req);
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError(DB_FAILED, 500, err);
   }
 }

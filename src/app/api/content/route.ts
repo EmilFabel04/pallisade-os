@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import Anthropic from "@anthropic-ai/sdk";
 import type { AdvisorSnapshot, ContentType, ProposedAction } from "@/lib/types";
 import { TOOLS, resolveTool } from "@/lib/advisor/tools";
@@ -141,6 +142,6 @@ export async function POST(req: Request) {
     if (!finalText) finalText = "I couldn't produce a response — try rephrasing.";
     return NextResponse.json({ content: finalText });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 502 });
+    return apiError(UPSTREAM_FAILED, 502, err);
   }
 }

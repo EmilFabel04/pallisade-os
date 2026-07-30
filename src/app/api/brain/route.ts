@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildBrainSystemPrompt, formatAttachmentsBlock } from "@/lib/brain/prompt";
 import { DRIVE_TOOLS, DRIVE_TOOL_NAMES, resolveBrainTool } from "@/lib/brain/tools";
@@ -87,7 +88,7 @@ export async function POST(req: Request) {
       }
       return NextResponse.json({ content: finalText || "I couldn't produce a response — try rephrasing." });
     } catch (err) {
-      return NextResponse.json({ error: (err as Error).message }, { status: 502 });
+      return apiError(UPSTREAM_FAILED, 502, err);
     }
   }
 
@@ -151,6 +152,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ content: finalText || "I couldn't produce a response — try rephrasing." });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 502 });
+    return apiError(UPSTREAM_FAILED, 502, err);
   }
 }

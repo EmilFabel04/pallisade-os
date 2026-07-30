@@ -41,7 +41,9 @@ async function post(body: unknown): Promise<PlaybookSections> {
     if (err.error === "generation_incomplete" || err.error === "no_tool_use") {
       throw new Error("The draft didn't come back complete — please try that section again.");
     }
-    throw new Error(typeof err.error === "string" ? err.error : "The prep request failed.");
+    // Anything else is a bare code now (upstream_failed, …) — not something to
+    // put in front of a person.
+    throw new Error("The prep request failed.");
   }
   return { ...EMPTY, ...((await res.json()) as Partial<PlaybookSections>) };
 }

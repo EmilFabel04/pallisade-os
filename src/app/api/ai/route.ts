@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import Anthropic from "@anthropic-ai/sdk";
 
 // The Anthropic SDK needs the Node runtime; never cache AI responses.
@@ -123,7 +124,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "unknown_kind" }, { status: 400 });
   } catch (err) {
     // Surface the failure so the client can fall back to the mock.
-    return NextResponse.json({ error: (err as Error).message }, { status: 502 });
+    return apiError(UPSTREAM_FAILED, 502, err);
   }
 }
 

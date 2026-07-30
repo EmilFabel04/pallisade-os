@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import Anthropic from "@anthropic-ai/sdk";
 import { normalizeDraft } from "@/lib/prep/normalize";
 import type { PlaybookSections } from "@/lib/prep/session";
@@ -165,6 +166,6 @@ export async function POST(req: Request) {
     const draft: PlaybookSections = normalizeDraft(toolUse.input as Record<string, unknown>);
     return NextResponse.json(draft);
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 502 });
+    return apiError(UPSTREAM_FAILED, 502, err);
   }
 }

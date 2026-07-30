@@ -23,11 +23,13 @@ export async function GET(req: Request) {
     const { tokens } = await oauthClient().getToken(code);
     const access = tokens.access_token ?? undefined;
     const email = access ? await profileEmail(access) : "";
-    if (!email) throw new Error("Could not read the account email.");
+    if (!email) return page(false, "Could not read the account email.");
     await upsertAccount(email, tokens);
     return page(true, email);
   } catch (e) {
-    return page(false, (e as Error).message || "Failed to connect the account.");
+    // Google's OAuth errors belong in the terminal, not rendered into a page.
+    console.error("[api] gmail_callback_failed:", e);
+    return page(false, "Failed to connect the account.");
   }
 }
 

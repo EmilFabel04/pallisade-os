@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import Anthropic from "@anthropic-ai/sdk";
 import type { NewsInterests, NewsItem } from "@/lib/types";
 import { fetchStructured } from "@/lib/news/sources";
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
   try {
     structured = await fetchStructured(interests);
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 502 });
+    return apiError(UPSTREAM_FAILED, 502, err);
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
