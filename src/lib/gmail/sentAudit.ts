@@ -28,6 +28,9 @@ export const FETCH_CONCURRENCY = 8;
 
 export interface SentAuditResult {
   scanned: number;
+  /** Threads that passed inclusion and were kept — a thread count, not a
+   *  recipient count. `followUps` deduplicates by recipient, so the two will
+   *  routinely differ. */
   matched: number;
   cap: number;
   /** True when the scan stopped early — either the global cap was reached, or
@@ -36,10 +39,19 @@ export interface SentAuditResult {
    *  allowance and nothing more will also read as capped. */
   capped: boolean;
   fetchFailures: number;
+  /** Inboxes whose thread *listing* failed outright (as opposed to a single
+   *  thread fetch failing). That whole account went unread — a non-zero value
+   *  here means coverage is incomplete beyond what `capped` alone conveys. */
+  listingFailures: number;
   /** Threads that failed both the subject and sign-off rules. A looser sign-off
    *  rule would start admitting these — the number to watch if results look thin. */
   excludedSignoffOnly: number;
   excludedWarming: number;
+  /** Threads where no message could be attributed to the founder, by either the
+   *  connected account's address or a SENT-labelled message. A non-zero value
+   *  points at a sending address the audit doesn't recognize (e.g. an unusual
+   *  alias configuration). */
+  excludedNoOwnMessage: number;
   /** Threads where they replied but the founder answered last: counted, not listed. */
   stalledNotShown: number;
   followUps: FollowUp[];
@@ -84,6 +96,24 @@ async function mapPool<T, R>(items: T[], size: number, fn: (item: T) => Promise<
   return out;
 }
 
+/** Fetch one thread, retrying once on a rate-limit response. Gmail's per-user quota
+ *  is ~250 units/sec and threads.get costs 10, so a long scan can trip it; without a
+ *  retry a single trip cascades into losing most of the remaining scan. Auth failures
+ *  still propagate — only rate limits are retried. */
+async function fetchThread(accountId: string, id: string): Promise<RawThread | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await gmailGet<RawThread>(accountId, `threads/${id}`, { format: "full" });
+    } catch (err) {
+      if (err instanceof GmailAuthError) throw err;
+      const rateLimited = /gmail_api_(429|403)/.test(String((err as Error).message ?? ""));
+      if (!rateLimited || attempt === 1) return null;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  return null;
+}
+
 /** Gmail label id → display name, for one account. */
 async function labelNames(accountId: string): Promise<Map<string, string>> {
   const res = await gmailGet<{ labels?: { id: string; name: string }[] }>(accountId, "labels")
@@ -119,8 +149,9 @@ export async function auditSentFollowUps(
   opts: { query?: string; limit?: number } = {},
 ): Promise<SentAuditResult> {
   const accounts = await listAccountInfo();
-  const ownEmails = new Set(accounts.map((a) => a.email.toLowerCase()));
-  const cap = Math.min(Math.max(1, opts.limit ?? SCAN_CAP), SCAN_CAP);
+  const ownEmails = new Set(accounts.map((a) => a.email.trim().toLowerCase()));
+  const requested = Number.isFinite(opts.limit) ? Number(opts.limit) : SCAN_CAP;
+  const cap = Math.min(Math.max(1, requested), SCAN_CAP);
 
   // Exclude warming server-side so those threads are never fetched.
   const q = [`in:sent`, `-label:"${WARMING_LABEL}"`, opts.query?.trim()]
@@ -132,14 +163,23 @@ export async function auditSentFollowUps(
   let scanned = 0;
   let capped = false;
   let fetchFailures = 0;
+  let listingFailures = 0;
   let excludedSignoffOnly = 0;
   let excludedWarming = 0;
+  let excludedNoOwnMessage = 0;
   let stalledNotShown = 0;
   const kept: ScannedThread[] = [];
 
   for (const account of accounts) {
     const [ids, labels] = await Promise.all([
-      listThreadIds(account.id, { q, max: perAccount }).catch(skipUnlessAuth([] as string[])),
+      listThreadIds(account.id, { q, max: perAccount }).catch((err) => {
+        if (err instanceof GmailAuthError) throw err;
+        // This inbox went unread. Without recording it, the result would claim
+        // complete, uncapped, failure-free coverage of an account never touched.
+        listingFailures++;
+        capped = true;
+        return [] as string[];
+      }),
       labelNames(account.id),
     ]);
 
@@ -147,10 +187,7 @@ export async function auditSentFollowUps(
     // threads went unread even if the global total stayed under `cap`.
     if (ids.length >= perAccount) capped = true;
 
-    const threads = await mapPool(ids, FETCH_CONCURRENCY, (id) =>
-      gmailGet<RawThread>(account.id, `threads/${id}`, { format: "full" })
-        .catch(skipUnlessAuth<RawThread | null>(null)),
-    );
+    const threads = await mapPool(ids, FETCH_CONCURRENCY, (id) => fetchThread(account.id, id));
 
     for (const raw of threads) {
       if (!raw?.messages?.length) {
@@ -160,7 +197,25 @@ export async function auditSentFollowUps(
       scanned++;
 
       const messages = toScanMessages(raw.messages);
+
+      // A message carrying the SENT label was sent by the founder, whatever address
+      // it went out as. Matching on the connected account's address alone would miss
+      // every message sent through a "send mail as" alias, classifying his own threads
+      // as though he had never written in them. gmail.readonly cannot read the sendAs
+      // settings, so the label is the reliable signal. Discovered addresses accumulate
+      // into ownEmails so the final groupByRecipient also excludes them as recipients.
+      for (const m of raw.messages) {
+        if (!m.labelIds?.includes("SENT")) continue;
+        const from = parseAddress(header(m.payload?.headers, "From")).email.trim().toLowerCase();
+        if (from.includes("@")) ownEmails.add(from);
+      }
+
       const ourMessages = messages.filter((m) => ownEmails.has(m.from.trim().toLowerCase()));
+      if (ourMessages.length === 0) {
+        excludedNoOwnMessage++;
+        continue;
+      }
+
       const names = [
         ...new Set(raw.messages.flatMap((m) => (m.labelIds ?? []).map((id) => labels.get(id) ?? id))),
       ];
@@ -173,7 +228,7 @@ export async function auditSentFollowUps(
       });
       if (!verdict.included) {
         if (verdict.reason === "warming_label") excludedWarming++;
-        else excludedSignoffOnly++;
+        else if (verdict.reason === "no_subject_no_signoff") excludedSignoffOnly++;
         continue;
       }
 
@@ -202,8 +257,10 @@ export async function auditSentFollowUps(
     cap,
     capped: capped || scanned >= cap,
     fetchFailures,
+    listingFailures,
     excludedSignoffOnly,
     excludedWarming,
+    excludedNoOwnMessage,
     stalledNotShown,
     followUps,
   };
