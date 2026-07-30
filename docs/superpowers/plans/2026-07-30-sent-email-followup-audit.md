@@ -879,6 +879,30 @@ describe("listThreadIds", () => {
     gmailGet.mockResolvedValueOnce({});
     expect(await listThreadIds("acct")).toEqual([]);
   });
+
+  it("stops following tokens after a run of empty pages", async () => {
+    gmailGet.mockResolvedValue({ threads: [], nextPageToken: "more" });
+    expect(await listThreadIds("acct", { max: 400 })).toEqual([]);
+    expect(gmailGet).toHaveBeenCalledTimes(5); // MAX_EMPTY_PAGES, module-private
+  });
+
+  it("keeps paging through an occasional empty page", async () => {
+    gmailGet
+      .mockResolvedValueOnce({ threads: [], nextPageToken: "p2" })
+      .mockResolvedValueOnce({ threads: [{ id: "a" }] });
+    expect(await listThreadIds("acct", { max: 400 })).toEqual(["a"]);
+    expect(gmailGet).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks for only the remaining budget once a page is consumed", async () => {
+    const full = Array.from({ length: 100 }, (_, i) => ({ id: `id${i}` }));
+    gmailGet
+      .mockResolvedValueOnce({ threads: full, nextPageToken: "p2" })
+      .mockResolvedValueOnce({ threads: [{ id: "last" }] });
+    await listThreadIds("acct", { max: 150 });
+    expect(gmailGet.mock.calls[0][2]).toMatchObject({ maxResults: 100 });
+    expect(gmailGet.mock.calls[1][2]).toMatchObject({ maxResults: 50 });
+  });
 });
 ```
 
@@ -905,6 +929,16 @@ as they are.
 Second, append `listThreadIds`:
 
 ```ts
+/** Gmail can return a page carrying a nextPageToken but no threads when the query
+ *  filters everything out of that page. A few in a row is normal on a narrow query;
+ *  an unbounded run means something is wrong, and following tokens forever would
+ *  hang while burning quota. Tolerate a short run, then stop.
+ *
+ *  Deliberately NOT "stop at the first empty page" — that would trade a hang risk
+ *  for a completeness risk, silently truncating the audit, which is the failure this
+ *  whole feature exists to prevent. */
+const MAX_EMPTY_PAGES = 5;
+
 /**
  * Thread ids matching a Gmail search, paged. No labelIds — the `q` selects the
  * mailbox (e.g. "in:sent"), unlike listThreads which is pinned to INBOX.
@@ -916,6 +950,7 @@ export async function listThreadIds(
   const max = opts.max ?? 100;
   const ids: string[] = [];
   let pageToken: string | undefined;
+  let emptyPages = 0;
 
   while (ids.length < max) {
     const page = await gmailGet<{ threads?: { id: string }[]; nextPageToken?: string }>(
@@ -923,10 +958,19 @@ export async function listThreadIds(
       "threads",
       { maxResults: Math.min(100, max - ids.length), q: opts.q, pageToken },
     );
+
+    const before = ids.length;
     for (const t of page.threads ?? []) {
       if (ids.length >= max) break;
       ids.push(t.id);
     }
+
+    if (ids.length === before) {
+      if (++emptyPages >= MAX_EMPTY_PAGES) break;
+    } else {
+      emptyPages = 0;
+    }
+
     if (!page.nextPageToken || ids.length >= max) break;
     pageToken = page.nextPageToken;
   }
@@ -938,7 +982,7 @@ export async function listThreadIds(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- gmailApi`
-Expected: PASS, 6 tests
+Expected: PASS, 9 tests
 
 - [ ] **Step 5: Commit**
 
