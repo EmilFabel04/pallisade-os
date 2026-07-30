@@ -53,7 +53,7 @@ interface RawThread {
   messages?: RawMessage[];
 }
 
-function isoFromInternal(ms: string | undefined, fallbackHeader: string): string {
+export function isoFromInternal(ms: string | undefined, fallbackHeader: string): string {
   if (ms) {
     const n = Number(ms);
     if (Number.isFinite(n)) return new Date(n).toISOString();
@@ -152,4 +152,33 @@ export async function profileEmail(accessToken: string): Promise<string> {
   }
   const data = (await res.json()) as { emailAddress?: string };
   return data.emailAddress ?? "";
+}
+
+/**
+ * Thread ids matching a Gmail search, paged. No labelIds — the `q` selects the
+ * mailbox (e.g. "in:sent"), unlike listThreads which is pinned to INBOX.
+ */
+export async function listThreadIds(
+  accountId: string,
+  opts: { q?: string; max?: number } = {},
+): Promise<string[]> {
+  const max = opts.max ?? 100;
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+
+  while (ids.length < max) {
+    const page = await gmailGet<{ threads?: { id: string }[]; nextPageToken?: string }>(
+      accountId,
+      "threads",
+      { maxResults: Math.min(100, max - ids.length), q: opts.q, pageToken },
+    );
+    for (const t of page.threads ?? []) {
+      if (ids.length >= max) break;
+      ids.push(t.id);
+    }
+    if (!page.nextPageToken || ids.length >= max) break;
+    pageToken = page.nextPageToken;
+  }
+
+  return ids;
 }
