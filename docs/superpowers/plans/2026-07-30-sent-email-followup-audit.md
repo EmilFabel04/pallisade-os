@@ -1000,6 +1000,27 @@ The I/O layer. Follows the existing convention that server-only Gmail modules
 could be wrong already lives in the tested pure module. Verified end-to-end in
 Task 7.
 
+> **The code block below is the original draft and was superseded during review.**
+> Unlike the other tasks, this one is not worth hand-syncing: review found four
+> substantive defects in the draft, and re-transcribing ~200 lines here would risk
+> putting fresh errors into the record. `src/lib/gmail/sentAudit.ts` is the source
+> of truth; the ledger at `.superpowers/sdd/2026-07-30-sent-email-followup-audit/progress.md`
+> records every ruling. The four changes, so a reader of this draft is not misled:
+>
+> 1. **Own messages are identified by the `SENT` label, not only by address.** A
+>    Gmail send-as alias makes the `From` header never match the connected account,
+>    which found zero own-messages per thread — bucketing everything `awaiting_you`,
+>    rendering no rows, yet still counting `matched`. Threads with no attributable
+>    message are skipped into `excludedNoOwnMessage`.
+> 2. **A failed thread *listing* is recorded** in `listingFailures` and forces
+>    `capped`. Swallowing it to an empty id list made an unread inbox contribute to
+>    no counter at all, so the result claimed complete, failure-free coverage.
+> 3. **A non-finite `limit` is clamped** via `Number.isFinite`. `NaN` propagated to
+>    `while (ids.length < NaN)`, which is false on entry, yielding an empty audit
+>    reported as "nobody needs a follow-up".
+> 4. **Rate limits are retried once** with a short backoff. Without it, one quota
+>    trip cascaded into losing most of the remaining scan.
+
 **Files:**
 - Create: `src/lib/gmail/sentAudit.ts`
 
@@ -1259,7 +1280,7 @@ git commit -m "feat(gmail): sent follow-up audit orchestration with bounded fetc
 - Modify: `src/app/api/advisor/route.ts` (the `emailEnabled` prompt block, around line 90)
 
 **Interfaces:**
-- Consumes: `auditSentFollowUps`, `SCAN_CAP` from `@/lib/gmail/sentAudit`
+- Consumes: `auditSentFollowUps` from `@/lib/gmail/sentAudit`
 - Produces: the `audit_sent_followups` tool, reachable by the model
 
 Registering in `EMAIL_TOOLS` is all that is needed for routing: `EMAIL_TOOL_NAMES`
@@ -1312,20 +1333,21 @@ In `src/app/api/advisor/route.ts`, inside the `if (emailEnabled)` block, append 
     systemFull +=
       `\n\nTo find people who have gone quiet, use audit_sent_followups — it reads real SENT mail, ` +
       `excludes Apollo mailwarming, and buckets each recipient as 'awaiting_you' (they replied and are ` +
-      `waiting on the founder — lead with these) or 'no_reply' (never came back). Report the real names, ` +
-      `companies and days since contact it returns, then propose a create_task follow-up for each person ` +
-      `worth chasing, so the founder can confirm them. Cross-reference query_leads to say whether each ` +
-      `person is already in the pipeline. If the result has capped: true, say so plainly — the scan hit ` +
-      `its ${SCAN_CAP}-thread ceiling and older mail was not read. If followUps is empty but ` +
-      `excludedSignoffOnly is large, say that too: it means the strict "signed off as Emil" rule filtered ` +
-      `almost everything out, which is a tuning problem, not an empty pipeline.`;
+      `waiting on the founder — lead with these) or 'no_reply' (never came back). Report the names and ` +
+      `days since contact it returns; the company is derived from the email domain, so treat it as a ` +
+      `hint rather than a verified name. Then propose a create_task follow-up for each person worth ` +
+      `chasing, so the founder can confirm them. Cross-reference query_leads to say whether each person ` +
+      `is already in the pipeline. If the result has capped: true, say so plainly and cite the result's ` +
+      `own cap value — the scan stopped at that many threads and older mail was not read. If followUps ` +
+      `is empty but excludedSignoffOnly is large, say that too: it means the strict "signed off as ` +
+      `Emil" rule filtered almost everything out, which is a tuning problem, not an empty pipeline.`;
 ```
 
-Add the import at the top of the route:
-
-```ts
-import { SCAN_CAP } from "@/lib/gmail/sentAudit";
-```
+No new import is needed. An earlier draft interpolated `SCAN_CAP` into this text, but the
+constant is the *maximum* cap while the tool accepts a caller-supplied `limit`, so the
+real ceiling for a given call can be far lower — naming the constant would state a
+verifiably wrong number to the founder. The result carries the actual value in its own
+`cap` field; the prompt cites that instead.
 
 - [ ] **Step 4: Typecheck and run the full suite**
 
