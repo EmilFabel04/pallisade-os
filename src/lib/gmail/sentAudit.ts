@@ -47,10 +47,10 @@ export interface SentAuditResult {
    *  rule would start admitting these — the number to watch if results look thin. */
   excludedSignoffOnly: number;
   excludedWarming: number;
-  /** Threads where no message could be attributed to the founder, by either the
-   *  connected account's address or a SENT-labelled message. A non-zero value
-   *  points at a sending address the audit doesn't recognize (e.g. an unusual
-   *  alias configuration). */
+  /** Threads where no message could be attributed to the founder, so they were skipped
+   *  rather than emitting a row that can never render. This is a residual guard against
+   *  malformed From headers, not an alias diagnostic: the query is in:sent, so every
+   *  listed thread has a SENT-labelled message whose From is harvested into the own set. */
   excludedNoOwnMessage: number;
   /** Threads where they replied but the founder answered last: counted, not listed. */
   stalledNotShown: number;
