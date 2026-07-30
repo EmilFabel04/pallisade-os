@@ -100,11 +100,35 @@ avoid.
 A lone `From:` line is not a marker — it appears in ordinary prose. Nothing beyond
 the above is removed.
 
+## Identifying the founder's own messages
+
+A message is "ours" when its `From` is one of the connected inbox addresses
+(`listAccountInfo()`), lowercased and trimmed — **plus** any address discovered
+through the `SENT` label.
+
+That second source is essential, not belt-and-braces. Gmail's "send mail as"
+lets the founder send from a company-domain alias on a personal account, in which
+case his `From` header never matches the connected account's address. Matching on
+the address alone would then find zero own-messages in every thread, which
+cascades: `classifyThread` sees only "their" messages and returns `awaiting_you`
+for threads nobody ever replied to, recipients come back empty so no row renders,
+yet the thread still counts toward `matched`. The founder is told N threads matched
+and shown fewer, with no diagnostic.
+
+`gmail.readonly` cannot read Gmail's sendAs settings, so aliases cannot be
+enumerated. But the audit's query is `in:sent`, so every thread it fetches contains
+at least one message the founder sent, and **those messages carry the `SENT`
+label** whatever address they went out as. Their `From` addresses are therefore
+harvested per thread and accumulated into the own-address set, which the final
+aggregation also uses to exclude the founder from his own recipient list.
+
+A thread where no message can still be attributed to him is skipped and counted in
+`excludedNoOwnMessage`, rather than producing a row that can never render.
+
 ## Reply classification
 
 Per thread, messages are sorted by date and each message's `From` address is
-compared against the connected inbox addresses (`listAccountInfo()`), lowercased.
-A message is "ours" when its `From` is one of those addresses.
+compared against that own-address set.
 
 | Thread state | Bucket | Surfaced |
 |---|---|---|
@@ -192,6 +216,17 @@ could be wrong is testable without touching the Gmail API.
 - A failed individual thread fetch is skipped, not fatal — consistent with the
   `.catch(() => [])` pattern already used in `advisorEmail.ts` — but skipped
   threads are counted and reported so failures are not invisible.
+- A failed thread *listing* is different in kind and must be recorded separately in
+  `listingFailures`, and must force `capped` true. Swallowing it to an empty id list
+  makes the inbox contribute nothing to any counter, so the result would claim
+  complete, uncapped, failure-free coverage of an inbox that was never read.
+- Rate limiting is retried once with a short backoff. Gmail allows ~250 quota
+  units/second and `threads.get` costs 10, so a several-hundred-thread scan can trip
+  the limit; with no retry the pool keeps draining at full speed and one trip
+  cascades into losing most of the remaining scan.
+- The public entry point clamps a non-finite `limit` to the default. `NaN`
+  propagates through the cap arithmetic into `while (ids.length < NaN)`, which is
+  immediately false, yielding an empty audit reported as "nobody needs a follow-up".
 - With no inbox connected, the tool is not offered at all. The advisor route
   already gates `EMAIL_TOOLS` on `emailToolsAvailable()`.
 
