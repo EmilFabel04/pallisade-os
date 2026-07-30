@@ -235,7 +235,7 @@ export function signedByFounder(body: string): boolean {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm test -- sentScan`
-Expected: PASS, 18 tests
+Expected: PASS, 17 tests
 
 - [ ] **Step 5: Commit**
 
@@ -360,7 +360,7 @@ export function judgeThread(input: InclusionInput): InclusionResult {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm test -- sentScan`
-Expected: PASS, 25 tests
+Expected: PASS, 24 tests
 
 - [ ] **Step 5: Commit**
 
@@ -506,7 +506,7 @@ export function classifyThread(messages: ScanMessage[], ownEmails: Set<string>):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm test -- sentScan`
-Expected: PASS, 32 tests
+Expected: PASS, 31 tests
 
 - [ ] **Step 5: Commit**
 
@@ -708,7 +708,7 @@ export function groupByRecipient(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm test -- sentScan`
-Expected: PASS, 40 tests
+Expected: PASS, 39 tests
 
 - [ ] **Step 5: Commit**
 
