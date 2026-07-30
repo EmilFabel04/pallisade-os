@@ -99,10 +99,16 @@ export async function POST(req: Request) {
       `days since contact it returns; the company is derived from the email domain, so treat it as a ` +
       `hint rather than a verified name. Then propose a create_task follow-up for each person worth ` +
       `chasing, so the founder can confirm them. Cross-reference query_leads to say whether each person ` +
-      `is already in the pipeline. If the result has capped: true, say so plainly and cite the result's ` +
-      `own cap value — the scan stopped at that many threads and older mail was not read. If followUps ` +
-      `is empty but excludedSignoffOnly is large, say that too: it means the strict "signed off as ` +
-      `Emil" rule filtered almost everything out, which is a tuning problem, not an empty pipeline.`;
+      `is already in the pipeline. If followUps is empty but excludedSignoffOnly is large, say that ` +
+      `too: it means the strict "signed off as Emil" rule filtered almost everything out, which is a ` +
+      `tuning problem, not an empty pipeline. And say plainly, in your own words, whenever any of these ` +
+      `are set — coverage may be incomplete and the founder should know why: cappedReasons "cap" or ` +
+      `"per_inbox" means the thread ceiling (cite the cap value) was reached and older mail wasn't read; ` +
+      `"listing_failure" means an inbox couldn't be read at all — a failure, not a coverage limit; ` +
+      `"empty_page_bail" means paging stopped early on a narrow query and there may be more behind it; ` +
+      `listingFailures > 0 means that many inboxes couldn't be read; fetchFailures > 0 means that many ` +
+      `threads were skipped; labelLookupFailed means the mailwarming safety net was inactive for an ` +
+      `inbox, so a warming thread could have slipped through.`;
   }
   if (calendarEnabled) {
     systemFull +=

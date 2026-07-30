@@ -38,11 +38,22 @@ export interface SentAuditResult {
    *  Conservative on purpose: an inbox that happened to have exactly its
    *  allowance and nothing more will also read as capped. */
   capped: boolean;
+  /** Why the scan stopped short, when it did. Empty when coverage is complete.
+   *  "cap" — the global thread ceiling was reached.
+   *  "per_inbox" — one inbox exhausted its share of the ceiling.
+   *  "listing_failure" — an inbox's thread listing failed, so it was never read.
+   *  "empty_page_bail" — paging stopped after a run of empty pages, so a narrow
+   *  query may have more matches behind them. */
+  cappedReasons: string[];
   fetchFailures: number;
   /** Inboxes whose thread *listing* failed outright (as opposed to a single
    *  thread fetch failing). That whole account went unread — a non-zero value
    *  here means coverage is incomplete beyond what `capped` alone conveys. */
   listingFailures: number;
+  /** True when an inbox's label list could not be fetched, so the warming-label
+   *  safety net was inactive for it and only the server-side query excluded
+   *  Apollo mailwarming. */
+  labelLookupFailed: boolean;
   /** Threads that failed both the subject and sign-off rules. A looser sign-off
    *  rule would start admitting these — the number to watch if results look thin. */
   excludedSignoffOnly: number;
@@ -114,11 +125,18 @@ async function fetchThread(accountId: string, id: string): Promise<RawThread | n
   return null;
 }
 
-/** Gmail label id → display name, for one account. */
-async function labelNames(accountId: string): Promise<Map<string, string>> {
+/** Gmail label id → display name, for one account. `failed` is true when the
+ *  lookup itself failed (auth failures still propagate via skipUnlessAuth) —
+ *  callers use it to flag that the warming-label safety net was inactive. */
+async function labelNames(accountId: string): Promise<{ names: Map<string, string>; failed: boolean }> {
+  let failed = false;
   const res = await gmailGet<{ labels?: { id: string; name: string }[] }>(accountId, "labels")
-    .catch(skipUnlessAuth({ labels: [] as { id: string; name: string }[] }));
-  return new Map((res.labels ?? []).map((l) => [l.id, l.name]));
+    .catch((err: unknown) => {
+      const fallback = skipUnlessAuth({ labels: [] as { id: string; name: string }[] })(err);
+      failed = true;
+      return fallback;
+    });
+  return { names: new Map((res.labels ?? []).map((l) => [l.id, l.name])), failed };
 }
 
 function toScanMessages(messages: RawMessage[]): ScanMessage[] {
@@ -162,6 +180,8 @@ export async function auditSentFollowUps(
 
   let scanned = 0;
   let capped = false;
+  const cappedReasons = new Set<string>();
+  let labelLookupFailed = false;
   let fetchFailures = 0;
   let listingFailures = 0;
   let excludedSignoffOnly = 0;
@@ -171,21 +191,32 @@ export async function auditSentFollowUps(
   const kept: ScannedThread[] = [];
 
   for (const account of accounts) {
-    const [ids, labels] = await Promise.all([
+    const [listed, labelResult] = await Promise.all([
       listThreadIds(account.id, { q, max: perAccount }).catch((err) => {
         if (err instanceof GmailAuthError) throw err;
         // This inbox went unread. Without recording it, the result would claim
         // complete, uncapped, failure-free coverage of an account never touched.
         listingFailures++;
         capped = true;
-        return [] as string[];
+        cappedReasons.add("listing_failure");
+        return { ids: [] as string[], truncated: false };
       }),
       labelNames(account.id),
     ]);
+    const { ids, truncated } = listed;
+    if (truncated) {
+      capped = true;
+      cappedReasons.add("empty_page_bail");
+    }
+    if (labelResult.failed) labelLookupFailed = true;
+    const labels = labelResult.names;
 
     // A full page-set for this account means its allowance ran out, so older
     // threads went unread even if the global total stayed under `cap`.
-    if (ids.length >= perAccount) capped = true;
+    if (ids.length >= perAccount) {
+      capped = true;
+      cappedReasons.add("per_inbox");
+    }
 
     const threads = await mapPool(ids, FETCH_CONCURRENCY, (id) => fetchThread(account.id, id));
 
@@ -251,13 +282,17 @@ export async function auditSentFollowUps(
 
   const followUps = groupByRecipient(kept, ownEmails, new Date().toISOString());
 
+  if (scanned >= cap) cappedReasons.add("cap");
+
   return {
     scanned,
     matched: kept.length,
     cap,
     capped: capped || scanned >= cap,
+    cappedReasons: [...cappedReasons].sort(),
     fetchFailures,
     listingFailures,
+    labelLookupFailed,
     excludedSignoffOnly,
     excludedWarming,
     excludedNoOwnMessage,

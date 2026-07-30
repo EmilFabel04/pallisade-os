@@ -13,14 +13,16 @@ beforeEach(() => gmailGet.mockReset());
 describe("listThreadIds", () => {
   it("returns ids from a single page", async () => {
     gmailGet.mockResolvedValueOnce({ threads: [{ id: "a" }, { id: "b" }] });
-    expect(await listThreadIds("acct")).toEqual(["a", "b"]);
+    const result = await listThreadIds("acct");
+    expect(result.ids).toEqual(["a", "b"]);
+    expect(result.truncated).toBe(false);
   });
 
   it("follows nextPageToken across pages", async () => {
     gmailGet
       .mockResolvedValueOnce({ threads: [{ id: "a" }], nextPageToken: "p2" })
       .mockResolvedValueOnce({ threads: [{ id: "b" }] });
-    expect(await listThreadIds("acct", { max: 10 })).toEqual(["a", "b"]);
+    expect((await listThreadIds("acct", { max: 10 })).ids).toEqual(["a", "b"]);
     expect(gmailGet).toHaveBeenCalledTimes(2);
     expect(gmailGet.mock.calls[1][2]).toMatchObject({ pageToken: "p2" });
   });
@@ -29,7 +31,7 @@ describe("listThreadIds", () => {
     gmailGet
       .mockResolvedValueOnce({ threads: [{ id: "a" }, { id: "b" }], nextPageToken: "p2" })
       .mockResolvedValueOnce({ threads: [{ id: "c" }, { id: "d" }], nextPageToken: "p3" });
-    expect(await listThreadIds("acct", { max: 3 })).toEqual(["a", "b", "c"]);
+    expect((await listThreadIds("acct", { max: 3 })).ids).toEqual(["a", "b", "c"]);
     expect(gmailGet).toHaveBeenCalledTimes(2);
   });
 
@@ -47,20 +49,27 @@ describe("listThreadIds", () => {
 
   it("returns [] when the response has no threads", async () => {
     gmailGet.mockResolvedValueOnce({});
-    expect(await listThreadIds("acct")).toEqual([]);
+    expect((await listThreadIds("acct")).ids).toEqual([]);
   });
 
   it("stops following tokens after a run of empty pages", async () => {
     gmailGet.mockResolvedValue({ threads: [], nextPageToken: "more" });
-    expect(await listThreadIds("acct", { max: 400 })).toEqual([]);
+    expect((await listThreadIds("acct", { max: 400 })).ids).toEqual([]);
     expect(gmailGet).toHaveBeenCalledTimes(5);
+  });
+
+  it("reports truncated when it bails on a run of empty pages", async () => {
+    gmailGet.mockResolvedValue({ threads: [], nextPageToken: "more" });
+    const result = await listThreadIds("acct", { max: 400 });
+    expect(result.ids).toEqual([]);
+    expect(result.truncated).toBe(true);
   });
 
   it("keeps paging through an occasional empty page", async () => {
     gmailGet
       .mockResolvedValueOnce({ threads: [], nextPageToken: "p2" })
       .mockResolvedValueOnce({ threads: [{ id: "a" }] });
-    expect(await listThreadIds("acct", { max: 400 })).toEqual(["a"]);
+    expect((await listThreadIds("acct", { max: 400 })).ids).toEqual(["a"]);
     expect(gmailGet).toHaveBeenCalledTimes(2);
   });
 
