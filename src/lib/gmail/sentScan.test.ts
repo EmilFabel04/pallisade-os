@@ -194,4 +194,20 @@ describe("classifyThread", () => {
   it("returns no_reply for an empty thread", () => {
     expect(classifyThread([], own)).toBe("no_reply");
   });
+
+  it("keeps an undated message in Gmail's original position rather than first", () => {
+    const messages: ScanMessage[] = [
+      msg("jane@acme.com", "2026-07-02T09:00:00Z"),
+      { from: "emil@pallisade.com", to: [], date: "", text: "" },
+    ];
+    expect(classifyThread(messages, own)).toBe("stalled");
+  });
+
+  it("classifies an undated final reply from them as awaiting_you", () => {
+    const messages: ScanMessage[] = [
+      msg("emil@pallisade.com", "2026-07-01T09:00:00Z"),
+      { from: "jane@acme.com", to: [], date: "", text: "" },
+    ];
+    expect(classifyThread(messages, own)).toBe("awaiting_you");
+  });
 });

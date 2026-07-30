@@ -169,11 +169,27 @@ export function isOwn(email: string, ownEmails: Set<string>): boolean {
  *   no_reply     — nobody but the founder ever wrote
  *   awaiting_you — the other side wrote last; the ball is in his court
  *   stalled      — they replied, but the founder answered last
+ *
+ * When a message carries an empty date, the sort falls back to the caller's
+ * original message order (which Gmail's threads.get returns chronologically).
  */
 export function classifyThread(messages: ScanMessage[], ownEmails: Set<string>): ThreadBucket {
   if (messages.length === 0) return "no_reply";
 
-  const ordered = [...messages].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const ordered = messages
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => {
+      // A message can carry an empty date when Gmail supplied neither a usable
+      // internalDate nor a parseable Date header. Empty strings sort before every
+      // ISO date, which would wrongly hoist such a message to the front and can
+      // flip the thread's bucket. Fall back to the original position instead —
+      // threads.get returns a thread's messages chronologically.
+      if (!a.m.date || !b.m.date) return a.i - b.i;
+      if (a.m.date < b.m.date) return -1;
+      if (a.m.date > b.m.date) return 1;
+      return a.i - b.i;
+    })
+    .map((x) => x.m);
   const theirs = ordered.filter((m) => !isOwn(m.from, ownEmails));
   if (theirs.length === 0) return "no_reply";
 
