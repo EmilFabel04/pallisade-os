@@ -123,7 +123,17 @@ harvested per thread and accumulated into the own-address set, which the final
 aggregation also uses to exclude the founder from his own recipient list.
 
 A thread where no message can still be attributed to him is skipped and counted in
-`excludedNoOwnMessage`, rather than producing a row that can never render.
+`excludedNoOwnMessage`, rather than producing a row that can never render. That
+counter is a residual guard against malformed `From` headers, **not** a diagnostic
+for unrecognised aliases — see below for why it cannot be one.
+
+This adds no new dependence on unverifiable Gmail behaviour. The base query is
+`in:sent`, which *is* `label:sent`: if Gmail did not apply `SENT` to alias sends,
+those threads would never be returned by the listing under any implementation. The
+harvest therefore works in exactly the set of worlds where the query works. It also
+follows that a failure of that assumption would be invisible rather than counted —
+alias-only threads would simply be absent, so nothing would reach the loop and
+`excludedNoOwnMessage` would stay at zero.
 
 ## Reply classification
 
