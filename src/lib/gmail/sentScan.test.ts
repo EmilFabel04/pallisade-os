@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { unquotedBody, signedByFounder } from "@/lib/gmail/sentScan";
+import { unquotedBody, signedByFounder, judgeThread } from "@/lib/gmail/sentScan";
 
 describe("unquotedBody", () => {
   it("cuts at a leading > quote marker", () => {
@@ -93,5 +93,43 @@ describe("signedByFounder", () => {
   it("still finds the sign-off in an interleaved point-by-point reply", () => {
     const body = "> your first question\nAnswer one.\n\n> your second question\nAnswer two.\n\nBest,\nEmil";
     expect(signedByFounder(body)).toBe(true);
+  });
+});
+
+describe("judgeThread", () => {
+  const base = { subject: "hello", labelNames: ["SENT"], ownMessageBodies: ["hi\n\nJane"] };
+
+  it("includes a thread whose subject contains the keyword", () => {
+    expect(judgeThread({ ...base, subject: "Pallisade Data — quick question" }))
+      .toEqual({ included: true, reason: "subject" });
+  });
+
+  it("matches the subject keyword case-insensitively", () => {
+    expect(judgeThread({ ...base, subject: "re: pallisade intro" }).included).toBe(true);
+  });
+
+  it("includes a thread signed off by the founder even with an unrelated subject", () => {
+    expect(judgeThread({ ...base, subject: "Re: intro from Sarah", ownMessageBodies: ["Hi\n\nBest,\nEmil"] }))
+      .toEqual({ included: true, reason: "signoff" });
+  });
+
+  it("checks every one of the founder's messages for a sign-off", () => {
+    const input = { ...base, subject: "Re: intro", ownMessageBodies: ["first note\n\nJane", "second\n\nEmil"] };
+    expect(judgeThread(input).included).toBe(true);
+  });
+
+  it("excludes a warming-labelled thread even when the subject matches", () => {
+    const input = { subject: "Pallisade Data", labelNames: ["SENT", "Apollo Mailwarming"], ownMessageBodies: ["x\n\nEmil"] };
+    expect(judgeThread(input)).toEqual({ included: false, reason: "warming_label" });
+  });
+
+  it("excludes a thread matching neither rule, and says why", () => {
+    expect(judgeThread({ ...base, subject: "Re: intro from Sarah" }))
+      .toEqual({ included: false, reason: "no_subject_no_signoff" });
+  });
+
+  it("excludes a thread with no messages from the founder", () => {
+    expect(judgeThread({ ...base, subject: "Re: intro", ownMessageBodies: [] }))
+      .toEqual({ included: false, reason: "no_subject_no_signoff" });
   });
 });

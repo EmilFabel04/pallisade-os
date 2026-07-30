@@ -108,3 +108,40 @@ export function signedByFounder(body: string): boolean {
     .slice(-SIGNOFF_SEARCH_LINES)
     .some((l) => SIGNOFF_NAMES.includes(normalizeSignoff(l)));
 }
+
+export type InclusionReason = "warming_label" | "subject" | "signoff" | "no_subject_no_signoff";
+
+export interface InclusionInput {
+  subject: string;
+  /** Resolved Gmail label *names* on the thread (not label ids). */
+  labelNames: string[];
+  /** Bodies of the messages the founder himself sent in this thread. */
+  ownMessageBodies: string[];
+}
+
+export interface InclusionResult {
+  included: boolean;
+  reason: InclusionReason;
+}
+
+/**
+ * Apply the inclusion rule: not warming-labelled, AND (subject keyword OR the
+ * founder signed off). `reason` doubles as the diagnostic —
+ * "no_subject_no_signoff" is exactly the set that a looser sign-off rule would
+ * start admitting.
+ */
+export function judgeThread(input: InclusionInput): InclusionResult {
+  if (input.labelNames.some((n) => n.toLowerCase() === WARMING_LABEL.toLowerCase())) {
+    return { included: false, reason: "warming_label" };
+  }
+
+  if (input.subject.toLowerCase().includes(SUBJECT_KEYWORD.toLowerCase())) {
+    return { included: true, reason: "subject" };
+  }
+
+  if (input.ownMessageBodies.some((b) => signedByFounder(b))) {
+    return { included: true, reason: "signoff" };
+  }
+
+  return { included: false, reason: "no_subject_no_signoff" };
+}
