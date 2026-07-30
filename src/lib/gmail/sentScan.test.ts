@@ -210,4 +210,13 @@ describe("classifyThread", () => {
     ];
     expect(classifyThread(messages, own)).toBe("awaiting_you");
   });
+
+  it("orders a mixed dated/undated thread deterministically by position", () => {
+    const messages: ScanMessage[] = [
+      msg("emil@pallisade.com", "2026-07-05T09:00:00Z"),
+      { from: "jane@acme.com", to: [], date: "", text: "" },
+      msg("emil@pallisade.com", "2026-07-01T09:00:00Z"),
+    ];
+    expect(classifyThread(messages, own)).toBe("stalled");
+  });
 });

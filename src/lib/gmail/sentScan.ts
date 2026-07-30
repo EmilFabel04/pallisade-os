@@ -170,21 +170,24 @@ export function isOwn(email: string, ownEmails: Set<string>): boolean {
  *   awaiting_you — the other side wrote last; the ball is in his court
  *   stalled      — they replied, but the founder answered last
  *
- * When a message carries an empty date, the sort falls back to the caller's
- * original message order (which Gmail's threads.get returns chronologically).
+ * When any message carries an empty date, the entire thread falls back to the
+ * caller's original message order (which Gmail's threads.get returns chronologically).
+ * This ensures a total, deterministic order: mixing date-based and index-based
+ * comparisons pairwise is not transitive and can lead to engine-dependent results.
  */
 export function classifyThread(messages: ScanMessage[], ownEmails: Set<string>): ThreadBucket {
   if (messages.length === 0) return "no_reply";
 
+  // Decide the ordering rule once for the whole thread. Mixing "compare by date"
+  // and "compare by position" pairwise is not transitive — with A(dated),
+  // B(undated), C(dated) you can get A<B, B<C, yet A>C, and JS leaves the result
+  // of a non-transitive comparator implementation-defined. A thread's last message
+  // decides awaiting_you vs stalled, so that must never be engine-dependent.
+  const anyUndated = messages.some((m) => !m.date);
   const ordered = messages
     .map((m, i) => ({ m, i }))
     .sort((a, b) => {
-      // A message can carry an empty date when Gmail supplied neither a usable
-      // internalDate nor a parseable Date header. Empty strings sort before every
-      // ISO date, which would wrongly hoist such a message to the front and can
-      // flip the thread's bucket. Fall back to the original position instead —
-      // threads.get returns a thread's messages chronologically.
-      if (!a.m.date || !b.m.date) return a.i - b.i;
+      if (anyUndated) return a.i - b.i;
       if (a.m.date < b.m.date) return -1;
       if (a.m.date > b.m.date) return 1;
       return a.i - b.i;
