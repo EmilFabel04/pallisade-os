@@ -5,7 +5,6 @@ import {
   TOOLS, EMAIL_TOOLS, EMAIL_TOOL_NAMES, CALENDAR_TOOLS, CALENDAR_READ_TOOL_NAMES, resolveTool,
 } from "@/lib/advisor/tools";
 import { emailToolsAvailable, connectedEmails, resolveEmailTool } from "@/lib/gmail/advisorEmail";
-import { SCAN_CAP } from "@/lib/gmail/sentAudit";
 import { calendarToolsAvailable, resolveCalendarTool } from "@/lib/calendar/advisorCalendar";
 import {
   PROJECT_CONTEXT_TOOLS, PROJECT_CONTEXT_TOOL_NAMES, resolveProjectContextTool,
@@ -96,13 +95,14 @@ export async function POST(req: Request) {
     systemFull +=
       `\n\nTo find people who have gone quiet, use audit_sent_followups — it reads real SENT mail, ` +
       `excludes Apollo mailwarming, and buckets each recipient as 'awaiting_you' (they replied and are ` +
-      `waiting on the founder — lead with these) or 'no_reply' (never came back). Report the real names, ` +
-      `companies and days since contact it returns, then propose a create_task follow-up for each person ` +
-      `worth chasing, so the founder can confirm them. Cross-reference query_leads to say whether each ` +
-      `person is already in the pipeline. If the result has capped: true, say so plainly — the scan hit ` +
-      `its ${SCAN_CAP}-thread ceiling and older mail was not read. If followUps is empty but ` +
-      `excludedSignoffOnly is large, say that too: it means the strict "signed off as Emil" rule filtered ` +
-      `almost everything out, which is a tuning problem, not an empty pipeline.`;
+      `waiting on the founder — lead with these) or 'no_reply' (never came back). Report the names and ` +
+      `days since contact it returns; the company is derived from the email domain, so treat it as a ` +
+      `hint rather than a verified name. Then propose a create_task follow-up for each person worth ` +
+      `chasing, so the founder can confirm them. Cross-reference query_leads to say whether each person ` +
+      `is already in the pipeline. If the result has capped: true, say so plainly and cite the result's ` +
+      `own cap value — the scan stopped at that many threads and older mail was not read. If followUps ` +
+      `is empty but excludedSignoffOnly is large, say that too: it means the strict "signed off as ` +
+      `Emil" rule filtered almost everything out, which is a tuning problem, not an empty pipeline.`;
   }
   if (calendarEnabled) {
     systemFull +=
