@@ -143,6 +143,15 @@ Live, on demand, newest first, with a cap.
 The result always reports `scanned`, `matched`, the cap, and whether the cap was
 hit. A capped scan must never read as complete coverage.
 
+The cap is split evenly across connected inboxes, so "capped" cannot be derived
+from the global total alone: with two inboxes and a cap of 400, an inbox truncated
+at its 200-thread share while the other holds 10 threads yields a global `scanned`
+of 210 — under the cap, yet coverage is incomplete. `capped` is therefore true when
+**either** the global cap was reached **or** any single inbox exhausted its share.
+An inbox returning exactly its allowance counts as capped: over-reporting
+truncation is a harmless nudge to narrow the query, while under-reporting it is a
+false claim of completeness.
+
 **Known limitation.** If the sent folder is dominated by high-volume Apollo
 sequence traffic, the 400 newest threads could crowd out older hand-written mail.
 Mitigation: the tool accepts an optional Gmail `query` passthrough, so the advisor
