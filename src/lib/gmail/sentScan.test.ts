@@ -1,0 +1,82 @@
+import { describe, it, expect } from "vitest";
+import { unquotedBody, signedByFounder } from "@/lib/gmail/sentScan";
+
+describe("unquotedBody", () => {
+  it("cuts at a leading > quote marker", () => {
+    const body = "Hi Jane,\n\nWorth a chat?\n\nBest,\nEmil\n\n> earlier text\n> more";
+    expect(unquotedBody(body)).toBe("Hi Jane,\n\nWorth a chat?\n\nBest,\nEmil\n");
+  });
+
+  it("cuts at a single-line On ... wrote: marker", () => {
+    const body = "Following up.\n\nEmil\n\nOn Tue, Jul 28, 2026 at 10:04 AM Jane Roe <jane@acme.com> wrote:\nsure";
+    expect(unquotedBody(body)).toBe("Following up.\n\nEmil\n");
+  });
+
+  it("cuts when Gmail wraps wrote: onto the next line", () => {
+    const body = "Following up.\n\nEmil\n\nOn Tue, Jul 28, 2026 Jane Roe <jane@acme.com>\nwrote:\nsure";
+    expect(unquotedBody(body)).toBe("Following up.\n\nEmil\n");
+  });
+
+  it("cuts at an Outlook original-message divider", () => {
+    const body = "Any thoughts?\n\nEmil\n\n-----Original Message-----\nFrom: Jane";
+    expect(unquotedBody(body)).toBe("Any thoughts?\n\nEmil\n");
+  });
+
+  it("cuts at a From: line followed by Sent:", () => {
+    const body = "Checking in.\n\nEmil\n\nFrom: Jane Roe\nSent: 28 July 2026 10:04\nTo: Emil";
+    expect(unquotedBody(body)).toBe("Checking in.\n\nEmil\n");
+  });
+
+  it("leaves a body with no quoted section untouched", () => {
+    const body = "Short note.\n\nEmil";
+    expect(unquotedBody(body)).toBe(body);
+  });
+
+  it("does not treat a bare From: line as a quote marker", () => {
+    const body = "From: the team at Pallisade\n\nWe build things.\n\nEmil";
+    expect(unquotedBody(body)).toBe(body);
+  });
+});
+
+describe("signedByFounder", () => {
+  it("matches a bare Emil on the last line", () => {
+    expect(signedByFounder("Worth a chat?\n\nBest,\nEmil")).toBe(true);
+  });
+
+  it("matches Emil Fabel on the last line", () => {
+    expect(signedByFounder("Worth a chat?\n\nEmil Fabel")).toBe(true);
+  });
+
+  it("matches a valediction and name on one line", () => {
+    expect(signedByFounder("Worth a chat?\n\nBest, Emil")).toBe(true);
+  });
+
+  it("ignores trailing punctuation and whitespace", () => {
+    expect(signedByFounder("Worth a chat?\n\nEmil.  \n\n")).toBe(true);
+  });
+
+  it("ignores case", () => {
+    expect(signedByFounder("Worth a chat?\n\nEMIL")).toBe(true);
+  });
+
+  it("does NOT match when a title line sits below the name", () => {
+    expect(signedByFounder("Worth a chat?\n\nEmil Fabel\nFounder, Pallisade Data")).toBe(false);
+  });
+
+  it("does not match another sender's sign-off", () => {
+    expect(signedByFounder("Thanks for this.\n\nBest,\nJane")).toBe(false);
+  });
+
+  it("does not match Emil mentioned mid-sentence", () => {
+    expect(signedByFounder("Emil here from Pallisade Data.\n\nSpeak soon,\nJane")).toBe(false);
+  });
+
+  it("only inspects the founder's own text, not the quoted reply", () => {
+    const body = "Thanks Jane.\n\nJane\n\n> Best,\n> Emil";
+    expect(signedByFounder(body)).toBe(false);
+  });
+
+  it("returns false for an empty body", () => {
+    expect(signedByFounder("")).toBe(false);
+  });
+});
