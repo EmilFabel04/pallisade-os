@@ -80,15 +80,25 @@ Two mitigations, since a strict rule can silently match nothing:
   rule. Under-matching then shows up as a number rather than as a mysteriously
   empty answer.
 
-**Quoted-reply cutting** is conservative. Cut at the first line matching any of:
+**Quoted-reply cutting** is conservative, and treats the two kinds of quote
+evidence differently.
 
-- a line beginning with `>`
-- `On <...> wrote:`
+*Attribution markers* only ever introduce a trailing quote block, so everything
+from the first one down is cut:
+
+- `On <...> wrote:` — including the form where Gmail wraps `wrote:` onto its own line
 - `-----Original Message-----`
 - a `From:` line immediately followed by a `Sent:` / `Date:` line
 
-Over-aggressive stripping risks discarding a real signature, so nothing beyond
-these markers is removed.
+*Quoted lines* — those beginning with `>` — are **dropped, not cut at**. A quoted
+line can legitimately sit *above* the founder's own sign-off: an interleaved
+point-by-point reply, or a customer testimonial he is quoting. Truncating at the
+first `>` would discard his signature below it and silently classify a mail he did
+sign as unsigned, which is the precise over-stripping failure this rule exists to
+avoid.
+
+A lone `From:` line is not a marker — it appears in ordinary prose. Nothing beyond
+the above is removed.
 
 ## Reply classification
 
@@ -181,7 +191,9 @@ could be wrong is testable without touching the Gmail API.
 Unit tests against `sentScan.ts`, which is where the logic that can be wrong
 lives:
 
-- **Quoted-reply cutting** — each marker form; a signature preserved above the cut
+- **Quoted-reply cutting** — each attribution-marker form; a signature preserved
+  above the cut; a sign-off preserved *below* a quoted testimonial and inside an
+  interleaved point-by-point reply
 - **Sign-off detection** — bare `Emil`; `Emil Fabel`; trailing punctuation and
   whitespace; the documented title-line non-match; a non-Emil sign-off rejected
 - **Inclusion rule** — subject-only match; sign-off-only match; neither; the

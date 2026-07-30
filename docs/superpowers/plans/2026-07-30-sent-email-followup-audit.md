@@ -86,6 +86,11 @@ describe("unquotedBody", () => {
     const body = "From: the team at Pallisade\n\nWe build things.\n\nEmil";
     expect(unquotedBody(body)).toBe(body);
   });
+
+  it("keeps the text below a quoted testimonial", () => {
+    const body = "As one customer put it:\n> This saved us 10 hours a week.\n\nWorth a chat?\n\nBest,\nEmil";
+    expect(unquotedBody(body)).toBe("As one customer put it:\n\nWorth a chat?\n\nBest,\nEmil");
+  });
 });
 
 describe("signedByFounder", () => {
@@ -124,6 +129,16 @@ describe("signedByFounder", () => {
   it("only inspects the founder's own text, not the quoted reply", () => {
     const body = "Thanks Jane.\n\nJane\n\n> Best,\n> Emil";
     expect(signedByFounder(body)).toBe(false);
+  });
+
+  it("still finds the sign-off below a quoted testimonial", () => {
+    const body = "As one customer put it:\n> This saved us 10 hours a week.\n\nWorth a chat?\n\nBest,\nEmil";
+    expect(signedByFounder(body)).toBe(true);
+  });
+
+  it("still finds the sign-off in an interleaved point-by-point reply", () => {
+    const body = "> your first question\nAnswer one.\n\n> your second question\nAnswer two.\n\nBest,\nEmil";
+    expect(signedByFounder(body)).toBe(true);
   });
 
   it("returns false for an empty body", () => {
@@ -166,24 +181,34 @@ export const SIGNOFF_SEARCH_LINES = 1;
 const VALEDICTION =
   /^(best regards|kind regards|all the best|thank you|best|thanks|cheers|regards|warmly|sincerely)\s*[,\-–—]?\s*/i;
 
-const QUOTE_MARKERS = [
-  /^>/,
+/** A line quoted from an earlier message. These are *dropped*, not truncated at:
+ *  a quote can sit above the founder's own sign-off — an interleaved
+ *  point-by-point reply, or a customer testimonial he is quoting — and cutting
+ *  there would discard his signature and silently fail the sign-off test. */
+const QUOTED_LINE = /^>/;
+
+/** Markers that only ever introduce a trailing quote block, so everything from
+ *  there down is cut. */
+const ATTRIBUTION_MARKERS = [
   /^-{2,}\s*original message\s*-{2,}$/i,
 ];
 
 /**
- * Return only the newly-written part of a message body, cutting the quoted
- * thread beneath it. Conservative on purpose: over-aggressive stripping would
- * discard a real signature and break the sign-off test.
+ * Return only the newly-written part of a message body: cut at the first
+ * attribution marker, then drop any quoted lines above it. Conservative on
+ * purpose — over-aggressive stripping would discard a real signature and break
+ * the sign-off test.
  */
 export function unquotedBody(text: string): string {
   const lines = text.split(/\r?\n/);
+  let end = lines.length;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    if (QUOTE_MARKERS.some((re) => re.test(line))) {
-      return lines.slice(0, i).join("\n");
+    if (ATTRIBUTION_MARKERS.some((re) => re.test(line))) {
+      end = i;
+      break;
     }
 
     // Gmail attribution: "On <date> Name <addr> wrote:" — sometimes wrapped so
@@ -191,18 +216,23 @@ export function unquotedBody(text: string): string {
     if (/^on\b/i.test(line)) {
       const next = (lines[i + 1] ?? "").trim();
       if (/wrote:\s*$/i.test(line) || /^wrote:\s*$/i.test(next)) {
-        return lines.slice(0, i).join("\n");
+        end = i;
+        break;
       }
     }
 
     // Outlook-style header block: a From: line immediately followed by Sent:/Date:.
     // A lone From: line is left alone — it appears in ordinary prose.
     if (/^from:\s/i.test(line) && /^(sent|date):\s/i.test((lines[i + 1] ?? "").trim())) {
-      return lines.slice(0, i).join("\n");
+      end = i;
+      break;
     }
   }
 
-  return text;
+  return lines
+    .slice(0, end)
+    .filter((l) => !QUOTED_LINE.test(l.trim()))
+    .join("\n");
 }
 
 /** Trim a line to a bare name for comparison. */
@@ -235,7 +265,7 @@ export function signedByFounder(body: string): boolean {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm test -- sentScan`
-Expected: PASS, 17 tests
+Expected: PASS, 20 tests
 
 - [ ] **Step 5: Commit**
 
@@ -360,7 +390,7 @@ export function judgeThread(input: InclusionInput): InclusionResult {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm test -- sentScan`
-Expected: PASS, 24 tests
+Expected: PASS, 27 tests
 
 - [ ] **Step 5: Commit**
 
@@ -506,7 +536,7 @@ export function classifyThread(messages: ScanMessage[], ownEmails: Set<string>):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm test -- sentScan`
-Expected: PASS, 31 tests
+Expected: PASS, 34 tests
 
 - [ ] **Step 5: Commit**
 
@@ -708,7 +738,7 @@ export function groupByRecipient(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm test -- sentScan`
-Expected: PASS, 39 tests
+Expected: PASS, 42 tests
 
 - [ ] **Step 5: Commit**
 
