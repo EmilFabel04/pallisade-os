@@ -70,3 +70,39 @@ describe("measure", () => {
     expect(Number.isNaN(s.contractionRate)).toBe(false);
   });
 });
+
+import { profileFromSamples, compare } from "./voice";
+
+describe("profileFromSamples", () => {
+  it("takes the median so one odd sample cannot skew the profile", () => {
+    const uniform = "aa bb cc dd. aa bb cc dd. aa bb cc dd.";        // burstiness 0
+    const varied = "aa. " + Array.from({ length: 18 }, (_, i) => `w${i}`).join(" ") + ".";
+    const profile = profileFromSamples([uniform, uniform, varied]);
+    expect(profile.burstiness).toBe(0); // median of [0, 0, ~0.8]
+  });
+
+  it("returns zero stats for no samples", () => {
+    expect(profileFromSamples([]).burstiness).toBe(0);
+  });
+});
+
+describe("compare", () => {
+  const profile = { ...profileFromSamples(["aa. " + "w ".repeat(18) + "."]) };
+
+  it("flags a draft that is markedly less varied than the founder", () => {
+    const flat = measure("aa bb cc dd ee. aa bb cc dd ee. aa bb cc dd ee.");
+    const devs = compare(flat, profile);
+    expect(devs.some((d) => d.metric === "burstiness")).toBe(true);
+    expect(devs.find((d) => d.metric === "burstiness")?.detail).toMatch(/uniform|varied/i);
+  });
+
+  it("does not flag a draft that is more varied than the founder", () => {
+    const spiky = measure("a. " + "w ".repeat(40) + ". b.");
+    expect(compare(spiky, profile).some((d) => d.metric === "burstiness")).toBe(false);
+  });
+
+  it("flags sentence length more than 40 percent off the founder's norm", () => {
+    const longWinded = measure("w ".repeat(60) + ".");
+    expect(compare(longWinded, profile).some((d) => d.metric === "avgSentenceLength")).toBe(true);
+  });
+});
