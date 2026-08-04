@@ -7,7 +7,6 @@ describe("extractAnchors", () => {
     expect(a).toContain("14");
     expect(a).toContain("47%");
     expect(a).toContain("R120,000");
-    expect(a).not.toContain("120,000");
   });
 
   it("pulls ISO and written dates", () => {
@@ -34,6 +33,19 @@ describe("extractAnchors", () => {
 
   it("deduplicates and returns an empty array for anchor-free text", () => {
     expect(extractAnchors("it takes ages and everyone hates it")).toEqual([]);
+    // This is the only genuine test of the containment filter's "drop the shorter
+    // anchor" direction. Raw tokens here, before filtering, are
+    // ["47%","47%","47","47"] — the bare "47" is really produced by the
+    // bare-number pattern and really has to be filtered out for this to pass.
+    // It can't be covered any further: the digit-flanking fix only changed which
+    // anchors are KEPT (the 14/114 and 2/20 cases below), so any additional
+    // drop-direction assertion would pass identically against the old, buggy
+    // pure-substring filter — it wouldn't discriminate old code from new. R120,000
+    // and "12 June 2026" can't serve that purpose either, because the currency and
+    // date regexes each consume the whole span in one match; the shorter token
+    // ("120,000", "12 June") is never produced as a raw token in the first place,
+    // so an assertion that it's absent from the result is vacuously true and was
+    // removed after the re-review proved it passed unchanged against the old code.
     expect(extractAnchors("47% and 47%")).toEqual(["47%"]);
   });
 
@@ -55,11 +67,5 @@ describe("extractAnchors", () => {
     const b = extractAnchors("2 renewed out of 20 contacted.");
     expect(b).toContain("2");
     expect(b).toContain("20");
-  });
-
-  it("drops a shorter date when a longer date fully contains it", () => {
-    const a = extractAnchors("On 12 June 2026 we shipped.");
-    expect(a).toContain("12 June 2026");
-    expect(a).not.toContain("12 June");
   });
 });
