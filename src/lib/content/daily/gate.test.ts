@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { runGate, normaliseOpener } from "./gate";
-import { profileFromSamples } from "@/lib/content/voice";
+import { runGate, normaliseOpener, firstLine, BURSTINESS_FLOOR } from "./gate";
+import { profileFromSamples, ZERO_STATS } from "@/lib/content/voice";
 import type { SourceRef } from "./types";
 
 const profile = profileFromSamples([
@@ -46,6 +46,33 @@ describe("ai-tells", () => {
   it("catches emoji bullets", () => {
     expect(check("\u{1F680} Faster\n\u{1F525} Cheaper", "ai-tells").passed).toBe(false);
   });
+
+  it("catches a phrase that ends on punctuation, not a word character (C2)", () => {
+    // A trailing \b after "?" can never match — there is no word character
+    // on either side of it — so the phrase could never fire at all unless
+    // the boundary is dropped on that side.
+    const c = check("We rewired it. The result? Twenty minutes.", "ai-tells");
+    expect(c.passed).toBe(false);
+    expect(c.detail).toMatch(/the result\?/i);
+  });
+
+  it("catches negative parallelism written with a curly apostrophe (C3)", () => {
+    const c = check("It’s not a tool, it’s a mindset. We shipped it in 20 minutes.", "ai-tells");
+    expect(c.passed).toBe(false);
+    expect(c.detail).toMatch(/negative parallelism/i);
+  });
+
+  it("catches \"here's the thing\" written with a curly apostrophe (C3)", () => {
+    const c = check("Here’s the thing about reconciliation: it never gets fixed.", "ai-tells");
+    expect(c.passed).toBe(false);
+    expect(c.detail).toMatch(/here's the thing/i);
+  });
+
+  it("catches \"it's important to note\" written with a curly apostrophe (C3)", () => {
+    const c = check("It’s important to note the change we made.", "ai-tells");
+    expect(c.passed).toBe(false);
+    expect(c.detail).toMatch(/it's important to note/i);
+  });
 });
 
 describe("specificity", () => {
@@ -68,6 +95,55 @@ describe("specificity", () => {
     )!;
     expect(c.passed).toBe(false);
   });
+
+  it("does not let '3' falsely trace against a source that only contains '43' (C4i)", () => {
+    const c = gate("We saved 3 hours every week.", {
+      sourceRefs: [],
+      sourceTexts: ["The old process took 43 hours total."],
+    }).find((x) => x.rule === "specificity")!;
+    expect(c.passed).toBe(false);
+  });
+
+  it("does not let '1' falsely trace against a source that only contains '100' (C4i)", () => {
+    const c = gate("We fixed it in 1 day.", {
+      sourceRefs: [],
+      sourceTexts: ["It used to take 100 days total."],
+    }).find((x) => x.rule === "specificity")!;
+    expect(c.passed).toBe(false);
+  });
+
+  it("names fabricated, untraced anchors in the detail even when the post also has a traced one (C4ii)", () => {
+    // "Acme Financial" and "R2,400,000" are invented — only "14" traces back
+    // to the source record. The check still passes (one traced anchor is
+    // enough today), but the revise stage must be told, by name, which
+    // details are unverified so it can learn the fabrication was caught.
+    const c = gate(
+      "Acme Financial saved R2,400,000 after we rebuilt their close. " +
+        "Reconciliation took 14 hours before.",
+    ).find((x) => x.rule === "specificity")!;
+    expect(c.passed).toBe(true);
+    expect(c.detail).toMatch(/UNVERIFIED/);
+    expect(c.detail).toMatch(/Acme Financial/);
+    expect(c.detail).toMatch(/R2,400,000/);
+  });
+
+  it("names untraced anchors on the failing path too (C4ii)", () => {
+    const c = gate("We cut it from 900 hours to 3 hours flat.").find(
+      (x) => x.rule === "specificity",
+    )!;
+    expect(c.detail).toMatch(/UNVERIFIED/);
+  });
+
+  it("traces a SourceRef anchor by substring, not exact whole-string equality (I1)", () => {
+    // extractAnchors yields the narrow token "14" from the body, while the
+    // ref's own anchor is the wider phrase "14 hours" it was lifted from.
+    // With no sourceTexts at all, only the ref fallback can trace this.
+    const c = gate("The job took 14 hours.", {
+      sourceRefs: [{ collection: "painPoints", id: "pp1", anchor: "14 hours" }],
+      sourceTexts: [],
+    }).find((x) => x.rule === "specificity")!;
+    expect(c.passed).toBe(true);
+  });
 });
 
 describe("broetry", () => {
@@ -83,6 +159,40 @@ describe("broetry", () => {
       "They ran it for 14 hours. Every month end, without fail.\n\n" +
       "We wired the systems together. It takes 20 minutes now, and nobody watches it.";
     expect(check(body, "broetry").passed).toBe(true);
+  });
+
+  function paragraphs(total: number, singleSentence: number): string {
+    const out: string[] = [];
+    for (let i = 0; i < singleSentence; i++) out.push(`Single sentence number ${i}.`);
+    for (let i = 0; i < total - singleSentence; i++) out.push(`First part ${i}. Second part ${i}.`);
+    return out.join("\n\n");
+  }
+
+  it("passes at exactly the 60% threshold (I2)", () => {
+    const c = check(paragraphs(100, 60), "broetry");
+    expect(c.passed).toBe(true);
+    expect(c.detail).toMatch(/60 of 100/);
+  });
+
+  it("fails just above the 60% threshold, at 61% (I2)", () => {
+    const c = check(paragraphs(100, 61), "broetry");
+    expect(c.passed).toBe(false);
+    expect(c.detail).toMatch(/61 of 100/);
+  });
+
+  it("passes a two-paragraph post even if both paragraphs are single-sentence — too short to judge (I3)", () => {
+    const c = check("One sentence only.\n\nAnother single sentence.", "broetry");
+    expect(c.passed).toBe(true);
+    expect(c.detail).toMatch(/too short/i);
+  });
+
+  it("fails a three-paragraph post where all three are single-sentence, once the ratio check applies (I3)", () => {
+    const c = check(
+      "One sentence only.\n\nAnother single sentence.\n\nA third single sentence.",
+      "broetry",
+    );
+    expect(c.passed).toBe(false);
+    expect(c.detail).toMatch(/3 of 3/);
   });
 });
 
@@ -100,6 +210,26 @@ describe("opener-collision", () => {
     )!;
     expect(c.passed).toBe(true);
   });
+
+  it("collides on the whole first line, not just its first sentence (I5)", () => {
+    // The opening LINE holds two sentences. ContentPost.openingLine (see
+    // rotation.ts's recentOpeners) denormalises the whole line, so the gate
+    // must compare against the whole line too, or a post with a two-sentence
+    // opener will never collide with its own recorded opener.
+    const body = "Reconciliation took 14 hours. That was absurd.\nWe fixed it in 20 minutes.";
+    const c = gate(body, {
+      recentOpeners: ["Reconciliation took 9 hours. That was absurd."],
+    }).find((x) => x.rule === "opener-collision")!;
+    expect(c.passed).toBe(false);
+  });
+});
+
+describe("firstLine", () => {
+  it("takes the whole first line, stopping only at a newline (I5)", () => {
+    expect(firstLine("Reconciliation took 14 hours. That was absurd.\nRest of the post.")).toBe(
+      "Reconciliation took 14 hours. That was absurd.",
+    );
+  });
 });
 
 describe("never-say", () => {
@@ -113,9 +243,54 @@ describe("never-say", () => {
 });
 
 describe("burstiness", () => {
+  const flat = "aa bb cc dd ee ff.\naa bb cc dd ee ff.\naa bb cc dd ee ff.\naa bb cc dd ee ff.";
+
   it("fails a draft markedly flatter than the founder's baseline", () => {
-    const flat = "aa bb cc dd ee ff.\naa bb cc dd ee ff.\naa bb cc dd ee ff.\naa bb cc dd ee ff.";
     expect(check(flat, "burstiness").passed).toBe(false);
+  });
+
+  it("fails a flat draft even when the profile itself is the cold-start ZERO_STATS (C1)", () => {
+    // profileFromSamples([]) yields ZERO_STATS: burstiness 0. The
+    // profile-relative check (draft < profile - 0.15) can never fire here —
+    // 0 is never less than -0.15 — so only the absolute floor can catch this.
+    const c = gate(flat, { profile: ZERO_STATS }).find((x) => x.rule === "burstiness")!;
+    expect(c.passed).toBe(false);
+    expect(c.detail).toMatch(new RegExp(BURSTINESS_FLOOR.toFixed(2)));
+  });
+
+  it("fails a flat draft against a near-zero (but nonzero) baseline (C1)", () => {
+    // profile.burstiness = 0.10: profile - 0.15 is still negative, so the
+    // relative check is still dead here too — this is not just a
+    // zero-exactly edge case, it covers any founder whose own writing
+    // genuinely measures as close to uniform.
+    const nearZero = { ...ZERO_STATS, burstiness: 0.1 };
+    const c = gate(flat, { profile: nearZero }).find((x) => x.rule === "burstiness")!;
+    expect(c.passed).toBe(false);
+  });
+
+  it("still passes a genuinely bursty draft against a near-zero baseline (C1, floor satisfied)", () => {
+    // Pins the other direction against the mutation "burstiness always
+    // fires": once the draft clears the absolute floor, and the (very low)
+    // baseline obviously doesn't demand more, it must pass.
+    const nearZero = { ...ZERO_STATS, burstiness: 0.1 };
+    const c = gate(GOOD, { profile: nearZero }).find((x) => x.rule === "burstiness")!;
+    expect(c.passed).toBe(true);
+  });
+
+  it("fails via the profile-relative check alone, independent of the floor (C1)", () => {
+    // Draft burstiness ~0.328 — above the 0.30 floor — against a profile of
+    // 0.60, where profile - 0.15 = 0.45. The floor alone would pass this;
+    // only the relative comparison against the founder's own baseline
+    // catches it. Confirms the floor did not silently replace that check.
+    const draft =
+      "One two three four five six seven eight.\n" +
+      "One two three four five.\n" +
+      "One two three four five six.\n" +
+      "One two three.";
+    const highProfile = { ...ZERO_STATS, burstiness: 0.6 };
+    const c = gate(draft, { profile: highProfile }).find((x) => x.rule === "burstiness")!;
+    expect(c.passed).toBe(false);
+    expect(c.detail).toMatch(/0\.60/);
   });
 });
 
@@ -124,6 +299,22 @@ describe("normaliseOpener", () => {
     expect(normaliseOpener("Reconciliation took them 14 hours!")).toBe(
       normaliseOpener("reconciliation took them 9 hours"),
     );
+  });
+
+  it("pins the 6-word window: two openers that only differ after word 6 collide (I4)", () => {
+    // This is documenting current behaviour, not asserting it is desirable —
+    // a future change to the window size should make this test visibly
+    // change, rather than the collision silently starting or stopping.
+    const a = "Last Tuesday a client asked me why the numbers never matched at close.";
+    const b = "Last Tuesday a client asked me how the numbers never matched at close.";
+    expect(normaliseOpener(a)).toBe(normaliseOpener(b));
+    expect(normaliseOpener(a)).toBe("last tuesday a client asked me");
+  });
+
+  it("pins the 6-word window: two openers that differ within the first 6 words do not collide (I4)", () => {
+    const a = "Nobody asked for a dashboard";
+    const b = "Nobody asked for a dashboard, ever";
+    expect(normaliseOpener(a)).not.toBe(normaliseOpener(b));
   });
 });
 
