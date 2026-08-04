@@ -54,6 +54,41 @@ describe("AI tell catalogue", () => {
     neg.regex.lastIndex = 0;
     expect(neg.regex.test("I shipped the dashboard on Tuesday.")).toBe(false);
   });
+
+  it("catches the rule-of-three triplet and lets ordinary prose through", () => {
+    const rot = AI_TELL_PATTERNS.find((p) => p.label === "rule of three")!;
+    expect(rot.regex.test("It was faster, cheaper, and better.")).toBe(true);
+    expect(rot.regex.test("I shipped the dashboard on Tuesday.")).toBe(false);
+  });
+
+  it("flags three or more em dashes but not two", () => {
+    const dash = AI_TELL_PATTERNS.find((p) => p.label === "em dash overuse")!;
+    expect(dash.regex.test("one — two — done.")).toBe(false);
+    expect(dash.regex.test("one — two — three — done.")).toBe(true);
+  });
+
+  it("flags three or more bolded runs but not two", () => {
+    const bold = AI_TELL_PATTERNS.find((p) => p.label === "mechanical bolding")!;
+    expect(bold.regex.test("**one** and **two** but not three")).toBe(false);
+    expect(bold.regex.test("**one** and **two** and **three**")).toBe(true);
+  });
+
+  it("catches a line-leading emoji but not a mid-sentence one", () => {
+    const bullets = AI_TELL_PATTERNS.find((p) => p.label === "emoji bullets")!;
+    expect(bullets.regex.test("🚀 Launched today")).toBe(true);
+    expect(bullets.regex.test("We launched today 🚀 and it worked")).toBe(false);
+  });
+
+  it("catches the inline-header list shape with the colon inside or outside the bold run", () => {
+    const header = AI_TELL_PATTERNS.find((p) => p.label === "inline-header list")!;
+    expect(header.regex.test("- **Header:** text")).toBe(true);
+    expect(header.regex.test("- **Header**: text")).toBe(true);
+    expect(header.regex.test("* **Header:** text")).toBe(true);
+    expect(header.regex.test("• **Header:** text")).toBe(true);
+    expect(header.regex.test("- **Header** text")).toBe(false);
+    expect(header.regex.test("I shipped the dashboard on Tuesday.")).toBe(false);
+    expect(header.regex.test("- just a plain bullet")).toBe(false);
+  });
 });
 
 describe("prompt fragments", () => {

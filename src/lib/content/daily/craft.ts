@@ -138,7 +138,7 @@ export const AI_TELL_PATTERNS: AiTellPattern[] = [
   },
   {
     label: "inline-header list",
-    regex: /^\s*[-*•]\s*\*\*[^*\n]+\*\*\s*:/m,
+    regex: /^\s*[-*•]\s*\*\*[^*\n]+:\*\*|^\s*[-*•]\s*\*\*[^*\n]+\*\*\s*:/m,
     detail: "the `- **Header:** text` list shape is a chatbot formatting habit",
   },
 ];
