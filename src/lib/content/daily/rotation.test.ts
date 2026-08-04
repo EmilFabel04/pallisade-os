@@ -61,7 +61,7 @@ describe("validateBriefs", () => {
     expect(out.join(" ")).toMatch(/source|already used/i);
   });
 
-  it("rejects two same-day briefs sharing a pillar or a format", () => {
+  it("rejects two same-day briefs sharing a pillar", () => {
     const memory = buildMemory([], today);
     const samePillar = validateBriefs(
       [brief({ slot: 1 }), brief({ slot: 2, format: "scene" })], memory,
@@ -69,9 +69,51 @@ describe("validateBriefs", () => {
     expect(samePillar.join(" ")).toMatch(/same day/i);
   });
 
+  it("rejects two same-day briefs sharing a format but differing in pillar", () => {
+    const memory = buildMemory([], today);
+    const sameFormat = validateBriefs(
+      [brief({ slot: 1, pillar: "proof", format: "numbers" }),
+       brief({ slot: 2, pillar: "lesson", format: "numbers" })],
+      memory,
+    );
+    expect(sameFormat.join(" ")).toMatch(/same day/i);
+    expect(sameFormat.join(" ")).toMatch(/format/i);
+  });
+
+  it("rejects two same-day briefs sharing both a pillar and a format", () => {
+    const memory = buildMemory([], today);
+    const both = validateBriefs(
+      [brief({ slot: 1, pillar: "proof", format: "numbers" }),
+       brief({ slot: 2, pillar: "proof", format: "numbers" })],
+      memory,
+    );
+    const joined = both.join(" ");
+    expect(joined).toMatch(/same day.*pillar/i);
+    expect(joined).toMatch(/same day.*format/i);
+  });
+
   it("exposes recent opening lines, most recent first, capped at thirty", () => {
     const posts = Array.from({ length: 40 }, (_, i) =>
       post({ id: `p${i}`, date: "2026-08-01", openingLine: `line ${i}` }));
     expect(buildMemory(posts, today).recentOpeners).toHaveLength(30);
+  });
+
+  it("blocks a future-dated post's pillar just as a same-day post would (fail-safe, not permanent)", () => {
+    // A post dated after "today" (timezone skew, hand-entered data) must still
+    // block its pillar immediately — the clamp keeps age from going negative,
+    // so it is treated as no older than zero days rather than as a record
+    // whose age recedes further from every window forever.
+    const memoryOneDayFuture = buildMemory(
+      [post({ date: "2026-08-05", pillar: "proof" })], today,
+    );
+    const memoryTenDaysFuture = buildMemory(
+      [post({ date: "2026-08-14", pillar: "proof" })], today,
+    );
+
+    const outOneDayFuture = validateBriefs([brief({ slot: 1, pillar: "proof" })], memoryOneDayFuture);
+    const outTenDaysFuture = validateBriefs([brief({ slot: 1, pillar: "proof" })], memoryTenDaysFuture);
+
+    expect(outOneDayFuture.join(" ")).toMatch(/pillar/i);
+    expect(outTenDaysFuture.join(" ")).toMatch(/pillar/i);
   });
 });

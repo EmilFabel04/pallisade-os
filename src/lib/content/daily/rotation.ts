@@ -28,7 +28,10 @@ export function buildMemory(posts: ContentPost[], today: string): RotationMemory
   const recentSources = new Map<string, string>();
 
   for (const p of byRecency) {
-    const age = daysBetween(p.date, today);
+    // Clamp to zero: a future-dated post (timezone skew, hand-entered data)
+    // must still block today, but must expire once real time catches up —
+    // a negative age would satisfy every `age < WINDOW_DAYS` check forever.
+    const age = Math.max(0, daysBetween(p.date, today));
     if (age < PILLAR_WINDOW_DAYS && !recentPillars.has(p.pillar)) {
       recentPillars.set(p.pillar, p.date);
     }
