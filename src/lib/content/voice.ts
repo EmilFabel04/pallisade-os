@@ -75,7 +75,7 @@ export function measure(text: string): VoiceStats {
     avgSentenceLength: mean,
     shortSentenceRatio: lengths.filter((n) => n < 8).length / lengths.length,
     contractionRate:
-      (countMatches(text, /\b\w+[''](?:t|s|re|ve|ll|d|m)\b/gi) /
+      (countMatches(text, /\b\w+['’](?:t|s|re|ve|ll|d|m)\b/gi) /
         allWords.length) *
       100,
     questionRate:

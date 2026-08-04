@@ -46,7 +46,7 @@ describe("measure", () => {
   it("counts contractions per hundred words, straight and curly apostrophes", () => {
     const words = Array.from({ length: 96 }, (_, i) => `w${i}`).join(" ");
     // 4 contractions in 100 words => 4
-    const text = `don't can't it's we're ${words}.`;
+    const text = `don't can't it’s we’re ${words}.`;
     expect(measure(text).contractionRate).toBeCloseTo(4, 5);
   });
 
