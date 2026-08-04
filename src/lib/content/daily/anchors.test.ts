@@ -7,6 +7,7 @@ describe("extractAnchors", () => {
     expect(a).toContain("14");
     expect(a).toContain("47%");
     expect(a).toContain("R120,000");
+    expect(a).not.toContain("120,000");
   });
 
   it("pulls ISO and written dates", () => {
@@ -54,5 +55,11 @@ describe("extractAnchors", () => {
     const b = extractAnchors("2 renewed out of 20 contacted.");
     expect(b).toContain("2");
     expect(b).toContain("20");
+  });
+
+  it("drops a shorter date when a longer date fully contains it", () => {
+    const a = extractAnchors("On 12 June 2026 we shipped.");
+    expect(a).toContain("12 June 2026");
+    expect(a).not.toContain("12 June");
   });
 });
