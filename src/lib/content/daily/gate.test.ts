@@ -112,21 +112,6 @@ describe("specificity", () => {
     expect(c.passed).toBe(false);
   });
 
-  it("names fabricated, untraced anchors in the detail even when the post also has a traced one (C4ii)", () => {
-    // "Acme Financial" and "R2,400,000" are invented — only "14" traces back
-    // to the source record. The check still passes (one traced anchor is
-    // enough today), but the revise stage must be told, by name, which
-    // details are unverified so it can learn the fabrication was caught.
-    const c = gate(
-      "Acme Financial saved R2,400,000 after we rebuilt their close. " +
-        "Reconciliation took 14 hours before.",
-    ).find((x) => x.rule === "specificity")!;
-    expect(c.passed).toBe(true);
-    expect(c.detail).toMatch(/UNVERIFIED/);
-    expect(c.detail).toMatch(/Acme Financial/);
-    expect(c.detail).toMatch(/R2,400,000/);
-  });
-
   it("names untraced anchors on the failing path too (C4ii)", () => {
     const c = gate("We cut it from 900 hours to 3 hours flat.").find(
       (x) => x.rule === "specificity",
@@ -143,6 +128,75 @@ describe("specificity", () => {
       sourceTexts: [],
     }).find((x) => x.rule === "specificity")!;
     expect(c.passed).toBe(true);
+  });
+
+  describe("fabrication policy (ITEM 2): untraced high-risk anchors fail outright", () => {
+    const acmeBody =
+      "Acme Financial saved R2,400,000 after we rebuilt their close. " +
+      "Reconciliation took 14 hours before.";
+
+    it("FAILS on an untraced currency figure and company name, even with a traced anchor present", () => {
+      // "Acme Financial" and "R2,400,000" are invented — only "14" traces
+      // back to the source record. One verified number must not launder a
+      // fabricated client name and figure sitting right next to it.
+      const c = gate(acmeBody).find((x) => x.rule === "specificity")!;
+      expect(c.passed).toBe(false);
+      expect(c.detail).toMatch(/Acme Financial/);
+      expect(c.detail).toMatch(/R2,400,000/);
+    });
+
+    it("passes the same body once the source actually contains both details", () => {
+      const c = gate(acmeBody, {
+        sourceRefs: [],
+        sourceTexts: [
+          "Acme Financial's reconciliation took 14 hours before we rebuilt their close, saving R2,400,000.",
+        ],
+      }).find((x) => x.rule === "specificity")!;
+      expect(c.passed).toBe(true);
+    });
+
+    it("still PASSES on an untraced plain number — models legitimately rephrase or derive figures", () => {
+      const c = gate(
+        "Reconciliation took them 14 hours every month end. It now takes 20 minutes.",
+      ).find((x) => x.rule === "specificity")!;
+      expect(c.passed).toBe(true);
+    });
+
+    it("still PASSES on an untraced ordinary proper noun — not every capitalised pair is a company", () => {
+      // "Last Tuesday" is a multi-word, Title-Case anchor extractAnchors
+      // yields from completely ordinary prose. Failing on it would reject
+      // good posts daily.
+      const c = gate(
+        "Last Tuesday we fixed the reconciliation job. It used to take 14 hours.",
+      ).find((x) => x.rule === "specificity")!;
+      expect(c.passed).toBe(true);
+    });
+
+    it("still PASSES on 'Happy Monday' — an ordinary capitalised greeting, not a company", () => {
+      const c = gate(
+        "Happy Monday. The reconciliation job that took 14 hours now runs unattended.",
+      ).find((x) => x.rule === "specificity")!;
+      expect(c.passed).toBe(true);
+    });
+
+    it("FAILS on an untraced currency amount alone", () => {
+      const c = gate("We saved R2,400,000 last quarter with the new process.", {
+        sourceRefs: [],
+        sourceTexts: ["The finance team was happy with the new process."],
+      }).find((x) => x.rule === "specificity")!;
+      expect(c.passed).toBe(false);
+      expect(c.detail).toMatch(/R2,400,000/);
+    });
+
+    it("does not treat a name beginning with 'R' as a currency figure", () => {
+      // CURRENCY_ANCHOR requires the digit run that makes an anchor a
+      // currency shape, not merely a leading "R" — a name like "Robert
+      // Anderson" must not be caught by the currency check.
+      const c = gate("Robert Anderson approved the change after we cut it to 14 hours.").find(
+        (x) => x.rule === "specificity",
+      )!;
+      expect(c.passed).toBe(true);
+    });
   });
 });
 

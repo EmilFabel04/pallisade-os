@@ -45,17 +45,29 @@ export function normaliseOpener(line: string): string {
 }
 
 /**
- * The whole first line of the body — what `ContentPost.openingLine` denotes
- * (see rotation.ts, which stores and replays exactly this string in
- * `recentOpeners`) — not the first sentence. A first line can hold more than
- * one sentence ("Reconciliation took 14 hours. That was absurd."); comparing
- * only its first sentence against a stored opener that captured the whole
- * line would silently miss the collision. Exported so any future producer of
- * `openingLine` derives it identically, keeping producer and consumer of the
- * denormalised field in agreement.
+ * The whole first line of the body that has any actual content — what
+ * `ContentPost.openingLine` denotes (see rotation.ts, which stores and
+ * replays exactly this string in `recentOpeners`) — not the first sentence.
+ * A first line can hold more than one sentence ("Reconciliation took 14
+ * hours. That was absurd."); comparing only its first sentence against a
+ * stored opener that captured the whole line would silently miss the
+ * collision. Exported so any future producer of `openingLine` derives it
+ * identically, keeping producer and consumer of the denormalised field in
+ * agreement.
+ *
+ * Leading lines with no letter or digit — a blank line, a whitespace-only
+ * line, a "---" separator — are skipped rather than taken literally. Taking
+ * the unconditional first line meant a model emitting a stray leading
+ * newline produced an empty opener, and checkOpener's `if (!shape)` guard
+ * then reported the check as passing ("no opening line to compare") while
+ * doing nothing — collisions went undetected instead of being degraded.
  */
 export function firstLine(body: string): string {
-  return body.split(/\n+/)[0]?.trim() ?? "";
+  for (const line of body.split(/\n+/)) {
+    const trimmed = line.trim();
+    if (/[A-Za-z0-9]/.test(trimmed)) return trimmed;
+  }
+  return "";
 }
 
 function ok(rule: string, detail: string): EditorialCheck {
@@ -140,6 +152,55 @@ function traces(anchor: string, haystack: string): boolean {
   return false;
 }
 
+/** Currency amounts only ("R2,400,000", "$1.2m", "€500", "£40k") — the exact
+ * shape anchors.ts's own currency pattern produces. An invented figure
+ * attributed to a client is the worst thing this system could publish, so
+ * this is deliberately narrow: it requires the digit run that makes it a
+ * currency anchor, not merely a leading "R" — a name like "Robert Anderson"
+ * must not be caught by this. */
+const CURRENCY_ANCHOR = /^[R$€£]\s?\d[\d,]*(?:\.\d+)?[kmb]?$/i;
+
+/**
+ * Company-indicating tokens. A multi-word, Title-Case anchor containing one
+ * of these reads as a company name, not an ordinary capitalised pair —
+ * exported so the list can be tuned as real posts surface tokens it misses
+ * or wrongly catches.
+ */
+export const COMPANY_TOKENS = [
+  "Financial", "Capital", "Group", "Partners", "Holdings", "Bank", "Fund", "Funds",
+  "Managers", "Management", "Asset", "Advisors", "Advisers", "Technologies", "Solutions",
+  "Systems", "Services", "Consulting", "Ventures", "Ltd", "Limited", "Inc", "LLC", "PLC",
+  "GmbH", "Pty",
+] as const;
+
+const COMPANY_TOKEN_SET = new Set(COMPANY_TOKENS.map((t) => t.toLowerCase()));
+
+function isCurrencyAnchor(anchor: string): boolean {
+  return CURRENCY_ANCHOR.test(anchor);
+}
+
+/**
+ * A multi-word, Title-Case anchor that contains a company-indicating token
+ * ("Acme Financial", "Kestrelmoor Capital Partners"). Deliberately narrow to
+ * the token list: extractAnchors's multi-word-proper-noun pattern also
+ * yields constant, entirely ordinary capitalised pairs from prose — "Last
+ * Tuesday", "Happy Monday" — that must NOT fail this check, or good posts
+ * would be rejected daily for nothing more than a capitalised day name.
+ */
+function isCompanyAnchor(anchor: string): boolean {
+  const words = anchor.split(/\s+/);
+  return words.length > 1 && words.some((w) => COMPANY_TOKEN_SET.has(w.toLowerCase()));
+}
+
+/** Untraced anchors safe to merely flag (a plain number, a rephrased
+ * outcome, an ordinary proper noun) vs. ones dangerous enough to fail the
+ * post outright even though some other anchor did trace: a currency figure
+ * or a company-style name, either of which is a fabricated client detail if
+ * it appears nowhere in the cited records. */
+function isHighRisk(anchor: string): boolean {
+  return isCurrencyAnchor(anchor) || isCompanyAnchor(anchor);
+}
+
 function checkSpecificity(input: GateInput): EditorialCheck {
   const anchors = extractAnchors(input.body);
   if (anchors.length === 0) {
@@ -164,11 +225,20 @@ function checkSpecificity(input: GateInput): EditorialCheck {
     (traces(a, haystack) || traces(a, refHaystack) ? traced : untraced).push(a);
   }
 
-  // Policy point: today a single traced anchor is enough to pass, and
-  // untraced anchors are only named in the detail, never penalised on their
-  // own — whether a post with ANY untraced (possibly fabricated) anchor
-  // should fail outright is a separate, pending decision. To make that the
-  // policy, change only the condition below to `if (untraced.length > 0)`.
+  // Policy: an untraced high-risk anchor (currency figure, company-style
+  // name) fails the post outright, even if some other anchor did trace —
+  // one verified number does not launder a fabricated client name sitting
+  // next to it. Everything else untraced (plain numbers, dates, ordinary
+  // proper nouns — legitimate rephrasing territory) is only flagged.
+  const highRisk = untraced.filter(isHighRisk);
+  if (highRisk.length > 0) {
+    return fail(
+      "specificity",
+      `unverified client detail: ${highRisk.slice(0, 3).map((a) => `"${a}"`).join(", ")} — ` +
+        "these appear nowhere in the cited records",
+    );
+  }
+
   if (traced.length === 0) {
     return fail(
       "specificity",
