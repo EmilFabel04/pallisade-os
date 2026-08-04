@@ -35,4 +35,24 @@ describe("extractAnchors", () => {
     expect(extractAnchors("it takes ages and everyone hates it")).toEqual([]);
     expect(extractAnchors("47% and 47%")).toEqual(["47%"]);
   });
+
+  it("pulls currency in $, £ and € as well as R, and ignores an embedded false positive", () => {
+    expect(extractAnchors("We closed $1.2m last quarter.")).toContain("$1.2m");
+    expect(extractAnchors("The contract was £40k.")).toContain("£40k");
+    expect(extractAnchors("It cost €500.")).toContain("€500");
+    expect(extractAnchors("Saving R120,000.")).toContain("R120,000");
+    const noAnchor = extractAnchors("Model AR500 shipped.");
+    expect(noAnchor).not.toContain("R500");
+    expect(noAnchor.some((a) => a.includes("R500"))).toBe(false);
+  });
+
+  it("keeps a shorter number distinct from a longer one that merely contains its digits", () => {
+    const a = extractAnchors("14 clients signed, 114 total.");
+    expect(a).toContain("14");
+    expect(a).toContain("114");
+
+    const b = extractAnchors("2 renewed out of 20 contacted.");
+    expect(b).toContain("2");
+    expect(b).toContain("20");
+  });
 });
