@@ -3089,10 +3089,11 @@ Expected: FAIL — cannot resolve `./run`.
 import type Anthropic from "@anthropic-ai/sdk";
 import type { DataShape } from "@/lib/types";
 import { uid, nowISO } from "@/lib/utils";
-import { profileFromSamples, splitSentences } from "@/lib/content/voice";
+import { profileFromSamples } from "@/lib/content/voice";
 import { buildLedger } from "./harvest";
 import { buildMemory, SOURCE_WINDOW_DAYS } from "./rotation";
-import { runGate } from "./gate";
+// firstLine, NOT splitSentences — see the note under this task's code block.
+import { runGate, firstLine } from "./gate";
 import type { chooseBriefs as ChooseBriefs } from "./brief";
 import type { draftPost as DraftPost, DraftInput } from "./draft";
 import type { revisePost as RevisePost } from "./revise";
@@ -3226,7 +3227,7 @@ export async function runDaily(
         sourceRefs: brief.sourceRefs,
         claim: brief.claim,
         body,
-        openingLine: splitSentences(body)[0] ?? "",
+        openingLine: firstLine(body),
         checks,
         revisions,
         status: stillFailing ? "needs_work" : "draft",
@@ -3249,6 +3250,16 @@ export async function runDaily(
   }
 }
 ```
+
+**Producer/consumer rule — do not break this.** `openingLine` MUST be written
+with `firstLine(body)` from `gate.ts`, never with `splitSentences(body)[0]`.
+`run.ts` is the only producer of `openingLine`; `gate.ts`'s `checkOpener` and
+`rotation.ts`'s `buildMemory` are the consumers, and both work in terms of
+`firstLine`. An earlier draft of this plan used `splitSentences(body)[0]` here,
+which meant a post whose first line held two sentences would not collide with
+its own stored opener — the repetition guard silently passing. `firstLine` also
+skips leading blank and non-alphanumeric lines, which `splitSentences` handled
+differently.
 
 - [ ] **Step 4: Run test to verify it passes**
 
