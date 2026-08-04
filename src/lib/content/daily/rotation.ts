@@ -28,9 +28,15 @@ export function buildMemory(posts: ContentPost[], today: string): RotationMemory
   const recentSources = new Map<string, string>();
 
   for (const p of byRecency) {
-    // Clamp to zero: a future-dated post (timezone skew, hand-entered data)
-    // must still block today, but must expire once real time catches up —
-    // a negative age would satisfy every `age < WINDOW_DAYS` check forever.
+    // Clamp to zero: this is NOT needed by the `age < WINDOW_DAYS` checks
+    // below — they already treat every non-positive age identically, so a
+    // future-dated post (timezone skew, hand-entered data) already blocks
+    // now and already expires at exactly postDate + WINDOW_DAYS with or
+    // without this clamp (verified empirically; a negative age does not
+    // block "forever"). The clamp exists purely as forward defense: if a
+    // future consumer ever reads this numeric age directly — sorting by
+    // remaining cooldown, showing "days until eligible" — it gets a sane
+    // non-negative value instead of a confusing negative one.
     const age = Math.max(0, daysBetween(p.date, today));
     if (age < PILLAR_WINDOW_DAYS && !recentPillars.has(p.pillar)) {
       recentPillars.set(p.pillar, p.date);

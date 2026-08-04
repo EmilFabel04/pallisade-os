@@ -100,9 +100,12 @@ describe("validateBriefs", () => {
 
   it("blocks a future-dated post's pillar just as a same-day post would (fail-safe, not permanent)", () => {
     // A post dated after "today" (timezone skew, hand-entered data) must still
-    // block its pillar immediately — the clamp keeps age from going negative,
-    // so it is treated as no older than zero days rather than as a record
-    // whose age recedes further from every window forever.
+    // block its pillar immediately rather than slip through — this guards
+    // fail-safe behaviour for future-dated data, full stop. It does NOT
+    // discriminate the age clamp in rotation.ts: `age < WINDOW_DAYS` blocks
+    // any non-positive age identically, so this test passes whether or not
+    // the clamp exists (verified by removing it). Do not mistake this for a
+    // regression guard on that line.
     const memoryOneDayFuture = buildMemory(
       [post({ date: "2026-08-05", pillar: "proof" })], today,
     );
