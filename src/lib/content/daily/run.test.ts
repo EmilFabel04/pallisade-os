@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { runDaily } from "./run";
+import { runDaily, preconditionCode } from "./run";
 import type { DataShape } from "@/lib/types";
 import type { ContentPost, PostBrief } from "./types";
 
@@ -267,5 +267,83 @@ describe("runDaily", () => {
     const draftPost = vi.fn(async () => { throw new Error("upstream_failed: boom"); });
     await expect(runDaily(deps({ draftPost, persist }))).rejects.toThrow(/upstream_failed/);
     expect(persist.mock.calls[0][0]).toEqual([]);
+  });
+});
+
+describe("preconditionCode", () => {
+  it("recognises the setup failures the founder can fix", () => {
+    expect(preconditionCode("voice_samples: need 3 writing samples, have 0")).toBe("voice_samples");
+    expect(preconditionCode("positioning: no positioning profile saved")).toBe("positioning");
+  });
+
+  it("returns null for real failures, so they stay upstream_failed", () => {
+    expect(preconditionCode("brief_invalid: slot 1 pillar clash")).toBeNull();
+    expect(preconditionCode("fingerprint_failed: model did not call the tool")).toBeNull();
+    expect(preconditionCode("Connection terminated unexpectedly")).toBeNull();
+    expect(preconditionCode("")).toBeNull();
+  });
+
+  it("matches the prefix, not a mention anywhere in the message", () => {
+    // An upstream error that merely quotes the word must not be reclassified
+    // as a founder-fixable precondition.
+    expect(preconditionCode("upstream error mentioning voice_samples: nope")).toBeNull();
+  });
+
+  it("covers every message runDaily actually throws for a precondition", async () => {
+    // Pins the two together: renaming a thrown prefix without updating
+    // PRECONDITION_CODES would silently downgrade it to a 502.
+    const thin = data();
+    thin.voiceSamples = thin.voiceSamples.slice(0, 2);
+    await expect(runDaily(deps({ data: thin }))).rejects.toSatisfy(
+      (e: Error) => preconditionCode(e.message) === "voice_samples",
+    );
+
+    const none = data();
+    none.positioningProfiles = [];
+    await expect(runDaily(deps({ data: none }))).rejects.toSatisfy(
+      (e: Error) => preconditionCode(e.message) === "positioning",
+    );
+  });
+});
+
+describe("rotation across days", () => {
+  it("blocks yesterday's pillars, formats and sources on today's run", async () => {
+    // Task 18 Step 3, made deterministic. Day one's posts become day two's
+    // history; this pins the whole wiring — recentPosts -> buildMemory ->
+    // chooseBriefs, and recentPosts -> buildLedger's used-source filter —
+    // rather than re-testing validateBriefs, which rotation.test.ts covers.
+    const day1 = await runDaily(deps());
+    expect(day1.posts.map((p) => p.pillar)).toEqual(["client-pain", "build-log"]);
+
+    const chooseBriefsSpy = vi.fn(async (..._a: unknown[]) => briefs);
+    await runDaily(
+      deps({
+        today: "2026-08-05",
+        loadRecentPosts: async () => day1.posts,
+        chooseBriefs: chooseBriefsSpy as unknown as Parameters<typeof runDaily>[0]["chooseBriefs"],
+      }),
+    ).catch(() => {
+      /* the stub returns the same briefs, which the gate may reject; the
+         assertions below are about what chooseBriefs was HANDED. */
+    });
+
+    const memory = (chooseBriefsSpy.mock.calls[0] as unknown[])[2] as {
+      recentPillars: Map<string, string>;
+      recentFormats: Map<string, string>;
+      recentSources: Map<string, string>;
+      recentOpeners: string[];
+    };
+    expect([...memory.recentPillars.keys()].sort()).toEqual(["build-log", "client-pain"]);
+    expect([...memory.recentFormats.keys()].sort()).toEqual(["numbers", "scene"]);
+    expect([...memory.recentSources.keys()].sort()).toEqual(["painPoints:pp1", "scorecards:sc1"]);
+    expect(memory.recentOpeners).toHaveLength(2);
+
+    // And the same history removes those records from the material ledger, so
+    // the model is not even offered them.
+    const ledger = ((chooseBriefsSpy.mock.calls[0] as unknown[])[1] as {
+      ledger: { collection: string; id: string }[];
+    }).ledger;
+    expect(ledger.some((i) => i.collection === "painPoints" && i.id === "pp1")).toBe(false);
+    expect(ledger.some((i) => i.collection === "scorecards" && i.id === "sc1")).toBe(false);
   });
 });

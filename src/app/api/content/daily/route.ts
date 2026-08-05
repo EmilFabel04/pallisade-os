@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@/auth";
 import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import { loadAll } from "@/lib/db/sqlite";
-import { runDaily } from "@/lib/content/daily/run";
+import { runDaily, preconditionCode } from "@/lib/content/daily/run";
 import { chooseBriefs } from "@/lib/content/daily/brief";
 import { draftPost } from "@/lib/content/daily/draft";
 import { revisePost } from "@/lib/content/daily/revise";
@@ -71,6 +71,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ posts, run });
   } catch (err) {
     // runDaily already persisted the failed run before rethrowing.
+    const message = (err as Error)?.message ?? "";
+    const code = preconditionCode(message);
+    if (code) {
+      // Setup the founder can fix, not an upstream failure. The message is
+      // authored by run.ts rather than an upstream error, so returning it
+      // verbatim leaks nothing and tells them exactly what is missing.
+      console.warn(`[api] daily precondition: ${message}`);
+      return NextResponse.json({ error: code, detail: message }, { status: 400 });
+    }
     return apiError(UPSTREAM_FAILED, 502, err);
   }
 }

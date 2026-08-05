@@ -18,6 +18,22 @@ export const MIN_VOICE_SAMPLES = 3;
 /** Spec cap. Applied on read here rather than pruned at write time. */
 export const NEVER_SAY_CAP = 60;
 
+/**
+ * Failures that mean "the founder has not finished setting this up", as
+ * opposed to a model or database failure. They are worth telling apart: the
+ * fix is a two-minute action in the Voice panel, and reporting them as a
+ * generic upstream failure leaves the founder with nothing to act on.
+ * Every message under these codes is authored here, never an upstream
+ * error string, so it is safe to hand back to the client verbatim.
+ */
+export const PRECONDITION_CODES = ["voice_samples", "positioning"] as const;
+export type PreconditionCode = (typeof PRECONDITION_CODES)[number];
+
+/** The precondition code an error carries, or null if it is a real failure. */
+export function preconditionCode(message: string): PreconditionCode | null {
+  return PRECONDITION_CODES.find((c) => message.startsWith(`${c}:`)) ?? null;
+}
+
 export interface RunDeps {
   data: DataShape;
   today: string;

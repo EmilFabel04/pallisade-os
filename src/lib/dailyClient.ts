@@ -2,8 +2,10 @@ import type { ContentPost, ContentRun, KillReason } from "@/lib/content/daily/ty
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `request_failed_${res.status}`);
+    const body = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
+    // `detail` is only ever set for founder-actionable preconditions, where
+    // the server authored the message itself — prefer it over the bare code.
+    throw new Error(body.detail ?? body.error ?? `request_failed_${res.status}`);
   }
   return (await res.json()) as T;
 }
