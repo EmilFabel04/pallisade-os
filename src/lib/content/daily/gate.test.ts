@@ -542,3 +542,31 @@ describe("runGate", () => {
     );
   });
 });
+
+describe("specificity — spelled-out numbers (found by the first live run)", () => {
+  it("fails a post whose only figures are words, and says why", () => {
+    // Both posts from the first end-to-end run failed here and survived two
+    // revisions, because the model wrote "Six days", "three days each" and
+    // "ten, maybe fifteen people". extractAnchors matches digits only, so the
+    // post had no anchors at all — but the old detail said only "no verifiable
+    // detail", which gave the revise stage nothing to act on.
+    const c = gate(
+      "Six days of human time. Every month.\n\n" +
+        "Two people, three days each, rebuilding the same report by hand.\n\n" +
+        "The fixed version is a pipeline, and nobody retypes anything into it.",
+    ).find((x) => x.rule === "specificity")!;
+    expect(c.passed).toBe(false);
+    expect(c.detail).toMatch(/digits/i);
+    expect(c.detail).toMatch(/"3 days"/);
+  });
+
+  it("passes the same post once the figures are digits", () => {
+    const c = gate(
+      "6 days of human time. Every month.\n\n" +
+        "Two people, 3 days each, rebuilding the same report by hand.\n\n" +
+        "The fixed version is a pipeline, and nobody retypes anything into it.",
+      { sourceTexts: ["Two people in Excel for 3 days each month, 6 days total."] },
+    ).find((x) => x.rule === "specificity")!;
+    expect(c.passed).toBe(true);
+  });
+});

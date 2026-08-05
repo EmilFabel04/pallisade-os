@@ -98,3 +98,12 @@ describe("prompt fragments", () => {
     expect(CRAFT_RULES.length).toBeGreaterThan(200);
   });
 });
+
+describe("constitution — digits rule", () => {
+  it("tells the model to write numbers as digits", () => {
+    // extractAnchors matches digits only, so a post written with spelled-out
+    // figures has no traceable anchors and fails the specificity gate.
+    expect(ANTI_SLOP_CONSTITUTION).toMatch(/DIGITS/);
+    expect(ANTI_SLOP_CONSTITUTION).toMatch(/"3 days", not "three days"/);
+  });
+});

@@ -158,6 +158,9 @@ HARD RULES. A post that breaks any of these is rejected outright:
 5. Every post must contain at least one concrete, verifiable detail that came from
    the source record: a number, a date, a named industry, or a quoted fragment.
    A post that would still be true if every specific were swapped out is not a post.
+   WRITE NUMBERS AS DIGITS — "3 days", not "three days"; "14 hours", not
+   "fourteen hours". A spelled-out number cannot be traced back to the record it
+   came from, so a post whose only specifics are words counts as having none.
 6. Vary sentence length deliberately. Uniform rhythm is the single strongest signal
    of machine prose. Land a short sentence where it hurts.
 7. Do not open with a question. Do not close with "What do you think?" or any

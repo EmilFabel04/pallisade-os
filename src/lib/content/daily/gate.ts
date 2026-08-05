@@ -235,7 +235,10 @@ function checkSpecificity(input: GateInput): EditorialCheck {
     return fail(
       "specificity",
       "no verifiable detail — the post would still read the same with every " +
-        "specific swapped out, which makes it unfalsifiable",
+        "specific swapped out, which makes it unfalsifiable. Note that numbers " +
+        'must be written as DIGITS to count: "3 days" is an anchor, "three ' +
+        'days" is not. Put the exact figure, date or quoted phrase from the ' +
+        "source record into the post.",
     );
   }
 
