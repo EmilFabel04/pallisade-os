@@ -1,8 +1,9 @@
+import { AUTH_PATH_MATCHER } from "@/lib/authMatcher";
+
 export { auth as middleware } from "@/auth";
 
 export const config = {
-  matcher: [
-    // Run on all paths EXCEPT: /api/auth/*, /login, Next internals, and static files.
-    "/((?!api/auth|login|_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp)).*)",
-  ],
+  // The pattern lives in @/lib/authMatcher so it can be unit-tested without
+  // pulling next-auth into the test environment.
+  matcher: [AUTH_PATH_MATCHER],
 };

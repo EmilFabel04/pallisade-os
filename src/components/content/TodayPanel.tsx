@@ -14,6 +14,7 @@ export default function TodayPanel() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoTried, setAutoTried] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -31,7 +32,7 @@ export default function TodayPanel() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const generate = async () => {
+  const generate = useCallback(async () => {
     setGenerating(true);
     setError(null);
     try {
@@ -43,7 +44,18 @@ export default function TodayPanel() {
     } finally {
       setGenerating(false);
     }
-  };
+  }, []);
+
+  // The cron may not have run — a paused deployment, a missed schedule. If it
+  // is past 06:00 and today has neither a run nor posts, kick one off once.
+  // The autoTried guard survives Strict Mode's double-invoke.
+  useEffect(() => {
+    if (loading || autoTried || generating) return;
+    if (run || posts.length > 0) return;
+    if (new Date().getHours() < 6) return;
+    setAutoTried(true);
+    void generate();
+  }, [loading, autoTried, generating, run, posts.length, generate]);
 
   const replace = (updated: ContentPost) =>
     setPosts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
