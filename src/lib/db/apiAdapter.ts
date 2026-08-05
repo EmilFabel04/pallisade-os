@@ -46,6 +46,8 @@ export class ApiAdapter implements StorageAdapter {
       targets: [],
       dialLists: [],
       positioningProfiles: [],
+      voiceSamples: [],
+      voiceProfile: [],
       contentThreads: [],
       brainThreads: [],
       newsFeed: [],

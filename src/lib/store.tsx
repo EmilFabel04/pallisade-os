@@ -28,6 +28,8 @@ import type {
   Settings,
   Target,
   Task,
+  VoiceProfile,
+  VoiceSample,
 } from "./types";
 import { ApiAdapter } from "./db/apiAdapter";
 import type { StorageAdapter } from "./db/adapter";
@@ -86,6 +88,8 @@ const EMPTY: DataShape = {
   targets: [],
   dialLists: [],
   positioningProfiles: [],
+  voiceSamples: [],
+  voiceProfile: [],
   contentThreads: [],
   brainThreads: [],
   newsFeed: [],
@@ -340,5 +344,10 @@ export const useNewsFeed = () => (useStore().newsFeed as NewsFeed[])[0] ?? null;
 export const useNewsInterests = () =>
   (useStore().newsInterests as NewsInterests[])[0] ?? null;
 export const useNewsBookmarks = () => useStore().newsBookmarks as NewsBookmark[];
+
+export const useVoiceSamples = () => useStore().voiceSamples as VoiceSample[];
+/** Singleton, following the useNewsFeed pattern above. */
+export const useVoiceProfile = () =>
+  (useStore().voiceProfile as VoiceProfile[])[0] ?? null;
 
 export const useNotes = () => useStore().notes as Note[];

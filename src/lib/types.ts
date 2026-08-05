@@ -4,6 +4,9 @@
    store and a future Supabase/Firebase backend share one shape.
    ============================================================ */
 
+// voice.ts imports nothing, so this direction cannot cycle back.
+import type { VoiceStats } from "@/lib/content/voice";
+
 export interface BaseRecord {
   id: string;
   createdAt: string; // ISO
@@ -293,6 +296,26 @@ export interface ContentThread extends BaseRecord {
   contentType: ContentType;           // selected content type
 }
 
+/* ---------- voice fingerprint (daily engine) ---------- */
+
+export const VOICE_SOURCES = ["linkedin", "email", "voice-note", "other"] as const;
+export type VoiceSource = (typeof VOICE_SOURCES)[number];
+
+/** One thing the founder actually wrote, used to fingerprint the voice. */
+export interface VoiceSample extends BaseRecord {
+  text: string;
+  source: VoiceSource;
+}
+
+/** Singleton, like newsFeed. Rebuilt only when samples change. */
+export interface VoiceProfile extends BaseRecord {
+  stats: VoiceStats;
+  fingerprint: string;
+  neverSay: string[];
+  sampleCount: number;
+  computedAt: string;
+}
+
 /* ---------- the brain (CEO / strategist) ---------- */
 
 export interface BrainAttachment {
@@ -471,6 +494,8 @@ export interface DataShape {
   targets: Target[];
   dialLists: DialList[];
   positioningProfiles: PositioningProfile[];
+  voiceSamples: VoiceSample[];
+  voiceProfile: VoiceProfile[];
   contentThreads: ContentThread[];
   brainThreads: BrainThread[];
   newsFeed: NewsFeed[];
@@ -492,4 +517,7 @@ export type AdvisorSnapshot = Omit<
   | "contentThreads" | "brainThreads" | "projectThreads"
   | "newsFeed" | "newsInterests" | "newsBookmarks"
   | "notes" | "metricEntries"
+  // The founder's raw writing samples are content-studio material, not sales
+  // context — omitted for the same reason positioningProfiles is.
+  | "voiceSamples" | "voiceProfile"
 >;

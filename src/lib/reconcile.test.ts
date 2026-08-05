@@ -22,7 +22,7 @@ function shape(over: Partial<DataShape>): DataShape {
     painPoints: [], conversations: [], playbooks: [], targets: [], dialLists: [],
     positioningProfiles: [], contentThreads: [], brainThreads: [], newsFeed: [],
     newsInterests: [], newsBookmarks: [], notes: [], metricEntries: [],
-    milestones: [], projectThreads: [],
+    milestones: [], projectThreads: [], voiceSamples: [], voiceProfile: [],
     settings: {} as DataShape["settings"],
     ...over,
   };
