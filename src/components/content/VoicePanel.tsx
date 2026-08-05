@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, RefreshCw } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Loader2 } from "lucide-react";
 import { useStore, useVoiceSamples, useVoiceProfile } from "@/lib/store";
 import { Panel } from "@/components/ui/Panel";
 import { profileFromSamples } from "@/lib/content/voice";
@@ -24,6 +24,7 @@ export default function VoicePanel() {
   const profile = useVoiceProfile();
   const [text, setText] = useState("");
   const [source, setSource] = useState<VoiceSource>("linkedin");
+  const [rebuilding, setRebuilding] = useState(false);
 
   const add = () => {
     const body = text.trim();
@@ -34,19 +35,42 @@ export default function VoicePanel() {
     setText("");
   };
 
-  const rebuild = () => {
-    const stats = profileFromSamples(samples.map((s) => s.text));
-    // fingerprint and neverSay are authored by the fingerprint stage, not
-    // here — carry the existing values through rather than clearing them.
+  const rebuild = async () => {
+    setRebuilding(true);
+    const texts = samples.map((s) => s.text);
+    // Measured locally and saved whatever happens to the network. The numeric
+    // half of the profile is the part the gate depends on, so it must never be
+    // hostage to an API call.
+    const stats = profileFromSamples(texts);
+
+    let fingerprint = profile?.fingerprint ?? "";
+    let neverSay = profile?.neverSay ?? [];
+    try {
+      const res = await fetch("/api/content/fingerprint", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ samples: texts }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { fingerprint: string; neverSay: string[] };
+        fingerprint = data.fingerprint;
+        // Union, not replace — keeps anything the founder added by killing a post.
+        neverSay = [...new Set([...neverSay, ...data.neverSay])].slice(-60);
+      }
+    } catch {
+      /* the measured stats below still save */
+    }
+
     const patch = {
       stats,
       sampleCount: samples.length,
       computedAt: nowISO(),
-      fingerprint: profile?.fingerprint ?? "",
-      neverSay: profile?.neverSay ?? [],
+      fingerprint,
+      neverSay,
     };
     if (profile) store.update("voiceProfile", profile.id, patch);
     else store.create("voiceProfile", patch as Omit<VoiceProfile, "id" | "createdAt" | "updatedAt">);
+    setRebuilding(false);
   };
 
   const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
@@ -118,10 +142,11 @@ export default function VoicePanel() {
 
       <button
         className="btn btn-sm w-full justify-start mt-3"
-        onClick={rebuild}
-        disabled={samples.length === 0}
+        onClick={() => void rebuild()}
+        disabled={samples.length === 0 || rebuilding}
       >
-        <RefreshCw size={13} /> Rebuild fingerprint
+        {rebuilding ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}{" "}
+        Rebuild fingerprint
       </button>
     </Panel>
   );
