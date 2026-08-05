@@ -188,6 +188,17 @@ describe("specificity", () => {
       expect(c.detail).toMatch(/R2,400,000/);
     });
 
+    it("does not treat a single quoted word as a company name, even a company-ish one", () => {
+      // isCompanyAnchor requires MORE THAN ONE word. extractAnchors yields
+      // single-token anchors from quoted spans, so without that requirement a
+      // post quoting someone saying the word "Capital" would be rejected as a
+      // fabricated client name. Only "14" traces here; "Capital" does not.
+      const c = gate('He kept saying "Capital" over and over. It took them 14 hours.').find(
+        (x) => x.rule === "specificity",
+      )!;
+      expect(c.passed).toBe(true);
+    });
+
     it("does not treat a name beginning with 'R' as a currency figure", () => {
       // CURRENCY_ANCHOR requires the digit run that makes an anchor a
       // currency shape, not merely a leading "R" — a name like "Robert
@@ -276,6 +287,23 @@ describe("opener-collision", () => {
     }).find((x) => x.rule === "opener-collision")!;
     expect(c.passed).toBe(false);
   });
+
+  // End-to-end counterpart to the firstLine leading-noise tests: a model that
+  // emits a stray leading newline or a "---" rule must not thereby switch the
+  // whole collision check off.
+  it("still detects a collision when the body opens with a stray newline", () => {
+    const c = gate("\nReconciliation took them 14 hours every month end.\nWe fixed it.", {
+      recentOpeners: ["Reconciliation took them 9 hours every quarter."],
+    }).find((x) => x.rule === "opener-collision")!;
+    expect(c.passed).toBe(false);
+  });
+
+  it("still detects a collision when the body opens with a separator line", () => {
+    const c = gate("---\nReconciliation took them 14 hours every month end.\nWe fixed it.", {
+      recentOpeners: ["Reconciliation took them 9 hours every quarter."],
+    }).find((x) => x.rule === "opener-collision")!;
+    expect(c.passed).toBe(false);
+  });
 });
 
 describe("firstLine", () => {
@@ -283,6 +311,33 @@ describe("firstLine", () => {
     expect(firstLine("Reconciliation took 14 hours. That was absurd.\nRest of the post.")).toBe(
       "Reconciliation took 14 hours. That was absurd.",
     );
+  });
+
+  // The three cases below all returned a shape-less opener under the previous
+  // `body.split(/\n+/)[0]` implementation, which made checkOpener's `if
+  // (!shape)` guard report "no opening line to compare" — a PASS — while
+  // comparing nothing at all. A silently self-disabling check is worse than
+  // an absent one, so each leading-noise shape is pinned here directly.
+  it("skips a leading blank line rather than returning an empty opener", () => {
+    expect(firstLine("\nReconciliation took 14 hours.\nRest of the post.")).toBe(
+      "Reconciliation took 14 hours.",
+    );
+  });
+
+  it("skips a leading whitespace-only line", () => {
+    expect(firstLine("   \t \nReconciliation took 14 hours.")).toBe(
+      "Reconciliation took 14 hours.",
+    );
+  });
+
+  it("skips a leading separator carrying no letter or digit", () => {
+    expect(firstLine("---\nReconciliation took 14 hours.")).toBe(
+      "Reconciliation took 14 hours.",
+    );
+  });
+
+  it("returns an empty string when the body has no alphanumeric line at all", () => {
+    expect(firstLine("\n---\n   \n")).toBe("");
   });
 });
 
