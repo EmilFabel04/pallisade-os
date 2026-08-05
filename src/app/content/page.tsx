@@ -8,6 +8,7 @@ import { Panel } from "@/components/ui/Panel";
 import { ThreadList } from "@/components/advisor/ThreadList";
 import { MessageBubble } from "@/components/advisor/MessageBubble";
 import { MicButton } from "@/components/ui/MicButton";
+import VoicePanel from "@/components/content/VoicePanel";
 import { contentTypeMeta } from "@/lib/content/prompt";
 import { buildSnapshot, getContentStatus, sendContentTurn } from "@/lib/contentClient";
 import type {
@@ -228,6 +229,8 @@ export default function ContentPage() {
               </div>
             )}
           </Panel>
+
+          <VoicePanel />
         </div>
 
         <Panel>
