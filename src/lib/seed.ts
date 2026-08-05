@@ -854,6 +854,8 @@ export function seedData(): DataShape {
     targets: [],
     dialLists: [],
     positioningProfiles: [],
+    voiceSamples: [],
+    voiceProfile: [],
     contentThreads: [],
     brainThreads: [],
     newsFeed: [],

@@ -25,6 +25,8 @@ export const COLLECTIONS = [
   "targets",
   "dialLists",
   "positioningProfiles",
+  "voiceSamples",
+  "voiceProfile",
   "contentThreads",
   "brainThreads",
   "newsFeed",

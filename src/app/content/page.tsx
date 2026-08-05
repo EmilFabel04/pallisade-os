@@ -8,6 +8,8 @@ import { Panel } from "@/components/ui/Panel";
 import { ThreadList } from "@/components/advisor/ThreadList";
 import { MessageBubble } from "@/components/advisor/MessageBubble";
 import { MicButton } from "@/components/ui/MicButton";
+import VoicePanel from "@/components/content/VoicePanel";
+import TodayPanel from "@/components/content/TodayPanel";
 import { contentTypeMeta } from "@/lib/content/prompt";
 import { buildSnapshot, getContentStatus, sendContentTurn } from "@/lib/contentClient";
 import type {
@@ -171,6 +173,8 @@ export default function ContentPage() {
         </Panel>
       )}
 
+      <TodayPanel />
+
       <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-5 items-start">
         <div className="flex flex-col gap-5">
           <Panel title="Threads">
@@ -228,6 +232,8 @@ export default function ContentPage() {
               </div>
             )}
           </Panel>
+
+          <VoicePanel />
         </div>
 
         <Panel>
