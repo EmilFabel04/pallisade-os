@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { runGate, normaliseOpener, firstLine, BURSTINESS_FLOOR } from "./gate";
+import { runGate, normaliseOpener, firstLine, COMPANY_TOKENS, BURSTINESS_FLOOR } from "./gate";
+import { extractAnchors } from "./anchors";
 import { profileFromSamples, ZERO_STATS } from "@/lib/content/voice";
 import type { SourceRef } from "./types";
 
@@ -200,14 +201,100 @@ describe("specificity", () => {
     });
 
     it("does not treat a name beginning with 'R' as a currency figure", () => {
-      // CURRENCY_ANCHOR requires the digit run that makes an anchor a
-      // currency shape, not merely a leading "R" — a name like "Robert
-      // Anderson" must not be caught by the currency check.
+      // CURRENCY_ANCHOR is anchored at both ends, so "Robert Anderson" is
+      // rejected by the trailing `$` — the leading "R" gets no further than
+      // the first non-digit. (Mutation testing showed the `\d` is NOT what
+      // saves this case, contrary to the note this test originally carried.)
       const c = gate("Robert Anderson approved the change after we cut it to 14 hours.").find(
         (x) => x.rule === "specificity",
       )!;
       expect(c.passed).toBe(true);
     });
+
+    // extractAnchors yields whole quoted spans, so an anchor can carry a
+    // currency run without BEING one. The two cases below pin one end of
+    // CURRENCY_ANCHOR each — a span that ends on a figure needs the `^`, one
+    // that starts on a figure needs the `$`. A single span with the figure
+    // in the middle pins neither, which is what a first pass at this test
+    // did: both anchor mutants survived it.
+    it("does not treat a quoted span ENDING on a currency run as a currency figure", () => {
+      const c = gate('She said "we saved R500" about the close. It took 14 hours.').find(
+        (x) => x.rule === "specificity",
+      )!;
+      expect(c.passed).toBe(true);
+      expect(c.detail).toMatch(/UNVERIFIED/);
+    });
+
+    it("does not treat a quoted span STARTING on a currency run as a currency figure", () => {
+      const c = gate('She said "R500 was the whole saving" once. It took 14 hours.').find(
+        (x) => x.rule === "specificity",
+      )!;
+      expect(c.passed).toBe(true);
+      expect(c.detail).toMatch(/UNVERIFIED/);
+    });
+
+    it("FAILS on a company name carrying a token other than 'Financial'", () => {
+      // Every other test in this block leans on "Financial". Deliberately
+      // "Kestrelmoor Capital" and not the doc comment's "Kestrelmoor Capital
+      // Partners": the three-word form carries two listed tokens, so either
+      // one could be deleted from COMPANY_TOKENS and the test would still
+      // pass on the strength of the other.
+      const c = gate("Kestrelmoor Capital rebuilt their close. It took 14 hours before.").find(
+        (x) => x.rule === "specificity",
+      )!;
+      expect(c.passed).toBe(false);
+      expect(c.detail).toMatch(/Kestrelmoor Capital/);
+    });
+
+    it("every COMPANY_TOKEN is reachable through extractAnchors, by either route", () => {
+      // This check only ever sees strings extractAnchors produced, so a token
+      // that can never appear inside one advertises protection that cannot
+      // fire. But there are TWO routes in, and an earlier version of this test
+      // probed only the first: the Title-Case proper-noun pattern. On that
+      // evidence "LLC", "PLC" and "GmbH" looked unreachable and were deleted —
+      // yet a QUOTED SPAN is copied out verbatim and carries any token shape,
+      // so a fabricated client quote naming a GmbH sailed through the gate.
+      // Reachability by either route is reachability.
+      const carries = (text: string, token: string) =>
+        extractAnchors(text).some((a) =>
+          a.split(/\s+/).some((w) => w.toLowerCase() === token.toLowerCase()),
+        );
+
+      for (const token of COMPANY_TOKENS) {
+        const properNoun = carries(`Kestrelmoor ${token} rebuilt their close.`, token);
+        const quotedSpan = carries(`The CFO said "Kestrelmoor ${token} never pays" to me.`, token);
+        expect(
+          properNoun || quotedSpan,
+          `COMPANY_TOKENS entry "${token}" can never appear in an anchor by either route`,
+        ).toBe(true);
+      }
+    });
+
+    it("FAILS on a fabricated company named only inside a quoted span", () => {
+      // The quoted-span route, end to end. "Kestrelmoor GmbH" appears in no
+      // cited record; only "14" traces. Without the all-caps tokens this
+      // returned passed=true with a mere UNVERIFIED note.
+      const c = gate('The CFO said "Kestrelmoor GmbH never pays on time" to me. It took 14 hours.').find(
+        (x) => x.rule === "specificity",
+      )!;
+      expect(c.passed).toBe(false);
+      expect(c.detail).toMatch(/Kestrelmoor GmbH/);
+    });
+  });
+
+  // Restores coverage deleted when the fabrication policy landed: the
+  // passing path's "; UNVERIFIED: ..." suffix is how the revise stage learns
+  // about untraced LOW-risk anchors. Without a test, the whole suffix can be
+  // dropped with a green suite — mutation testing confirmed it survived.
+  it("names untraced low-risk anchors in the detail on the passing path (C4ii)", () => {
+    const c = gate("Last Tuesday we cut it from 900 hours. It took 14 hours before.").find(
+      (x) => x.rule === "specificity",
+    )!;
+    expect(c.passed).toBe(true);
+    expect(c.detail).toMatch(/anchored on 14/);
+    expect(c.detail).toMatch(/UNVERIFIED/);
+    expect(c.detail).toMatch(/900/);
+    expect(c.detail).toMatch(/Last Tuesday/);
   });
 });
 
@@ -338,6 +425,26 @@ describe("firstLine", () => {
 
   it("returns an empty string when the body has no alphanumeric line at all", () => {
     expect(firstLine("\n---\n   \n")).toBe("");
+  });
+
+  // Both halves of the [A-Za-z0-9] class are pinned below. Every other test
+  // in this file opens on "Reconciliation took 14 hours", which carries both
+  // a letter and a digit — so mutation testing showed the class could be
+  // narrowed to either half alone and the whole suite stayed green.
+  it("takes a letters-only opening line", () => {
+    expect(firstLine("Nobody asked for a dashboard.\nWe built one anyway.")).toBe(
+      "Nobody asked for a dashboard.",
+    );
+  });
+
+  it("takes a digits-only opening line rather than skipping it as noise", () => {
+    expect(firstLine("14\nThat was the number nobody questioned.")).toBe("14");
+  });
+
+  it("trims the content line it returns, not just the noise it skipped", () => {
+    expect(firstLine("  Nobody asked for a dashboard.  \nWe built one anyway.")).toBe(
+      "Nobody asked for a dashboard.",
+    );
   });
 });
 

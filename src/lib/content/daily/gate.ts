@@ -155,9 +155,20 @@ function traces(anchor: string, haystack: string): boolean {
 /** Currency amounts only ("R2,400,000", "$1.2m", "€500", "£40k") — the exact
  * shape anchors.ts's own currency pattern produces. An invented figure
  * attributed to a client is the worst thing this system could publish, so
- * this is deliberately narrow: it requires the digit run that makes it a
- * currency anchor, not merely a leading "R" — a name like "Robert Anderson"
- * must not be caught by this. */
+ * this is deliberately narrow.
+ *
+ * The `^` and `$` do the real work and are both load-bearing. Anchors are
+ * not all currency-shaped tokens: extractAnchors also yields whole quoted
+ * spans, so an anchor can be `we saved R500` or `R500 was the whole saving`,
+ * or a name like `Robert Anderson`. Without both ends anchored, the currency
+ * run inside such a span would match and the post would fail as a fabricated
+ * figure. Both ends have a test pinning them.
+ *
+ * The `\d` is a third, weaker guard — it rejects a symbol carrying no digit
+ * run at all. It is deliberately left unpinned by tests: discriminating it
+ * needs an anchor like the literal quoted string `R,500`, which no realistic
+ * post produces, and a contrived test would suggest coverage that means
+ * nothing. It survives the mutation sweep knowingly. */
 const CURRENCY_ANCHOR = /^[R$€£]\s?\d[\d,]*(?:\.\d+)?[kmb]?$/i;
 
 /**
@@ -165,6 +176,23 @@ const CURRENCY_ANCHOR = /^[R$€£]\s?\d[\d,]*(?:\.\d+)?[kmb]?$/i;
  * of these reads as a company name, not an ordinary capitalised pair —
  * exported so the list can be tuned as real posts surface tokens it misses
  * or wrongly catches.
+ *
+ * Every token here must be REACHABLE: this check only ever sees strings
+ * extractAnchors produced, so a token that can never appear inside one
+ * advertises protection that cannot fire. Reachability has TWO routes, and
+ * both count:
+ *
+ *   1. the proper-noun pattern `[A-Z][a-z]+(\s+[A-Z][a-z]+)+`, which is
+ *      Title Case only — "Kestrelmoor Capital";
+ *   2. a quoted span, which is copied out verbatim and so can carry ANY
+ *      token shape — `"Kestrelmoor GmbH never pays on time"`.
+ *
+ * Route 2 is why the all-caps entries "LLC", "PLC" and "GmbH" are live
+ * rather than dead. They were briefly removed on the reasoning that route 1
+ * is the only route; a fabricated client quote naming a GmbH then passed the
+ * gate with nothing worse than an UNVERIFIED note. The reachability test in
+ * gate.test.ts exercises both routes for exactly this reason — check it
+ * against both before concluding a token is unreachable.
  */
 export const COMPANY_TOKENS = [
   "Financial", "Capital", "Group", "Partners", "Holdings", "Bank", "Fund", "Funds",
