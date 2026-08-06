@@ -5,6 +5,7 @@ import type { DataShape } from "@/lib/types";
 import { uid, nowISO } from "@/lib/utils";
 import { profileFromSamples } from "@/lib/content/voice";
 import { buildLedger } from "./harvest";
+import { buildVocabulary } from "./redact";
 import { buildMemory, SOURCE_WINDOW_DAYS } from "./rotation";
 // firstLine, NOT splitSentences — see the producer/consumer note on openingLine.
 import { runGate, firstLine } from "./gate";
@@ -102,6 +103,9 @@ export async function runDaily(
 
     const history = await deps.loadRecentPosts(SOURCE_WINDOW_DAYS, today);
     const { items: ledger, mode } = buildLedger(data, history, today);
+    // The same vocabulary harvest redacts with, so the gate rejects exactly
+    // the identities redaction would have scrubbed — no drift between the two.
+    const vocab = buildVocabulary(data);
 
     run.ledgerSize = ledger.length;
     run.reachback = mode === "reachback";
@@ -140,7 +144,7 @@ export async function runDaily(
       for (;;) {
         checks = runGate({
           body, sourceRefs: brief.sourceRefs, sourceTexts,
-          profile: stats, neverSay, recentOpeners: memory.recentOpeners,
+          profile: stats, neverSay, recentOpeners: memory.recentOpeners, vocab,
         });
         const failures = checks.filter((c) => !c.passed);
         if (failures.length === 0 || revisions >= MAX_REVISIONS) break;

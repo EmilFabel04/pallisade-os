@@ -144,8 +144,11 @@ describe("chooseBriefs", () => {
     // so it passes even when no feedback is sent at all.
     expect(second.messages).toHaveLength(3);
     expect(second.messages[2].role).toBe("user");
-    expect(String(second.messages[2].content)).toContain(
-      'same day: both slots chose pillar "client-pain"',
+    // The feedback rides inside the tool_result block, which is the only shape
+    // the API accepts after a tool_use — stringify rather than String(), which
+    // flattens the block array to "[object Object]" and would assert nothing.
+    expect(JSON.stringify(second.messages[2].content)).toContain(
+      'same day: both slots chose pillar \\"client-pain\\"',
     );
   });
 
@@ -162,6 +165,38 @@ describe("chooseBriefs", () => {
     };
     expect(second.messages[1].role).toBe("assistant");
     expect(JSON.stringify(second.messages[1].content)).toContain("submit_briefs");
+  });
+
+  it("answers every replayed tool_use with a matching tool_result block", async () => {
+    // The API rejects the whole request with a 400 when an assistant turn
+    // carrying a tool_use is followed by a user turn that is not a tool_result
+    // for it: "`tool_use` ids were found without `tool_result` blocks
+    // immediately after". That 400 surfaced as a 502 on every regeneration,
+    // because regenerating a day that already has posts fills the rotation
+    // memory and makes a violation — and therefore this retry turn — near
+    // certain. The stub client cannot enforce the protocol, so it is asserted
+    // here: the retry turn MUST open with a tool_result whose tool_use_id is
+    // the id of the tool_use being answered.
+    const clash = [valid[0], { ...valid[1], pillar: "client-pain" as const }];
+    const client = stubClient([clash, valid]);
+    await chooseBriefs(client, base, base.memory);
+
+    const second = calls(client)[1][0] as {
+      messages: { role: string; content: unknown }[];
+    };
+    const assistant = second.messages[1].content as { type: string; id: string }[];
+    const toolUseIds = assistant.filter((b) => b.type === "tool_use").map((b) => b.id);
+    expect(toolUseIds).toHaveLength(1);
+
+    const reply = second.messages[2];
+    expect(reply.role).toBe("user");
+    expect(Array.isArray(reply.content)).toBe(true);
+
+    const blocks = reply.content as { type: string; tool_use_id?: string }[];
+    // Every tool_use answered, and the tool_results come first in the turn.
+    expect(blocks[0].type).toBe("tool_result");
+    expect(blocks.filter((b) => b.type === "tool_result").map((b) => b.tool_use_id))
+      .toEqual(toolUseIds);
   });
 
   it("forces the model through the submit_briefs tool", async () => {

@@ -6,6 +6,8 @@
 import { measure, compare, splitParagraphs, splitSentences, type VoiceStats } from "@/lib/content/voice";
 import { AI_TELL_PHRASES, AI_TELL_PATTERNS } from "./craft";
 import { extractAnchors } from "./anchors";
+import { checkDisclosure } from "./disclosure";
+import type { Vocabulary } from "./redact";
 import type { EditorialCheck, SourceRef } from "./types";
 
 export const BROETRY_THRESHOLD = 0.6;
@@ -30,6 +32,14 @@ export interface GateInput {
   profile: VoiceStats;
   neverSay: string[];
   recentOpeners: string[];
+  /**
+   * Every company and contact from the founder's own records, for the
+   * disclosure check. Required rather than optional: defaulting it to an empty
+   * vocabulary would silently disable identity protection for any caller that
+   * forgot to pass it, and the failure would be invisible — posts would simply
+   * start naming clients again.
+   */
+  vocab: Vocabulary;
 }
 
 /** Strip case, punctuation and digits so two openers of the same shape collide. */
@@ -354,5 +364,6 @@ export function runGate(input: GateInput): EditorialCheck[] {
     checkOpener(input.body, input.recentOpeners),
     checkNeverSay(input.body, input.neverSay),
     checkBurstiness(input.body, input.profile),
+    checkDisclosure(input.body, input.vocab),
   ];
 }

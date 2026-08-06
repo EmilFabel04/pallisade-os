@@ -21,7 +21,10 @@ export const PILLAR_META: Record<ContentPillar, { label: string; description: st
   },
   "build-log": {
     label: "Build log",
-    description: "What was shipped, what broke, what got fixed this week.",
+    description:
+      "What was shipped and what it now does. A thing that broke belongs here only " +
+      "once it is fixed, and the post is about the fix — never a status update on " +
+      "something still going wrong.",
   },
   contrarian: {
     label: "Contrarian",
@@ -37,7 +40,10 @@ export const PILLAR_META: Record<ContentPillar, { label: string; description: st
   },
   lesson: {
     label: "Lesson",
-    description: "Something that went wrong, and what it actually cost.",
+    description:
+      "Something that went wrong, what it cost, and what he does differently now. " +
+      "Told from the far side of it, as expertise another operator can use — never " +
+      "as an open wound, and never as a confession.",
   },
 };
 
@@ -167,6 +173,44 @@ HARD RULES. A post that breaks any of these is rejected outright:
    variant. Do not write a one-line paragraph unless the line earns the isolation.
 8. Never invent a client name, a number, a quote or a piece of history. If the
    record does not support the detail, write around it or pick different material.
+`.trim();
+
+/**
+ * The disclosure boundary, stated to the model up front.
+ *
+ * gate.ts's checkDisclosure enforces this independently and is the actual
+ * guarantee — a prompt is a request, not a control. This block exists to keep
+ * the revise loop short: a draft that already respects the boundary does not
+ * burn its two revisions being told about it.
+ *
+ * Rule 3 is the one that reads oddly and must not be "tidied" into a general
+ * ban on numbers: the gate REQUIRES every post to carry a traceable anchor,
+ * and figures from the client's world are usually the only ones available. It
+ * is his own commercial position that may never appear, not arithmetic.
+ */
+export const DISCLOSURE_RULES = `
+WHAT MAY NOT BE PUBLISHED. These are not style notes. A post breaking any of
+them is rejected regardless of how good it is:
+
+1. Never name a client, a company, or a person he has dealt with. Not the
+   business, not the contact, not a detail that identifies either — a niche
+   enough description names someone just as surely as the name does. Write "a
+   client", "a finance team", "an asset manager" instead.
+2. Never quote anyone verbatim as though the words were said to him. Carry the
+   substance of what someone meant, not a transcript of how they said it.
+3. Never reveal his commercial position. No revenue, no MRR, no pipeline, no
+   deal sizes, no client count, no activity numbers (dials, emails, meetings
+   booked), and nothing about the stage he is at — "pre-revenue", "my first
+   client", "still building", "early days" are all forbidden.
+   Figures that belong to the CLIENT's world are not only allowed but wanted:
+   "14 hours a month on reconciliation" is the anchor the post needs.
+4. Never publish an open difficulty. He may write about something that went
+   wrong ONLY from the far side of it — the problem AND the resolution, told
+   as expertise someone else can use. "It broke and I'm stuck" is forbidden.
+   "Ingest jobs fail on retry when the queue isn't idempotent; here is the
+   fix" is exactly right.
+5. He is the authority in every post. Never write him as struggling, uncertain,
+   learning in public, or asking the reader for reassurance.
 `.trim();
 
 export const CRAFT_RULES = `

@@ -7,18 +7,14 @@
 import { daysBetween } from "@/lib/utils";
 import type { DataShape } from "@/lib/types";
 import { extractAnchors } from "./anchors";
+import { buildVocabulary, redactText } from "./redact";
 import { PILLAR_KEYWORDS } from "./craft";
 import type { ContentPillar, ContentPost, MaterialItem } from "./types";
 import { SOURCE_WINDOW_DAYS } from "./rotation";
 
 export const RECENT_WINDOW_DAYS = 7;
-export const METRIC_SWING = 0.5;
 
 export type LedgerMode = "fresh" | "reachback" | "news";
-
-/** Language that marks material with something at stake. */
-const CHARGED =
-  /\b(?:broke|broken|failed|wrong|angry|frustrat|wasted|lost|stuck|hate|painful|embarrass|refus|blocked|missed|late|manual|again)\w*/i;
 
 interface FieldSpec {
   collection: keyof DataShape;
@@ -31,13 +27,30 @@ interface FieldSpec {
  * Every field name here is load-bearing: a typo harvests nothing from that
  * collection and the failure is silent — the ledger just comes back thinner.
  * All names verified against src/lib/types.ts.
+ *
+ * The omissions are equally load-bearing. These fields are excluded because
+ * they cannot be published, not because they are uninteresting — they are the
+ * most interesting material here, which is exactly the problem. Anything the
+ * ledger carries reaches the brief prompt, the source texts and the draft, so
+ * the cheapest place to keep something unpublishable out of a post is to keep
+ * it out of the ledger. Do not add them back without re-reading
+ * docs/superpowers/specs/2026-08-06-disclosure-boundary-design.md:
+ *
+ *   interactions.rawNotes     private, unstructured, his own reactions
+ *   interactions.whatTheySaid verbatim client quotes — attributable by nature
+ *   scorecards.problems       unresolved self-critique
+ *   scorecards.avoidTomorrow  unresolved self-critique
+ *   projects.currentBlocker   a live vulnerability, by definition unresolved
+ *
+ * The metricEntries collection is omitted from collectCandidates entirely for
+ * the same reason; see the note where it used to be handled.
  */
 const SPECS: FieldSpec[] = [
-  { collection: "interactions", fields: ["rawNotes", "whatTheySaid", "painPoints", "objections", "buyingSignals"], dateField: "date" },
+  { collection: "interactions", fields: ["painPoints", "objections", "buyingSignals"], dateField: "date" },
   { collection: "painPoints", fields: ["painPoint", "workaround", "possibleSolution", "notes"] },
   { collection: "leads", fields: ["painPoint", "objection", "buyingSignal", "notes"] },
-  { collection: "projects", fields: ["currentBlocker", "nextAction", "deliverables", "notes"] },
-  { collection: "scorecards", fields: ["wins", "problems", "lessons", "avoidTomorrow"], dateField: "date" },
+  { collection: "projects", fields: ["nextAction", "deliverables", "notes"] },
+  { collection: "scorecards", fields: ["wins", "lessons"], dateField: "date" },
   { collection: "notes", fields: ["body"] },
 ];
 
@@ -62,6 +75,10 @@ function recordDate(rec: Record<string, unknown>, dateField?: string): string {
 
 export function collectCandidates(data: DataShape): MaterialItem[] {
   const out: MaterialItem[] = [];
+  // Built once. Every text below is scrubbed through it BEFORE extractAnchors
+  // runs — anchors derived from unredacted text would carry the very name the
+  // text no longer contains, and anchors travel into the brief and the draft.
+  const vocab = buildVocabulary(data);
 
   for (const spec of SPECS) {
     const rows = (data[spec.collection] ?? []) as unknown as Record<string, unknown>[];
@@ -77,7 +94,7 @@ export function collectCandidates(data: DataShape): MaterialItem[] {
       }
       if (parts.length === 0) continue;
 
-      const text = parts.join(" — ");
+      const text = redactText(parts.join(" — "), vocab);
       out.push({
         collection: spec.collection as string,
         id: String(rec.id),
@@ -93,7 +110,9 @@ export function collectCandidates(data: DataShape): MaterialItem[] {
   // Completed milestones read as build-log material.
   for (const m of (data.milestones ?? []) as unknown as Record<string, unknown>[]) {
     if (m.status !== "done" || typeof m.name !== "string" || !m.name.trim()) continue;
-    const text = `Milestone completed: ${m.name}`;
+    // Redacted like everything else: a milestone is routinely named after the
+    // client it was delivered for.
+    const text = redactText(`Milestone completed: ${m.name}`, vocab);
     out.push({
       collection: "milestones",
       id: String(m.id),
@@ -105,34 +124,13 @@ export function collectCandidates(data: DataShape): MaterialItem[] {
     });
   }
 
-  // Metric entries only when the value genuinely moved.
-  const metrics = (data.metricEntries ?? []) as unknown as {
-    id: string; metric: string; date: string; value: number;
-  }[];
-  const byMetric = new Map<string, typeof metrics>();
-  for (const e of metrics) {
-    byMetric.set(e.metric, [...(byMetric.get(e.metric) ?? []), e]);
-  }
-  for (const [metric, entries] of byMetric) {
-    const sorted = [...entries].sort((a, b) => (a.date < b.date ? -1 : 1));
-    const latest = sorted[sorted.length - 1];
-    const trailing = sorted.slice(0, -1).filter((e) => daysBetween(e.date, latest.date) <= 7);
-    if (trailing.length === 0) continue;
-    const mean = trailing.reduce((a, e) => a + e.value, 0) / trailing.length;
-    if (mean === 0) continue;
-    if (Math.abs(latest.value - mean) / mean <= METRIC_SWING) continue;
-
-    const text = `${metric} moved to ${latest.value} against a recent average of ${mean.toFixed(1)}`;
-    out.push({
-      collection: "metricEntries",
-      id: latest.id,
-      date: latest.date,
-      text,
-      anchors: extractAnchors(text),
-      pillarHints: ["proof"],
-      score: 0,
-    });
-  }
+  // metricEntries is deliberately NOT harvested.
+  //
+  // It used to emit "<metric> moved to <value> against a recent average of
+  // <mean>", which publishes his commercial position directly — the worked
+  // example that prompted this was "MRR moved to 0 against a recent average
+  // of 0". There is no redaction that fixes it: the number IS the disclosure,
+  // so the collection is excluded rather than filtered.
 
   return out;
 }
@@ -141,9 +139,12 @@ export function scoreItem(item: MaterialItem, today: string): number {
   const age = Math.max(0, daysBetween(item.date, today));
   const recency = Math.max(0, 20 - age); //                     0-20
   const specificity = Math.min(item.anchors.length, 4) * 8; //  0-32
-  const charge = CHARGED.test(item.text) ? 12 : 0; //           0 or 12
   const substance = Math.min(item.text.length / 40, 10); //     0-10
-  return recency + specificity + charge + substance;
+  // There is deliberately no "charge" term. A +12 bonus for text matching
+  // broke|failed|wasted|lost|stuck|embarrass|missed|late ranked his worst
+  // days highest, which is precisely how the most exposing material kept
+  // winning the day's slot. Specificity, not distress, is what earns a post.
+  return recency + specificity + substance;
 }
 
 export function buildLedger(

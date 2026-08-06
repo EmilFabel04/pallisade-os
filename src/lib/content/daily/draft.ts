@@ -3,7 +3,9 @@
 
 import type Anthropic from "@anthropic-ai/sdk";
 import type { VoiceStats } from "@/lib/content/voice";
-import { ANTI_SLOP_CONSTITUTION, CRAFT_RULES, PILLAR_META, FORMAT_META } from "./craft";
+import {
+  ANTI_SLOP_CONSTITUTION, CRAFT_RULES, DISCLOSURE_RULES, PILLAR_META, FORMAT_META,
+} from "./craft";
 import type { PostBrief } from "./types";
 
 const MODEL = "claude-sonnet-4-6";
@@ -84,9 +86,12 @@ export function buildDraftPrompt(input: DraftInput): string {
       `- The claim this post makes: ${brief.claim}`,
       `- The concrete anchor it is built on: ${brief.anchor}`,
     ].join("\n"),
-    `THE SOURCE RECORDS — the only facts you may use. Inventing anything is a failure:\n` +
+    `THE SOURCE RECORDS — the only facts you may use. Inventing anything is a failure.\n` +
+      `They have already been stripped of names; do not reintroduce one, and do not\n` +
+      `guess at who is being described:\n` +
       sourceTexts.map((t) => `"""\n${t}\n"""`).join("\n"),
     ANTI_SLOP_CONSTITUTION,
+    DISCLOSURE_RULES,
     CRAFT_RULES,
     feedback.length > 0 ? feedback.join("\n\n") : null,
     `Return only the post body. No preamble, no title, no explanation, no hashtags.`,
