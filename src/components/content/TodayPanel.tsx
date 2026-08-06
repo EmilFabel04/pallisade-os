@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { Loader2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { Panel } from "@/components/ui/Panel";
-import { fetchToday, runDailyNow } from "@/lib/dailyClient";
+import { fetchToday, runDailyNow, deleteAllPosts } from "@/lib/dailyClient";
 import { todayISO } from "@/lib/utils";
 import PostCard from "./PostCard";
 import type { ContentPost, ContentRun } from "@/lib/content/daily/types";
@@ -15,6 +15,9 @@ export default function TodayPanel() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoTried, setAutoTried] = useState(false);
+  const [confirmPurge, setConfirmPurge] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [purged, setPurged] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +63,34 @@ export default function TodayPanel() {
   const replace = (updated: ContentPost) =>
     setPosts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
 
+  const drop = (id: string) => setPosts((prev) => prev.filter((p) => p.id !== id));
+
+  /**
+   * Wipes every post on every date and the failed run records.
+   *
+   * `setRun(null)` afterwards is load-bearing rather than cosmetic: the stale
+   * "Generation failed" banner reads `run.status`, and the auto-generate
+   * effect above bails while `run` is non-null. Clearing it locally puts the
+   * panel in the same state a fresh load would, so the next generate is
+   * reachable without a refresh.
+   */
+  const purge = useCallback(async () => {
+    setPurging(true);
+    setError(null);
+    try {
+      const { deletedPosts, deletedRuns } = await deleteAllPosts();
+      setPosts([]);
+      setRun(null);
+      setAutoTried(true); // don't let the effect immediately regenerate
+      setConfirmPurge(false);
+      setPurged(`Deleted ${deletedPosts} post${deletedPosts === 1 ? "" : "s"} and ${deletedRuns} failed run${deletedRuns === 1 ? "" : "s"}.`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPurging(false);
+    }
+  }, []);
+
   return (
     <Panel title="Today">
       {loading && (
@@ -70,7 +101,17 @@ export default function TodayPanel() {
 
       {!loading && run?.status === "failed" && (
         <p className="text-[0.8rem] text-[var(--color-accent)]">
-          Generation failed: {run.error}
+          {/* The timestamp matters: this is a STORED record of the last run,
+              not a live result, and without a time a failure from hours ago
+              reads as one that just happened. */}
+          Generation failed
+          {run.finishedAt || run.startedAt
+            ? ` at ${new Date(run.finishedAt ?? run.startedAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}`
+            : ""}
+          : {run.error}
         </p>
       )}
 
@@ -92,16 +133,47 @@ export default function TodayPanel() {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {posts.map((p) => (
-          <PostCard key={p.id} post={p} onChange={replace} />
+          <PostCard key={p.id} post={p} onChange={replace} onDelete={drop} />
         ))}
       </div>
 
-      {!loading && posts.length > 0 && (
-        <button className="btn btn-sm mt-4" onClick={() => void generate()} disabled={generating}>
-          {generating ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-          Regenerate both
-        </button>
-      )}
+      <div className="flex flex-wrap items-center gap-1.5 mt-4">
+        {!loading && posts.length > 0 && (
+          <button className="btn btn-sm" onClick={() => void generate()} disabled={generating}>
+            {generating ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            Regenerate both
+          </button>
+        )}
+
+        {!loading && confirmPurge ? (
+          <>
+            <button
+              className="btn btn-accent btn-sm"
+              onClick={() => void purge()}
+              disabled={purging}
+              title="Deletes every post on every date. This cannot be undone."
+            >
+              {purging ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Delete every post, permanently
+            </button>
+            <button className="btn btn-sm" onClick={() => setConfirmPurge(false)} disabled={purging}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          !loading && (
+            <button
+              className="btn btn-sm"
+              onClick={() => { setConfirmPurge(true); setPurged(null); }}
+              title="Delete all generated posts across every date"
+            >
+              <Trash2 size={13} /> Delete all posts
+            </button>
+          )
+        )}
+      </div>
+
+      {purged && <p className="text-[0.78rem] text-[var(--color-muted)] mt-2">{purged}</p>}
 
       {error && <p className="text-[0.78rem] text-[var(--color-accent)] mt-3">{error}</p>}
     </Panel>

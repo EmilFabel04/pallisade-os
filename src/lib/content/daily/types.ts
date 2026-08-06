@@ -13,6 +13,15 @@ export const KILL_REASONS = [
 ] as const;
 export type KillReason = (typeof KILL_REASONS)[number];
 
+/**
+ * Sent in the body of DELETE /api/content/posts to prove the wipe was
+ * deliberate. Defined here rather than in the route because a Next.js route
+ * module may only export its handlers and route config — any other export
+ * fails the build's type check — and because the client and the route must
+ * agree on the exact string.
+ */
+export const PURGE_CONFIRMATION = "delete-all-posts";
+
 export interface SourceRef {
   collection: string;
   id: string;

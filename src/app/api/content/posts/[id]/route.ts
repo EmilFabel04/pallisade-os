@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, DB_FAILED } from "@/lib/api/errors";
-import { patchPost } from "@/lib/content/daily/store";
+import { patchPost, deletePost } from "@/lib/content/daily/store";
 import { KILL_REASONS, type ContentPost, type KillReason, type PostStatus } from "@/lib/content/daily/types";
 
 export const runtime = "nodejs";
@@ -48,6 +48,28 @@ export async function PATCH(
     const post = await patchPost(id, changes);
     if (!post) return NextResponse.json({ error: "not_found" }, { status: 404 });
     return NextResponse.json({ post });
+  } catch (err) {
+    return apiError(DB_FAILED, 500, err);
+  }
+}
+
+/**
+ * Hard delete of a single post. Unlike PATCH's "killed" status this leaves no
+ * row: the post stops blocking its source records in the rotation window, and
+ * stops being replayed into the draft prompt as a killed example.
+ *
+ * Reached only through the NextAuth middleware, which fronts every path except
+ * /api/auth, /api/content/daily and /login.
+ */
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  try {
+    const existed = await deletePost(id);
+    if (!existed) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    return NextResponse.json({ deleted: id });
   } catch (err) {
     return apiError(DB_FAILED, 500, err);
   }

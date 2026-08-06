@@ -100,3 +100,56 @@ describe("runs", () => {
     expect(await store.latestRun("2026-01-01")).toBeNull();
   });
 });
+
+describe("deletion", () => {
+  const run = (over: Partial<ContentRun> = {}): ContentRun => ({
+    id: "r-x", date: "2026-08-05", status: "ok", ledgerSize: 3,
+    reachback: false, usedNews: false, degraded: [], error: null,
+    startedAt: "2026-08-05T04:00:00Z", finishedAt: "2026-08-05T04:00:30Z", ...over,
+  });
+
+  it("deletes one post and leaves the rest alone", async () => {
+    await store.savePosts([post({ id: "d1" }), post({ id: "d2" })]);
+    expect(await store.deletePost("d1")).toBe(true);
+    const left = await store.listPosts("2026-08-04");
+    expect(left.some((p) => p.id === "d1")).toBe(false);
+    expect(left.some((p) => p.id === "d2")).toBe(true);
+  });
+
+  it("reports false for an id that matched nothing, so the route can 404", async () => {
+    expect(await store.deletePost("does-not-exist")).toBe(false);
+  });
+
+  it("frees the deleted post's source records for reuse", async () => {
+    // buildLedger excludes material cited by a post inside the 21-day window.
+    // Deleting the post must release that hold, or the material stays blocked
+    // by a post that no longer exists.
+    await store.savePosts([post({ id: "d3", date: "2026-08-04" })]);
+    expect((await store.recentPosts(21, "2026-08-04")).some((p) => p.id === "d3")).toBe(true);
+    await store.deletePost("d3");
+    expect((await store.recentPosts(21, "2026-08-04")).some((p) => p.id === "d3")).toBe(false);
+  });
+
+  it("deletes every post on every date and reports the count", async () => {
+    await store.savePosts([
+      post({ id: "a1", date: "2026-08-04" }),
+      post({ id: "a2", date: "2026-07-01" }),
+    ]);
+    const removed = await store.deleteAllPosts();
+    expect(removed).toBeGreaterThanOrEqual(2);
+    expect(await store.listPosts("2026-08-04")).toHaveLength(0);
+    expect(await store.listPosts("2026-07-01")).toHaveLength(0);
+  });
+
+  it("deletes failed runs and keeps successful ones", async () => {
+    await store.saveRun(run({ id: "ok1", status: "ok" }));
+    await store.saveRun(run({ id: "thin1", status: "thin", date: "2026-08-06" }));
+    await store.saveRun(run({ id: "bad1", status: "failed", error: "boom", date: "2026-08-07" }));
+
+    const removed = await store.deleteFailedRuns();
+    expect(removed).toBe(1);
+    expect(await store.latestRun("2026-08-07")).toBeNull();
+    expect((await store.latestRun("2026-08-05"))?.id).toBe("ok1");
+    expect((await store.latestRun("2026-08-06"))?.id).toBe("thin1");
+  });
+});

@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Check, Pencil, ThumbsUp, X } from "lucide-react";
+import { Copy, Check, Pencil, ThumbsUp, X, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useStore, useVoiceProfile } from "@/lib/store";
-import { patchPost } from "@/lib/dailyClient";
+import { patchPost, deletePost } from "@/lib/dailyClient";
 import { PILLAR_META, FORMAT_META } from "@/lib/content/daily/craft";
 import { KILL_REASONS, type ContentPost, type KillReason } from "@/lib/content/daily/types";
 
@@ -30,9 +30,12 @@ const KILL_LABELS: Record<KillReason, string> = {
 export default function PostCard({
   post,
   onChange,
+  onDelete,
 }: {
   post: ContentPost;
   onChange: (p: ContentPost) => void;
+  /** Called once the row is gone, so the parent can drop the card. */
+  onDelete: (id: string) => void;
 }) {
   const store = useStore();
   const profile = useVoiceProfile();
@@ -44,6 +47,7 @@ export default function PostCard({
   const [phrase, setPhrase] = useState("");
   const [showPhrase, setShowPhrase] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const shown = post.editedBody ?? post.body;
@@ -70,6 +74,21 @@ export default function PostCard({
   const save = async () => {
     setEditing(false);
     await apply({ editedBody: draft });
+  };
+
+  // Deliberately does NOT clear `busy` on success: the card is about to be
+  // unmounted by the parent, and setting state on the way out would warn.
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await deletePost(post.id);
+      onDelete(post.id);
+    } catch (e) {
+      setError((e as Error).message);
+      setConfirmDelete(false);
+      setBusy(false);
+    }
   };
 
   const kill = async (reason: KillReason) => {
@@ -180,6 +199,34 @@ export default function PostCard({
         <button className="btn btn-sm" onClick={() => setKilling((k) => !k)}>
           <X size={12} /> Kill
         </button>
+        {confirmDelete ? (
+          <>
+            <button
+              className="btn btn-accent btn-sm"
+              onClick={() => void remove()}
+              disabled={busy}
+              title="This cannot be undone"
+            >
+              <Trash2 size={12} /> Delete for good
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => setConfirmDelete(false)}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            className="btn btn-sm"
+            onClick={() => setConfirmDelete(true)}
+            disabled={busy}
+            title="Remove this post permanently"
+          >
+            <Trash2 size={12} /> Delete
+          </button>
+        )}
       </div>
 
       {killing && (
