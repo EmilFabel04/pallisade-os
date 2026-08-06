@@ -66,7 +66,13 @@ const cleanFor = (brief: PostBrief) => (brief.slot === 1 ? CLEAN : CLEAN_BUILD);
 type DraftArgs = [unknown, { brief: PostBrief; sourceTexts: string[] }];
 type ReviseArgs = [
   unknown,
-  { brief: PostBrief; body: string; failures: { rule: string; passed: boolean }[] },
+  // `detail` is part of every EditorialCheck and is what the revise stage
+  // actually acts on — omitting it here hid it from these fixtures.
+  {
+    brief: PostBrief;
+    body: string;
+    failures: { rule: string; passed: boolean; detail: string }[];
+  },
 ];
 
 function deps(over: Partial<Parameters<typeof runDaily>[0]> = {}) {
@@ -118,6 +124,82 @@ describe("runDaily", () => {
     expect(posts[0].status).toBe("needs_work");
     expect(posts[0].revisions).toBe(2);
     expect(posts[0].checks.some((c) => !c.passed)).toBe(true);
+  });
+
+  describe("the disclosure boundary", () => {
+    /**
+     * A founder with a real client on file AND that client's name written into
+     * the notes of the pain point the brief actually cites.
+     *
+     * Both halves are load-bearing. The lead record alone only populates the
+     * vocabulary; it is never harvested for its company field, and the brief
+     * cites pp1, not the lead — so a name that lives only on the lead never
+     * reaches a prompt and every redaction assertion below would pass without
+     * redaction existing at all. Writing the client's name into a cited
+     * record's notes is also what actually happens in practice.
+     */
+    function withLead() {
+      const d = data();
+      (d.leads as unknown as Record<string, unknown>[]).push({
+        id: "l1", createdAt: "2026-08-01T00:00:00Z", updatedAt: "2026-08-01T00:00:00Z",
+        company: "Kestrelmoor Capital", contactName: "Sarah Whitfield",
+        painPoint: "", objection: "", buyingSignal: "", notes: "",
+      });
+      (d.painPoints as unknown as Record<string, unknown>[])[0].notes =
+        "Kestrelmoor Capital — Sarah Whitfield says they still do it by hand.";
+      return d;
+    }
+
+    it("never lets a post naming a client through as a clean draft", async () => {
+      // The end-to-end guarantee. A real client name TRACES against its source
+      // record, so checkSpecificity passes it — this is exactly the post that
+      // used to reach him looking finished.
+      const named =
+        "Kestrelmoor Capital took 14 hours every month end on reconciliation.\n\n" +
+        "For numbers two systems already held.\n\n" +
+        "We wired them together in an afternoon and it runs unattended now. Nobody " +
+        "had thought to ask before, which is the part that still surprises me.";
+      const { posts } = await runDaily(
+        deps({ data: withLead(), draftPost: async () => named, revisePost: async () => named }),
+      );
+      expect(posts[0].status).toBe("needs_work");
+      const disclosure = posts[0].checks.find((c) => c.rule === "disclosure")!;
+      expect(disclosure.passed).toBe(false);
+      expect(disclosure.detail).toMatch(/Kestrelmoor Capital/);
+    });
+
+    it("sends the disclosure failure back to the revise stage with the name in it", async () => {
+      // The revise stage can only fix what it is told. A generic "rejected"
+      // leaves the model guessing which detail was the problem.
+      const named = "Kestrelmoor Capital still reconciles 14 hours by hand every month end.";
+      const revisePost = vi.fn(async (...a: ReviseArgs) => cleanFor(a[1].brief));
+      await runDaily(deps({ data: withLead(), draftPost: async () => named, revisePost }));
+
+      const failures = revisePost.mock.calls[0][1].failures;
+      expect(failures.some((f) => f.rule === "disclosure")).toBe(true);
+      expect(failures.find((f) => f.rule === "disclosure")!.detail).toMatch(/Kestrelmoor Capital/);
+    });
+
+    it("strips client names out of the source texts handed to the draft stage", async () => {
+      // Redaction happens at harvest, so the model is never shown the name at
+      // all — the structural half of the guarantee, independent of the gate.
+      const draftPost = vi.fn(async (...a: DraftArgs) => cleanFor(a[1].brief));
+      await runDaily(deps({ data: withLead(), draftPost }));
+
+      const everySourceText = draftPost.mock.calls
+        .flatMap((c) => c[1].sourceTexts)
+        .join(" ");
+      expect(everySourceText).not.toMatch(/Kestrelmoor/i);
+      expect(everySourceText).not.toMatch(/Whitfield/i);
+    });
+
+    it("keeps a post that is specific about a client without naming them", async () => {
+      // The boundary must not be so wide that nothing survives it: CLEAN is
+      // anchored on a real figure and passes with the vocabulary populated.
+      const { posts } = await runDaily(deps({ data: withLead() }));
+      expect(posts[0].checks.find((c) => c.rule === "disclosure")!.passed).toBe(true);
+      expect(posts[0].status).toBe("draft");
+    });
   });
 
   it("marks the run thin when the ledger had to reach back", async () => {

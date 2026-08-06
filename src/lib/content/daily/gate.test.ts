@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { runGate, normaliseOpener, firstLine, COMPANY_TOKENS, BURSTINESS_FLOOR } from "./gate";
 import { extractAnchors } from "./anchors";
 import { profileFromSamples, ZERO_STATS } from "@/lib/content/voice";
+import { buildVocabulary } from "./redact";
+import type { DataShape } from "@/lib/types";
 import type { SourceRef } from "./types";
 
 const profile = profileFromSamples([
@@ -11,10 +13,14 @@ const profile = profileFromSamples([
 const refs: SourceRef[] = [{ collection: "painPoints", id: "pp1", anchor: "14 hours" }];
 const sourceTexts = ["Reconciliation takes 14 hours every month end."];
 
+/** Disclosure has its own suite in disclosure.test.ts; these cases exercise
+ *  the other six checks against an empty vocabulary. */
+const noIdentities = buildVocabulary({} as DataShape);
+
 function gate(body: string, over: Partial<Parameters<typeof runGate>[0]> = {}) {
   return runGate({
     body, sourceRefs: refs, sourceTexts, profile,
-    neverSay: [], recentOpeners: [], ...over,
+    neverSay: [], recentOpeners: [], vocab: noIdentities, ...over,
   });
 }
 
@@ -538,7 +544,8 @@ describe("runGate", () => {
   it("reports every rule, passing or failing", () => {
     const rules = gate(GOOD).map((c) => c.rule).sort();
     expect(rules).toEqual(
-      ["ai-tells", "broetry", "burstiness", "never-say", "opener-collision", "specificity"],
+      ["ai-tells", "broetry", "burstiness", "disclosure", "never-say", "opener-collision",
+       "specificity"],
     );
   });
 });

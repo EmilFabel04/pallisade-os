@@ -38,39 +38,23 @@ describe("collectCandidates", () => {
     expect(collectCandidates(data({ painPoints: [blank] })).some((i) => i.id === "pp2")).toBe(false);
   });
 
-  it("only takes a metric entry when it swings more than half off its trailing mean", () => {
+  it("never harvests a metric entry, however far the value moved", () => {
+    // metricEntries used to be emitted as "<metric> moved to <value> against a
+    // recent average of <mean>", which publishes his commercial position
+    // directly — the case that prompted the disclosure boundary was "MRR moved
+    // to 0 against a recent average of 0". The number IS the disclosure, so
+    // there is no filtering that rescues it; the collection is excluded.
+    // A dramatic swing is used deliberately: this is the exact shape that used
+    // to qualify as material, so the test would pass vacuously on a flat one.
     const base = (date: string, value: number) => ({
       id: `m-${date}`, createdAt: date, updatedAt: date,
       metric: "callsMade" as const, date, value,
     });
-    const steady = [base("2026-07-29", 10), base("2026-07-30", 10), base("2026-08-03", 10)];
-    expect(collectCandidates(data({ metricEntries: steady as never })).length).toBe(0);
-
-    const spike = [...steady, base("2026-08-04", 40)];
-    const items = collectCandidates(data({ metricEntries: spike as never }));
-    expect(items.some((i) => i.collection === "metricEntries")).toBe(true);
-  });
-
-  it("takes nothing from a lone metric entry that has no history to swing against", () => {
-    // Without the trailing-empty guard the mean is 0/0 = NaN, which satisfies
-    // neither `mean === 0` nor `swing <= METRIC_SWING`, so the entry would be
-    // emitted as material reading "against a recent average of NaN".
-    const lone = [{
-      id: "m-solo", createdAt: "2026-08-04", updatedAt: "2026-08-04",
-      metric: "callsMade" as const, date: "2026-08-04", value: 40,
-    }];
-    expect(collectCandidates(data({ metricEntries: lone as never })).length).toBe(0);
-  });
-
-  it("ignores prior entries older than the trailing seven-day window", () => {
-    // The spec defines the baseline as the trailing 7-day mean. A reading from
-    // five weeks ago is not a baseline, so a lone recent value has nothing to
-    // be judged against and must not qualify however far it moved.
-    const stale = [
-      { id: "m-old", createdAt: "2026-07-01", updatedAt: "2026-07-01", metric: "callsMade" as const, date: "2026-07-01", value: 10 },
-      { id: "m-new", createdAt: "2026-08-04", updatedAt: "2026-08-04", metric: "callsMade" as const, date: "2026-08-04", value: 40 },
+    const spike = [
+      base("2026-07-29", 10), base("2026-07-30", 10),
+      base("2026-08-03", 10), base("2026-08-04", 40),
     ];
-    expect(collectCandidates(data({ metricEntries: stale as never })).length).toBe(0);
+    expect(collectCandidates(data({ metricEntries: spike as never }))).toHaveLength(0);
   });
 
   it("takes a completed milestone as build-log material, and ignores an incomplete one", () => {
@@ -110,15 +94,21 @@ describe("scoreItem", () => {
     expect(at25).toBe(at90);
   });
 
-  it("rewards language with something at stake, independently of length", () => {
-    // The charged item is deliberately the SHORTER of the two, so the
-    // substance component cannot be what puts it ahead.
-    const charged = scoreItem(item({ text: "It broke." }), "2026-08-04");
-    const calm = scoreItem(
-      item({ text: "It ran smoothly and everyone was pleased with it." }),
-      "2026-08-04",
-    );
-    expect(charged).toBeGreaterThan(calm);
+  it("does not reward distressed language over calm language", () => {
+    // The inverse of what this file used to assert. A +12 "charge" bonus for
+    // text matching broke|failed|wasted|lost|stuck|embarrass|missed|late
+    // ranked his worst days highest, which is how the most exposing material
+    // kept winning the day's slot. Same anchors and date on both sides, so
+    // charge is the only variable that could separate them.
+    const charged = scoreItem(item({ text: "It broke. I wasted the day, stuck again." }), "2026-08-04");
+    const calm = scoreItem(item({ text: "It ran overnight and finished on its own." }), "2026-08-04");
+    expect(charged).toBeLessThanOrEqual(calm);
+  });
+
+  it("ranks on specificity instead — anchors are what earn a post", () => {
+    const anchored = scoreItem(item({ text: "Ran in 20 minutes.", anchors: ["20"] }), "2026-08-04");
+    const vague = scoreItem(item({ text: "Ran much faster than before." }), "2026-08-04");
+    expect(anchored).toBeGreaterThan(vague);
   });
 });
 
