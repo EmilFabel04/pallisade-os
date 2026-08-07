@@ -20,6 +20,7 @@ function project(over: Partial<Project>): Project {
     deliverables: "",
     notes: "",
     repoPath: null,
+    repoSlug: null,
     ...over,
   };
 }

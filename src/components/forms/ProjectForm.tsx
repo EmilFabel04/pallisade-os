@@ -29,6 +29,7 @@ export function ProjectForm({ initial, onClose }: { initial?: Project; onClose: 
     deliverables: initial?.deliverables ?? "",
     notes: initial?.notes ?? "",
     repoPath: initial?.repoPath ?? null,
+    repoSlug: initial?.repoSlug ?? null,
   }));
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((p) => ({ ...p, [k]: v }));

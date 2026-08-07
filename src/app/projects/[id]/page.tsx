@@ -50,7 +50,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     () => tasks.filter((t) => t.linkKind === "project" && t.linkId === id),
     [tasks, id],
   );
-  const repo = useRepo(project?.repoPath ?? null);
+  const repo = useRepo({
+    repoPath: project?.repoPath ?? null,
+    repoSlug: project?.repoSlug ?? null,
+  });
   const commitsByMilestone = useMemo(
     () => matchCommits(repo.commits, projectMilestones),
     [repo.commits, projectMilestones],
@@ -77,15 +80,24 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </Link>
           <h1 className="text-[1.35rem] font-semibold text-[var(--color-ink)] truncate">{project.name}</h1>
           <p className="text-[0.8rem] text-[var(--color-dim)]">{project.company}</p>
-          {project.repoPath && (
+          {(project.repoPath || project.repoSlug) && (
             <p className="text-[0.74rem] text-[var(--color-dim)] tnum mt-0.5">
               {repo.error ? (
                 <span className="text-[var(--color-accent-soft)]">
-                  Repo not found at {project.repoPath}
+                  {/* Name whichever reference was actually tried. A project
+                      linked by slug alone has no repoPath, and printing the
+                      empty string read as "Repo not found at ". */}
+                  Couldn&apos;t read {project.repoPath ?? project.repoSlug}
                 </span>
               ) : repo.status ? (
                 <>
                   {repo.status.branch || "(detached)"}
+                  {/* The working-tree counts below only exist for the local
+                      reader. GitHub has no working tree, so they arrive as 0
+                      and every `> 0` guard correctly hides them — the label
+                      says where the branch came from so an absent "3
+                      uncommitted" is not misread as a clean tree. */}
+                  {repo.status.source === "github" && " · via GitHub"}
                   {repo.status.staged + repo.status.unstaged + repo.status.untracked > 0 &&
                     ` · ${repo.status.staged + repo.status.unstaged + repo.status.untracked} uncommitted`}
                   {repo.status.ahead > 0 && ` · ${repo.status.ahead} ahead`}

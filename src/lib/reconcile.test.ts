@@ -34,7 +34,7 @@ function project(over: Partial<Project> = {}): Project {
     name: "Acme Dashboard", company: "Acme", type: "paid project", stage: "building",
     priority: "high", startDate: "2026-07-01", dueDate: "2026-08-15",
     currentMilestone: "Build the ingest pipeline", currentBlocker: "", nextAction: "",
-    deliverables: "", notes: "", repoPath: null,
+    deliverables: "", notes: "", repoPath: null, repoSlug: null,
     ...over,
   };
 }

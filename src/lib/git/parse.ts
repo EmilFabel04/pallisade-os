@@ -1,6 +1,10 @@
 import type { Commit, RepoStatus } from "./types";
 
-const EMPTY_STATUS: RepoStatus = {
+/** The parser is pure string work and has no idea which reader called it,
+ *  so it never sets `source` — readStatus stamps that at the boundary. */
+export type ParsedStatus = Omit<RepoStatus, "source">;
+
+const EMPTY_STATUS: ParsedStatus = {
   branch: "", ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0,
 };
 
@@ -15,8 +19,8 @@ const EMPTY_STATUS: RepoStatus = {
  * mutually exclusive. `branch.ab` is absent with no upstream, leaving
  * ahead/behind at zero. Pure string parsing — never shells out.
  */
-export function parseStatus(stdout: string): RepoStatus {
-  const out: RepoStatus = { ...EMPTY_STATUS };
+export function parseStatus(stdout: string): ParsedStatus {
+  const out: ParsedStatus = { ...EMPTY_STATUS };
 
   for (const line of stdout.split("\n")) {
     if (!line) continue;

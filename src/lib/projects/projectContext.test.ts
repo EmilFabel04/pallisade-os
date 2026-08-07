@@ -6,7 +6,7 @@ const project: Project = {
   id: "p1", createdAt: "", updatedAt: "", name: "Acme Dashboard", company: "Acme",
   type: "paid project", stage: "building", priority: "high", startDate: "2026-07-01",
   dueDate: "2026-08-15", currentMilestone: "", currentBlocker: "Waiting on API creds",
-  nextAction: "Chase Sam", deliverables: "Dashboard + handover", notes: "", repoPath: null,
+  nextAction: "Chase Sam", deliverables: "Dashboard + handover", notes: "", repoPath: null, repoSlug: null,
 };
 
 const milestone: Milestone = {
@@ -108,7 +108,7 @@ describe("formatProjectContext", () => {
     const out = formatProjectContext({
       ...base,
       project: { ...project, repoPath: "/Users/founder/code/acme" },
-      repo: { branch: "main", ahead: 0, behind: 0, staged: 0, unstaged: 1, untracked: 0 },
+      repo: { branch: "main", ahead: 0, behind: 0, staged: 0, unstaged: 1, untracked: 0, source: "local" as const },
       commits: [{
         hash: "abc", shortHash: "abc", subject: "feat(ingest): loader", body: "",
         authorDate: "2026-07-28T10:00:00+02:00", files: [],
@@ -140,7 +140,7 @@ describe("formatProjectContext", () => {
     const out = formatProjectContext({
       ...base,
       project: { ...project, repoPath: "/Users/founder/code/acme" },
-      repo: { branch: "main", ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0 },
+      repo: { branch: "main", ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0, source: "local" as const },
       commits: manyCommits,
     });
     // Newest-first cap: commits 0-9 survive, the rest are dropped.

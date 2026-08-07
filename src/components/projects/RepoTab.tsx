@@ -12,13 +12,16 @@ export function RepoTab({ project, repo }: { project: Project; repo: RepoState }
       <Panel title="Repository">
         <RepoLink project={project} />
       </Panel>
-      {project.repoPath && (
+      {(project.repoPath || project.repoSlug) && (
         <Panel title="Recent commits">
           {repo.loading ? (
             <p className="text-[0.8rem] text-[var(--color-muted)]">Reading repo…</p>
           ) : repo.error ? (
             <p className="text-[0.8rem] text-[var(--color-accent-soft)]">
-              Couldn&apos;t read the repo at {project.repoPath}. Re-link it above.
+              Couldn&apos;t read {project.repoPath ?? project.repoSlug}. Re-link it above.
+              {!project.repoSlug && (
+                <> This project has no GitHub remote recorded, so it can only be read in local dev.</>
+              )}
             </p>
           ) : (
             <CommitFeed commits={repo.commits} />

@@ -7,7 +7,7 @@ const snapshot: ProjectSnapshot = {
     id: "p1", createdAt: "", updatedAt: "", name: "Acme Dashboard", company: "Acme",
     type: "paid project", stage: "building", priority: "high", startDate: "2026-07-01",
     dueDate: "2026-08-15", currentMilestone: "", currentBlocker: "", nextAction: "",
-    deliverables: "", notes: "", repoPath: null,
+    deliverables: "", notes: "", repoPath: null, repoSlug: null,
   },
   milestones: [{
     id: "m1", createdAt: "", updatedAt: "", projectId: "p1", name: "Ingest",

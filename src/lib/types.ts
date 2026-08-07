@@ -173,7 +173,12 @@ export interface Project extends BaseRecord {
   nextAction: string;
   deliverables: string;
   notes: string;
+  /** Absolute path on the founder's Mac. Readable only in local dev — a
+   *  deployed function's filesystem holds nothing but the build output. */
   repoPath: string | null;
+  /** "owner/repo". The deployed app's only way to read the repo; filled in
+   *  automatically from the origin remote when linking locally. */
+  repoSlug: string | null;
 }
 
 export interface Milestone extends BaseRecord {
