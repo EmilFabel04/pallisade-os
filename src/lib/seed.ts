@@ -372,6 +372,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     deliverables: "Reconciliation tool, admin dashboard, 1h handover session",
     notes: "First paid build. Get it right — strong referral potential.",
     repoPath: null,
+    repoSlug: null,
   },
   {
     name: "Investor Reporting Pilot",
@@ -387,6 +388,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     deliverables: "Automated report pipeline demo + branded PDF sample",
     notes: "If the pilot lands this becomes a retained build.",
     repoPath: null,
+    repoSlug: null,
   },
   {
     name: "Onboarding Workflow Demo",
@@ -402,6 +404,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     deliverables: "Clickable onboarding flow mockup",
     notes: "Prep a sharp demo for the discovery call next week.",
     repoPath: null,
+    repoSlug: null,
   },
   {
     name: "Pallisade Outreach Engine",
@@ -417,6 +420,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     deliverables: "Internal tool to run my own outreach at scale",
     notes: "Dogfood it — also a potential productised offering later.",
     repoPath: null,
+    repoSlug: null,
   },
   {
     name: "Contract Assistant Proposal",
@@ -432,6 +436,7 @@ const projectSeeds: Array<Omit<Project, "id" | "createdAt" | "updatedAt">> = [
     deliverables: "Written proposal with ROI breakdown",
     notes: "ROI-led proposal. Follow up today.",
     repoPath: null,
+    repoSlug: null,
   },
 ];
 

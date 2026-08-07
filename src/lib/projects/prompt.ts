@@ -50,7 +50,13 @@ function repoBlock(project: Project, repo: RepoStatus | null, commits: Commit[])
 
   const lines = commits
     .slice(0, 20)
-    .map((c) => `  - ${c.authorDate.slice(0, 10)} ${c.shortHash} ${c.subject} (${c.files.length} files)`)
+    // The GitHub reader cannot fill `files` without one request per commit,
+    // so the clause is omitted rather than reported as "(0 files)" — which
+    // would tell the model the commit touched nothing.
+    .map((c) => {
+      const files = c.files.length ? ` (${c.files.length} files)` : "";
+      return `  - ${c.authorDate.slice(0, 10)} ${c.shortHash} ${c.subject}${files}`;
+    })
     .join("\n");
 
   return `${head}\nRecent commits (newest first):\n${lines}`;

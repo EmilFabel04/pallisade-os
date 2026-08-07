@@ -11,6 +11,7 @@
    ============================================================ */
 
 import path from "node:path";
+import { parseRepoSlug } from "./slug";
 import type { Project } from "@/lib/types";
 
 /**
@@ -50,6 +51,32 @@ export function pathMatchesAny(candidate: string, paths: string[]): boolean {
 /** True when some project has this exact path stored as its repo. */
 export function isLinkedRepoPath(candidate: string, projects: Project[]): boolean {
   return pathMatchesAny(candidate, linkedRepoPaths(projects));
+}
+
+/**
+ * Every distinct GitHub slug stored on a project, normalised to "owner/repo".
+ *
+ * The slug gate exists for the same reason as the path gate above, and is
+ * just as necessary: GITHUB_TOKEN carries `repo` scope, so an ungated
+ * `action=log&path=owner/repo` would let any signed-in caller read commit
+ * messages from EVERY private repo the token can reach — a much wider blast
+ * radius than the local-path case, since it is not limited to this Mac.
+ */
+export function linkedRepoSlugs(projects: Project[]): string[] {
+  const seen = new Set<string>();
+  for (const p of projects) {
+    const slug = parseRepoSlug(p.repoSlug);
+    if (slug) seen.add(slug.toLowerCase());
+  }
+  return [...seen];
+}
+
+/** True when some project has this GitHub repo linked. Case-insensitive,
+ *  because GitHub owner and repo names are. */
+export function isLinkedRepoSlug(candidate: string, projects: Project[]): boolean {
+  const slug = parseRepoSlug(candidate);
+  if (!slug) return false;
+  return linkedRepoSlugs(projects).includes(slug.toLowerCase());
 }
 
 /**

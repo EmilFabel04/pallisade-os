@@ -111,6 +111,7 @@ export function buildProject(a: Args): New<Project> {
     deliverables: str(a.deliverables),
     notes: str(a.notes),
     repoPath: orNull(a.repoPath),
+    repoSlug: null,
   };
 }
 

@@ -11,6 +11,7 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { parseLog, parseStatus, LOG_FORMAT } from "./parse";
+import { parseRepoSlug } from "./slug";
 import type { Commit, GitErrorCode, RepoStatus } from "./types";
 
 const run = promisify(execFile);
@@ -69,7 +70,31 @@ async function git(repoPath: string, args: string[]): Promise<string> {
 
 export async function readStatus(repoPath: string): Promise<RepoStatus> {
   const dir = await resolveRepo(repoPath);
-  return parseStatus(await git(dir, ["status", "--porcelain=v2", "--branch"]));
+  const status = parseStatus(await git(dir, ["status", "--porcelain=v2", "--branch"]));
+  // Tagged at the boundary rather than inside parseStatus, which is a pure
+  // string parser and has no idea which reader called it.
+  return { ...status, source: "local" };
+}
+
+/**
+ * "owner/repo" for this repo's origin remote, or null.
+ *
+ * Called when a repo is linked locally so the slug is recorded at the same
+ * time. Without it the founder would have to link every project twice — once
+ * with a path for local dev, once with a slug for the deployed app — and the
+ * second one would only be discovered when production showed "not found".
+ *
+ * Never throws: a repo with no origin, or one hosted somewhere other than
+ * GitHub, is a normal state and must not fail the link.
+ */
+export async function readOriginSlug(repoPath: string): Promise<string | null> {
+  try {
+    const dir = await resolveRepo(repoPath);
+    const url = await git(dir, ["remote", "get-url", "origin"]);
+    return parseRepoSlug(url.trim());
+  } catch {
+    return null;
+  }
 }
 
 export async function readCommits(

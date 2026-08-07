@@ -16,11 +16,23 @@ const IDLE: RepoState = { status: null, commits: [], error: null, loading: false
 /** Comfortably past the store's 450ms persist debounce plus a local write. */
 const JUST_LINKED_RETRY_MS = 1000;
 
-export function useRepo(repoPath: string | null, limit = 50): RepoState {
+/**
+ * Both stored references are passed through to the server, which decides
+ * which one it can actually read (local path in dev, GitHub slug when
+ * deployed). Depending on the pair rather than a single string means the hook
+ * re-runs when either changes — notably when linking locally fills in the
+ * slug detected from the origin remote.
+ */
+export function useRepo(
+  refs: { repoPath?: string | null; repoSlug?: string | null },
+  limit = 50,
+): RepoState {
   const [state, setState] = useState<RepoState>(IDLE);
+  const repoPath = refs.repoPath ?? null;
+  const repoSlug = refs.repoSlug ?? null;
 
   useEffect(() => {
-    if (!repoPath) {
+    if (!repoPath && !repoSlug) {
       setState(IDLE);
       return;
     }
@@ -30,9 +42,10 @@ export function useRepo(repoPath: string | null, limit = 50): RepoState {
     setState({ ...IDLE, loading: true });
 
     (async () => {
+      const query = { repoPath, repoSlug };
       const [s, c] = await Promise.all([
-        fetchRepoStatus(repoPath),
-        fetchCommits(repoPath, limit),
+        fetchRepoStatus(query),
+        fetchCommits(query, limit),
       ]);
       if (cancelled) return;
 
@@ -48,7 +61,7 @@ export function useRepo(repoPath: string | null, limit = 50): RepoState {
           timer = setTimeout(resolve, JUST_LINKED_RETRY_MS);
         });
         if (cancelled) return;
-        commits = await fetchCommits(repoPath, limit);
+        commits = await fetchCommits(query, limit);
         if (cancelled) return;
       }
 
@@ -66,7 +79,7 @@ export function useRepo(repoPath: string | null, limit = 50): RepoState {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [repoPath, limit]);
+  }, [repoPath, repoSlug, limit]);
 
   return state;
 }

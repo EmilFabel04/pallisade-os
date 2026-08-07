@@ -7,7 +7,7 @@ const project: Project = {
   type: "paid project", stage: "building", priority: "high",
   startDate: "2026-07-01", dueDate: "2026-08-15", currentMilestone: "",
   currentBlocker: "Waiting on their API credentials", nextAction: "Chase Sam for the key",
-  deliverables: "Live dashboard + handover doc", notes: "", repoPath: "/Users/e/code/acme",
+  deliverables: "Live dashboard + handover doc", notes: "", repoPath: "/Users/e/code/acme", repoSlug: null,
 };
 
 const milestone: Milestone = {
@@ -24,7 +24,7 @@ const task: Task = {
 
 const base = {
   project, milestones: [milestone], tasks: [task],
-  repo: { branch: "main", ahead: 1, behind: 0, staged: 0, unstaged: 2, untracked: 1 },
+  repo: { branch: "main", ahead: 1, behind: 0, staged: 0, unstaged: 2, untracked: 1, source: "local" as const },
   commits: [{
     hash: "abc123", shortHash: "abc123", subject: "feat(ingest): batch loader",
     body: "", authorDate: "2026-07-18T10:00:00+02:00", files: ["src/ingest.ts"],
@@ -119,7 +119,7 @@ describe("buildProjectSystemPrompt", () => {
     const p = buildProjectSystemPrompt({
       ...base,
       project: { ...project, repoPath: "/Users/e/code/acme" },
-      repo: { branch: "main", ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0 },
+      repo: { branch: "main", ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0, source: "local" as const },
       commits: [],
     });
     expect(p).toMatch(/recent commits:\s*\(none\)/i);

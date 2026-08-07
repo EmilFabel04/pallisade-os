@@ -53,7 +53,7 @@ export function OverviewTab({
           {project.nextAction}
         </p>
       )}
-      {project.repoPath && !repo.error && repo.commits.length > 0 && (
+      {(project.repoPath || project.repoSlug) && !repo.error && repo.commits.length > 0 && (
         <Panel title="Recent commits">
           <CommitFeed commits={repo.commits} limit={5} />
         </Panel>
