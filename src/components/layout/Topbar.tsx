@@ -28,6 +28,8 @@ const HIT_ROUTE: Record<SearchHit["kind"], string> = {
   notes: "/notebook",
   milestones: "/projects",
   projectThreads: "/projects",
+  quotes: "/pricing",
+  comparables: "/pricing",
 };
 
 const HIT_LABEL: Record<SearchHit["kind"], string> = {
@@ -52,6 +54,8 @@ const HIT_LABEL: Record<SearchHit["kind"], string> = {
   notes: "Note",
   milestones: "Milestone",
   projectThreads: "Project Thread",
+  quotes: "Quote",
+  comparables: "Comparable",
 };
 
 const QUICK_ACTIONS: { kind: NonNullable<QuickAddKind>; label: string; icon: typeof Plus }[] = [

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { reconcileFollowUps, reconcileProjects } from "@/lib/reconcile";
-import type { DataShape, Lead, Project, Task } from "@/lib/types";
+import { backfillSettings, reconcileFollowUps, reconcileProjects, reconcileSettings } from "@/lib/reconcile";
+import { DEFAULT_SETTINGS } from "@/lib/seed";
+import type { DataShape, Lead, Project, Settings, Task } from "@/lib/types";
 
 const lead = (over: Partial<Lead>): Lead =>
   ({ id: "l1", nextFollowUp: null, ...over }) as Lead;
@@ -23,6 +24,7 @@ function shape(over: Partial<DataShape>): DataShape {
     positioningProfiles: [], contentThreads: [], brainThreads: [], newsFeed: [],
     newsInterests: [], newsBookmarks: [], notes: [], metricEntries: [],
     milestones: [], projectThreads: [], voiceSamples: [], voiceProfile: [],
+    quotes: [], comparables: [],
     settings: {} as DataShape["settings"],
     ...over,
   };
@@ -143,5 +145,73 @@ describe("reconcileProjects", () => {
     expect(() => reconcileProjects(shape({ projects: [malformed] }))).not.toThrow();
     const out = reconcileProjects(shape({ projects: [malformed] }));
     expect(out.milestones).toHaveLength(0);
+  });
+});
+
+const completeSettings: Settings = {
+  ...DEFAULT_SETTINGS,
+  targetMarginPct: 0.35,
+  minimumSetupFee: 25000,
+  usdToZar: 19.5,
+  capexMultipliers: { micro: 0.5, small: 0.9, mid: 1.3, enterprise: 2.5 },
+};
+
+describe("backfillSettings", () => {
+  const complete = completeSettings;
+
+  it("backfills all four pricing keys when missing entirely", () => {
+    // Simulates a row written before Task 1 added these fields — present in
+    // the `Settings` type but absent at runtime. Same rationale as the
+    // `malformed` cast in the `reconcileProjects` tests above.
+    const {
+      targetMarginPct: _t, minimumSetupFee: _m, usdToZar: _u, capexMultipliers: _c,
+      ...rest
+    } = complete;
+    const malformed = rest as Settings;
+
+    const out = backfillSettings(malformed);
+    expect(out.targetMarginPct).toBe(DEFAULT_SETTINGS.targetMarginPct);
+    expect(out.minimumSetupFee).toBe(DEFAULT_SETTINGS.minimumSetupFee);
+    expect(out.usdToZar).toBe(DEFAULT_SETTINGS.usdToZar);
+    expect(out.capexMultipliers).toEqual(DEFAULT_SETTINGS.capexMultipliers);
+  });
+
+  it("keeps a stored 0 for minimumSetupFee and usdToZar rather than replacing it with the default", () => {
+    const out = backfillSettings({ ...complete, minimumSetupFee: 0, usdToZar: 0 });
+    expect(out.minimumSetupFee).toBe(0);
+    expect(out.usdToZar).toBe(0);
+  });
+
+  it("backfills only the missing capex bands, keeping the one already set", () => {
+    const partial: Settings = {
+      ...complete,
+      capexMultipliers: { micro: 0.55 } as Settings["capexMultipliers"],
+    };
+    const out = backfillSettings(partial);
+    expect(out.capexMultipliers).toEqual({
+      micro: 0.55,
+      small: DEFAULT_SETTINGS.capexMultipliers.small,
+      mid: DEFAULT_SETTINGS.capexMultipliers.mid,
+      enterprise: DEFAULT_SETTINGS.capexMultipliers.enterprise,
+    });
+  });
+
+  it("returns the same reference when nothing is missing", () => {
+    expect(backfillSettings(complete)).toBe(complete);
+  });
+});
+
+describe("reconcileSettings", () => {
+  it("backfills settings at the DataShape level", () => {
+    const { targetMarginPct: _t, ...rest } = completeSettings;
+    const malformed = rest as Settings;
+
+    const out = reconcileSettings(shape({ settings: malformed }));
+    expect(out.settings.targetMarginPct).toBe(DEFAULT_SETTINGS.targetMarginPct);
+  });
+
+  it("returns the same DataShape reference when settings are already complete", () => {
+    const input = shape({ settings: completeSettings });
+    expect(reconcileSettings(input)).toBe(input);
   });
 });

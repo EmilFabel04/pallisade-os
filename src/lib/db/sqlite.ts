@@ -12,6 +12,7 @@ import type { InStatement } from "@libsql/client";
 import { getClient } from "./client";
 import type { DataShape } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/seed";
+import { backfillSettings } from "@/lib/reconcile";
 
 export const COLLECTIONS = [
   "leads",
@@ -36,6 +37,8 @@ export const COLLECTIONS = [
   "metricEntries",
   "milestones",
   "projectThreads",
+  "quotes",
+  "comparables",
 ] as const;
 export type Coll = (typeof COLLECTIONS)[number];
 
@@ -97,7 +100,14 @@ export async function loadAll(): Promise<DataShape> {
     `SELECT json FROM settings WHERE id = 'singleton'`,
   );
   const sRow = sResult.rows[0];
-  out.settings = sRow ? JSON.parse(sRow.json as string) : DEFAULT_SETTINGS;
+  // Backfill against DEFAULT_SETTINGS: a row written before a settings field
+  // existed (or partway through a partial save) can be missing it, and the
+  // pricing engine treats an absent key very differently from a zero one
+  // (see backfillSettings) — this must happen before any server-side reader
+  // can observe the parsed row.
+  out.settings = backfillSettings(
+    sRow ? JSON.parse(sRow.json as string) : DEFAULT_SETTINGS,
+  );
 
   return out;
 }

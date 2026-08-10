@@ -345,6 +345,11 @@ export interface Settings {
   accentColor: string;
   currency: "ZAR" | "USD";
   secondaryCurrencyEnabled: boolean;
+  /* pricing — 0 means "unset" for the two below, not "zero" */
+  targetMarginPct: number;
+  minimumSetupFee: number;
+  usdToZar: number;
+  capexMultipliers: { micro: number; small: number; mid: number; enterprise: number };
 }
 
 /* ---------- meeting prep playbook ---------- */
@@ -485,6 +490,133 @@ export interface MetricEntry extends BaseRecord {
   value: number;
 }
 
+/* ---------- pricing ---------- */
+
+export const BUILD_STATUSES = ["new", "adapt existing", "license as-is"] as const;
+export type BuildStatus = (typeof BUILD_STATUSES)[number];
+
+export const AI_DEPTHS = ["none", "light", "core"] as const;
+export type AiDepth = (typeof AI_DEPTHS)[number];
+
+export const SUPPORT_LOADS = ["low", "medium", "high"] as const;
+export type SupportLoad = (typeof SUPPORT_LOADS)[number];
+
+/** How a build is described. A quote and a comparable use the same vocabulary —
+    that is the only reason matching them means anything. */
+export interface BuildAttributes {
+  buildStatus: BuildStatus;
+  surfaces: number;
+  integrations: string[];
+  dataSources: number;
+  aiDepth: AiDepth;
+  userCount: number;
+  supportLoad: SupportLoad;
+}
+
+export const COMPARABLE_KINDS = ["market", "reference"] as const;
+export type ComparableKind = (typeof COMPARABLE_KINDS)[number];
+
+/** Market examples and reference builds. Own deals are NOT stored here — they
+    are derived from `quotes`, so there is nothing to keep in sync. */
+export interface Comparable extends BaseRecord {
+  kind: ComparableKind;
+  name: string;
+  notes: string;
+  sourceUrl: string;
+  attributes: BuildAttributes;
+  setupPrice: number;
+  monthlyPrice: number;
+  currency: "ZAR" | "USD";
+}
+
+export const QUOTE_STATUSES = ["draft", "sent", "won", "lost"] as const;
+export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
+
+export const LOST_REASONS = ["price", "timing", "fit", "other"] as const;
+export type LostReason = (typeof LOST_REASONS)[number];
+
+export interface OpexLine {
+  id: string;
+  label: string;
+  monthlyCost: number; // ZAR
+}
+
+export interface AiUsageLine {
+  model: string;
+  runsPerDay: number;
+  inputTokensPerRun: number;
+  outputTokensPerRun: number;
+  inputPriceOverride: number | null; // USD per 1M tokens
+  outputPriceOverride: number | null; // USD per 1M tokens
+}
+
+export interface IntentRead {
+  score: number; // 0-100
+  band: "cold" | "warm" | "hot";
+  signals: { quote: string; weight: number }[];
+  risks: string[];
+  generatedAt: string;
+}
+
+export type CapexBand = "unknown" | "micro" | "small" | "mid" | "enterprise";
+
+export interface CapexRead {
+  band: CapexBand;
+  headcount: number | null;
+  revenueNote: string;
+  evidence: { claim: string; url: string }[];
+  confidence: "low" | "medium" | "high";
+  generatedAt: string;
+}
+
+export interface PriceTriple {
+  floor: number;
+  target: number;
+  stretch: number;
+}
+
+export interface MatchedComparable {
+  source: "comparable" | "quote";
+  id: string;
+  label: string;
+  similarity: number;
+  weight: number;
+}
+
+export interface PriceBand {
+  /** null when there are too few comparables to anchor a setup fee. */
+  setup: PriceTriple | null;
+  /** Always computable — opex is always known. */
+  monthly: PriceTriple;
+  anchor: { low: number; mid: number; high: number } | null;
+  /** Anchor contributors only. Price-losses report through `clamps`. */
+  matched: MatchedComparable[];
+  clamps: string[];
+  degraded: string[];
+  reasoning: string;
+  computedAt: string;
+}
+
+export interface Quote extends BaseRecord {
+  leadId: string;
+  name: string;
+  attributes: BuildAttributes;
+  opexLines: OpexLine[];
+  aiUsage: AiUsageLine | null;
+  intent: IntentRead | null;
+  capex: CapexRead | null;
+  band: PriceBand | null;
+  status: QuoteStatus;
+  sentSetup: number;
+  sentMonthly: number;
+  closedSetup: number;
+  closedMonthly: number;
+  /** Only "price" losses inform the ceiling — a deal lost on timing must not
+      drag your pricing down. */
+  lostReason: LostReason | "";
+  notes: string;
+}
+
 /* ---------- collections registry ---------- */
 
 export interface DataShape {
@@ -510,6 +642,8 @@ export interface DataShape {
   metricEntries: MetricEntry[];
   milestones: Milestone[];
   projectThreads: ProjectThread[];
+  quotes: Quote[];
+  comparables: Comparable[];
   settings: Settings;
 }
 
@@ -525,4 +659,6 @@ export type AdvisorSnapshot = Omit<
   // The founder's raw writing samples are content-studio material, not sales
   // context — omitted for the same reason positioningProfiles is.
   | "voiceSamples" | "voiceProfile"
+  // quotes and comparables are deliberately NOT omitted: what was quoted to a
+  // company is exactly what the Sales Advisor needs.
 >;

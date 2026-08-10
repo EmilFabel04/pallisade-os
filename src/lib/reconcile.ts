@@ -1,5 +1,6 @@
-import type { DataShape, Milestone } from "./types";
+import type { DataShape, Milestone, Settings } from "./types";
 import { nowISO, uid } from "./utils";
+import { DEFAULT_SETTINGS } from "./seed";
 
 /**
  * One-time, idempotent data reconciliation applied at hydration so existing
@@ -86,4 +87,67 @@ export function reconcileProjects(data: DataShape): DataShape {
   );
 
   return { ...data, projects, milestones: [...data.milestones, ...created] };
+}
+
+const CAPEX_BANDS = ["micro", "small", "mid", "enterprise"] as const;
+
+/**
+ * Backfills a `Settings` object against `DEFAULT_SETTINGS`, key by key.
+ *
+ * `Settings` is typed as fully populated, but a row written before a field
+ * existed (e.g. before the pricing fields were added) can't be trusted to
+ * actually carry it at runtime — same defensive stance as `reconcileProjects`
+ * above. A missing `targetMarginPct` silently turns every retainer floor into
+ * `NaN`, and a missing `capexMultipliers` throws outright, so this has to run
+ * before that data reaches the pricing engine.
+ *
+ * Merges with `??`, never `||` or a blind object spread: `minimumSetupFee: 0`
+ * and `usdToZar: 0` are deliberate "unset" sentinels the engine already
+ * understands (see `Settings`), and `??` is the one operator that backfills
+ * `null`/`undefined` while leaving a stored `0` alone. `capexMultipliers` is
+ * merged per-band for the same reason — a row can plausibly carry a partial
+ * object (e.g. only `micro` set).
+ *
+ * Returns the same reference when nothing was missing, matching
+ * `reconcileFollowUps` / `reconcileProjects` above.
+ */
+export function backfillSettings(settings: Settings): Settings {
+  let changed = false;
+  const patch: Partial<Settings> = {};
+
+  const scalarKeys = [
+    "businessName", "founderName", "mainMarket", "services", "accentColor",
+    "currency", "secondaryCurrencyEnabled",
+    "targetMarginPct", "minimumSetupFee", "usdToZar",
+  ] as const;
+  for (const k of scalarKeys) {
+    if (settings[k] === undefined || settings[k] === null) {
+      (patch as Record<string, unknown>)[k] = DEFAULT_SETTINGS[k];
+      changed = true;
+    }
+  }
+
+  const rawCapex = settings.capexMultipliers;
+  let capexChanged = false;
+  const capexPatch: Partial<Settings["capexMultipliers"]> = {};
+  for (const band of CAPEX_BANDS) {
+    const v = rawCapex?.[band];
+    if (v === undefined || v === null) {
+      capexPatch[band] = DEFAULT_SETTINGS.capexMultipliers[band];
+      capexChanged = true;
+    }
+  }
+  if (capexChanged) {
+    patch.capexMultipliers = { ...rawCapex, ...capexPatch };
+    changed = true;
+  }
+
+  return changed ? { ...settings, ...patch } : settings;
+}
+
+/** Runs `backfillSettings` at the `DataShape` level, alongside the other
+ *  hydrate-time reconciliations. */
+export function reconcileSettings(data: DataShape): DataShape {
+  const settings = backfillSettings(data.settings);
+  return settings === data.settings ? data : { ...data, settings };
 }

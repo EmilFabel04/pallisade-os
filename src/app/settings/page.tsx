@@ -6,7 +6,7 @@ import { useStore } from "@/lib/store";
 import { aiStatus, type AIStatus } from "@/lib/aiClient";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
-import { Field, TextArea, TextInput } from "@/components/ui/Field";
+import { Field, NumberInput, TextArea, TextInput } from "@/components/ui/Field";
 import { ConfirmDialog } from "@/components/ui/Modal";
 import type { Settings } from "@/lib/types";
 
@@ -139,6 +139,69 @@ export default function SettingsPage() {
             </label>
           </Field>
         </div>
+      </Panel>
+
+      <Panel title="Pricing">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5">
+          <Field
+            label="Target margin on monthly (%)"
+            hint="The retainer floor is running cost plus this. Nothing can be quoted below it."
+          >
+            <NumberInput
+              value={Math.round((draft.targetMarginPct ?? 0) * 100)}
+              min={0}
+              max={500}
+              onChange={(e) => set("targetMarginPct", Number(e.target.value) / 100)}
+            />
+          </Field>
+
+          <Field
+            label="Minimum setup fee"
+            hint="Your absolute walk-away. Leave at 0 to let comparables set the floor alone."
+          >
+            <NumberInput
+              value={draft.minimumSetupFee ?? 0}
+              min={0}
+              onChange={(e) => set("minimumSetupFee", Number(e.target.value))}
+            />
+          </Field>
+
+          <Field
+            label="USD → ZAR rate"
+            hint="Market comparables are usually quoted in USD. Until this is set, they are excluded from matching."
+          >
+            <NumberInput
+              value={draft.usdToZar ?? 0}
+              min={0}
+              step={0.01}
+              onChange={(e) => set("usdToZar", Number(e.target.value))}
+            />
+          </Field>
+        </div>
+
+        <p className="eyebrow mt-6 mb-3">Capex ceiling multipliers</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3.5">
+          {(["micro", "small", "mid", "enterprise"] as const).map((band) => (
+            <Field key={band} label={band}>
+              <NumberInput
+                value={draft.capexMultipliers?.[band] ?? 1}
+                min={0}
+                step={0.1}
+                onChange={(e) =>
+                  set("capexMultipliers", {
+                    ...draft.capexMultipliers,
+                    [band]: Number(e.target.value),
+                  })
+                }
+              />
+            </Field>
+          ))}
+        </div>
+        <p className="text-[0.75rem] text-[var(--color-dim)] mt-3 leading-relaxed">
+          Applied to the comparable-derived ceiling, not to the target. A bigger client
+          does not make the work worth more — it widens how far above the anchor you can
+          reasonably push.
+        </p>
       </Panel>
 
       <Panel title="AI">

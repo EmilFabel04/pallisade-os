@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import type {
+  Comparable,
   CollectionKey,
   DataShape,
   DialList,
@@ -24,6 +25,7 @@ import type {
   Playbook,
   Project,
   ProjectThread,
+  Quote,
   Scorecard,
   Settings,
   Target,
@@ -34,7 +36,7 @@ import type {
 import { ApiAdapter } from "./db/apiAdapter";
 import type { StorageAdapter } from "./db/adapter";
 import { DEFAULT_SETTINGS, seedData } from "./seed";
-import { reconcileFollowUps, reconcileProjects } from "./reconcile";
+import { reconcileFollowUps, reconcileProjects, reconcileSettings } from "./reconcile";
 import { nowISO, uid } from "./utils";
 
 /* The single persistence seam. Today: SQLite via the /api/data route
@@ -99,6 +101,8 @@ const EMPTY: DataShape = {
   metricEntries: [],
   milestones: [],
   projectThreads: [],
+  quotes: [],
+  comparables: [],
   settings: DEFAULT_SETTINGS,
 };
 
@@ -121,8 +125,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (loaded && Array.isArray(loaded.leads)) {
         // A valid payload (even all-empty arrays for a brand-new DB) — safe to
         // use and to persist from here on. Reconcile brings existing records up
-        // to date with newer behaviours (e.g. backfilling lead follow-up dates).
-        setData(reconcileProjects(reconcileFollowUps({ ...EMPTY, ...loaded })));
+        // to date with newer behaviours (e.g. backfilling lead follow-up dates,
+        // and settings keys added after this row was first written).
+        setData(reconcileSettings(reconcileProjects(reconcileFollowUps({ ...EMPTY, ...loaded }))));
         hydratedOk.current = true;
       } else {
         // Load FAILED (null/malformed). Start empty in memory for the UI, but
@@ -351,3 +356,6 @@ export const useVoiceProfile = () =>
   (useStore().voiceProfile as VoiceProfile[])[0] ?? null;
 
 export const useNotes = () => useStore().notes as Note[];
+
+export const useQuotes = () => useStore().quotes as Quote[];
+export const useComparables = () => useStore().comparables as Comparable[];

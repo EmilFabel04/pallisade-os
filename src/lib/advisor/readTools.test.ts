@@ -5,9 +5,12 @@ import type { AdvisorSnapshot } from "@/lib/types";
 function emptySnapshot(): AdvisorSnapshot {
   return {
     leads: [], interactions: [], projects: [], tasks: [], scorecards: [], painPoints: [], dialLists: [], milestones: [],
+    quotes: [], comparables: [],
     settings: {
       businessName: "X", founderName: "Y", mainMarket: "Z", services: "S",
       accentColor: "#000", currency: "ZAR", secondaryCurrencyEnabled: false,
+      targetMarginPct: 0.4, minimumSetupFee: 0, usdToZar: 0,
+      capexMultipliers: { micro: 0.7, small: 1.0, mid: 1.4, enterprise: 2.0 },
     },
   };
 }
