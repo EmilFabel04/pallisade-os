@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import type {
+  Comparable,
   CollectionKey,
   DataShape,
   DialList,
@@ -24,6 +25,7 @@ import type {
   Playbook,
   Project,
   ProjectThread,
+  Quote,
   Scorecard,
   Settings,
   Target,
@@ -99,6 +101,8 @@ const EMPTY: DataShape = {
   metricEntries: [],
   milestones: [],
   projectThreads: [],
+  quotes: [],
+  comparables: [],
   settings: DEFAULT_SETTINGS,
 };
 
@@ -351,3 +355,6 @@ export const useVoiceProfile = () =>
   (useStore().voiceProfile as VoiceProfile[])[0] ?? null;
 
 export const useNotes = () => useStore().notes as Note[];
+
+export const useQuotes = () => useStore().quotes as Quote[];
+export const useComparables = () => useStore().comparables as Comparable[];

@@ -26,6 +26,10 @@ export const DEFAULT_SETTINGS: Settings = {
   accentColor: "#e5484d",
   currency: "ZAR",
   secondaryCurrencyEnabled: true,
+  targetMarginPct: 0.4,
+  minimumSetupFee: 0,
+  usdToZar: 0,
+  capexMultipliers: { micro: 0.7, small: 1.0, mid: 1.4, enterprise: 2.0 },
 };
 
 function rec<T extends object>(data: T, ageDays = 3): T & {
@@ -870,6 +874,8 @@ export function seedData(): DataShape {
     metricEntries: [],
     milestones,
     projectThreads: [],
+    quotes: [],
+    comparables: [],
     settings: DEFAULT_SETTINGS,
   };
 }

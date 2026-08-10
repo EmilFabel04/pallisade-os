@@ -36,6 +36,8 @@ export const COLLECTIONS = [
   "metricEntries",
   "milestones",
   "projectThreads",
+  "quotes",
+  "comparables",
 ] as const;
 export type Coll = (typeof COLLECTIONS)[number];
 

@@ -57,6 +57,8 @@ export class ApiAdapter implements StorageAdapter {
       metricEntries: [],
       milestones: [],
       projectThreads: [],
+      quotes: [],
+      comparables: [],
       settings: DEFAULT_SETTINGS,
     };
     await this.save(empty);
