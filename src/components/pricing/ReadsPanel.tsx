@@ -74,7 +74,7 @@ export function ReadsPanel({
   const [capexError, setCapexError] = useState("");
 
   async function runIntent() {
-    if (!lead) return;
+    if (!lead || intentBusy) return;
     setIntentBusy(true);
     setIntentError("");
     try {
@@ -87,7 +87,7 @@ export function ReadsPanel({
   }
 
   async function runCapex() {
-    if (!lead) return;
+    if (!lead || capexBusy) return;
     setCapexBusy(true);
     setCapexError("");
     try {
