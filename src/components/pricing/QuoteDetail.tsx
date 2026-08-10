@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { BuildPanel } from "./BuildPanel";
 import { OpexPanel } from "./OpexPanel";
 import { ReadsPanel } from "./ReadsPanel";
+import { PricePanel } from "./PricePanel";
 import { useLeads, useSettings, useStore } from "@/lib/store";
 import { qualityTone } from "@/lib/badges";
 import { fmtCurrency, fmtDate } from "@/lib/utils";
@@ -64,6 +65,7 @@ export function QuoteDetail({ quote, onClose }: { quote: Quote; onClose: () => v
         <BuildPanel quote={quote} onPatch={patch} />
         <OpexPanel quote={quote} onPatch={patch} />
         <ReadsPanel quote={quote} lead={lead} onPatch={patch} />
+        <PricePanel quote={quote} lead={lead} onPatch={patch} />
       </div>
     </>
   );
