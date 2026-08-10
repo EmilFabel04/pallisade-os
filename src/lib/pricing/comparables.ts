@@ -20,7 +20,6 @@ export interface Candidate {
   attributes: BuildAttributes;
   setupPrice: number;
   monthlyPrice: number;
-  outcomeWeight: number;
   similarity: number;
   weight: number;
 }
@@ -58,7 +57,7 @@ export function buildCandidates(params: CandidateParams): CandidateSet {
     const sim = similarity(attributes, attrs);
     return {
       source, id, label, attributes: attrs,
-      setupPrice, monthlyPrice, outcomeWeight,
+      setupPrice, monthlyPrice,
       similarity: sim,
       weight: sim * outcomeWeight,
     };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildCandidates, OUTCOME_WEIGHTS, MIN_SIMILARITY } from "./comparables";
+import { buildCandidates, MIN_SIMILARITY } from "./comparables";
 import type { BuildAttributes, Comparable, Quote } from "@/lib/types";
 
 const ATTRS: BuildAttributes = {
@@ -55,9 +55,6 @@ describe("buildCandidates", () => {
       quotes: [quote({ id: "w1", status: "won" })],
     });
     const byId = Object.fromEntries(set.candidates.map((c) => [c.id, c]));
-    expect(byId.w1.outcomeWeight).toBe(OUTCOME_WEIGHTS.won);
-    expect(byId.m1.outcomeWeight).toBe(OUTCOME_WEIGHTS.market);
-    expect(byId.r1.outcomeWeight).toBe(OUTCOME_WEIGHTS.reference);
     expect(byId.w1.weight).toBeGreaterThan(byId.m1.weight);
     expect(byId.m1.weight).toBeGreaterThan(byId.r1.weight);
   });

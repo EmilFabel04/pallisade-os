@@ -23,16 +23,6 @@ async function post<T>(url: string, body: unknown, label: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function getPricingStatus(): Promise<{ configured: boolean }> {
-  try {
-    const res = await fetch("/api/pricing/intent", { method: "GET" });
-    if (!res.ok) return { configured: false };
-    return (await res.json()) as { configured: boolean };
-  } catch {
-    return { configured: false };
-  }
-}
-
 export function fetchIntent(leadId: string): Promise<IntentRead> {
   return post<IntentRead>("/api/pricing/intent", { leadId }, "The intent read");
 }

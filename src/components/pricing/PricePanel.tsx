@@ -5,10 +5,12 @@ import { Calculator } from "lucide-react";
 import { Panel } from "@/components/ui/Panel";
 import { Field, NumberInput, Select } from "@/components/ui/Field";
 import { preparePricing, buildBand } from "@/lib/pricing/band";
+import { monthlyFloor } from "@/lib/pricing/bounds";
+import { monthlyOpex } from "@/lib/pricing/opex";
 import { adjudicateRequestFrom } from "@/lib/pricing/recompute";
 import { fetchAdjudication } from "@/lib/pricingClient";
 import { useComparables, useQuotes, useSettings } from "@/lib/store";
-import { fmtCurrency, nowISO } from "@/lib/utils";
+import { fmtCurrency, nowISO, timeAgo } from "@/lib/utils";
 import { LOST_REASONS, type Lead, type LostReason, type PriceTriple, type Quote } from "@/lib/types";
 
 const DEGRADE_COPY: Record<string, string> = {
@@ -102,6 +104,14 @@ export function PricePanel({
 
   const band = quote.band;
 
+  // Recomputed live so a stale stored band can be caught rather than trusted —
+  // the same formula bounds.ts uses, never a hand copy.
+  const liveMonthlyFloor = monthlyFloor(
+    monthlyOpex(quote.opexLines, quote.aiUsage, settings.usdToZar).total,
+    settings.targetMarginPct,
+  );
+  const floorIsStale = band !== null && liveMonthlyFloor !== band.monthly.floor;
+
   return (
     <Panel
       title="Price"
@@ -117,6 +127,19 @@ export function PricePanel({
         </p>
       ) : (
         <>
+          <p className="text-[0.72rem] text-[var(--color-dim)] mb-3">
+            Computed {timeAgo(band.computedAt)}
+          </p>
+
+          {floorIsStale && (
+            <p className="text-[0.78rem] text-[var(--color-warning)] mb-3 leading-relaxed">
+              The running cost has changed since this price was computed — the monthly floor
+              here is {fmtCurrency(band.monthly.floor, settings.currency)}, but the quote&apos;s
+              current opex puts it at {fmtCurrency(liveMonthlyFloor, settings.currency)}.
+              Recompute.
+            </p>
+          )}
+
           <table className="w-full text-[0.86rem]">
             <thead>
               <tr className="text-[var(--color-dim)] text-[0.7rem] uppercase tracking-wider">

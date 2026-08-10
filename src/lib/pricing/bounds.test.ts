@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeBounds, capexMultiplier } from "./bounds";
+import { computeBounds, capexMultiplier, monthlyFloor } from "./bounds";
 import type { Candidate } from "./comparables";
 import type { BuildAttributes, Settings } from "@/lib/types";
 
@@ -13,7 +13,7 @@ const ATTRS: BuildAttributes = {
 function loss(id: string, setupPrice: number): Candidate {
   return {
     source: "quote", id, label: id, attributes: ATTRS,
-    setupPrice, monthlyPrice: 9000, outcomeWeight: 1, similarity: 0.8, weight: 0.8,
+    setupPrice, monthlyPrice: 9000, similarity: 0.8, weight: 0.8,
   };
 }
 
@@ -36,6 +36,22 @@ describe("capexMultiplier", () => {
   });
   it("treats an unknown band as neutral", () => {
     expect(capexMultiplier("unknown", MULT)).toBe(1);
+  });
+  it("treats a zero multiplier as neutral rather than as zero", () => {
+    // Settings' NumberInput has min={0} and Number("") is 0, so a cleared
+    // field must not collapse the ceiling to the floor.
+    expect(capexMultiplier("micro", { ...MULT, micro: 0 })).toBe(1);
+  });
+  it("treats a negative or non-finite multiplier as neutral", () => {
+    expect(capexMultiplier("micro", { ...MULT, micro: -1 })).toBe(1);
+    expect(capexMultiplier("micro", { ...MULT, micro: NaN })).toBe(1);
+  });
+});
+
+describe("monthlyFloor", () => {
+  it("is opex plus target margin, rounded — the single formula bounds.ts and OpexPanel share", () => {
+    expect(monthlyFloor(5000, 0.4)).toBe(7000);
+    expect(monthlyFloor(333, 0.1)).toBe(366); // round(333 * 1.1) = round(366.3)
   });
 });
 
@@ -89,5 +105,25 @@ describe("computeBounds", () => {
     expect(b.setup!.floor).toBe(150000);
     expect(b.setup!.ceiling).toBe(150000);
     expect(b.notes.join(" ")).toContain("floor wins");
+    expect(b.notes.join(" ")).toContain("Price-loss cap");
+  });
+
+  it("does not invent a price-loss refusal when the floor wins with zero price losses", () => {
+    // Reproduces the reviewer's case: nothing was ever lost on price — the
+    // capex multiplier and minimum setup fee alone squeeze the ceiling below
+    // the floor. The note must not claim a client refused a number.
+    const b = computeBounds({
+      ...BASE,
+      minimumSetupFee: 120000,
+      capexBand: "micro",
+      priceLosses: [],
+    });
+    expect(b.setup!.ceiling).toBe(120000); // 160000 × 0.7 = 112000, floor wins at 120000
+    const joined = b.notes.join(" ");
+    expect(joined).toContain("floor wins");
+    expect(joined).not.toContain("price loss");
+    expect(joined.toLowerCase()).not.toContain("price-loss");
+    expect(joined).toContain("capex multiplier");
+    expect(joined).toContain("minimum setup fee");
   });
 });

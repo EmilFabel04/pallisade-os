@@ -12,7 +12,7 @@ function cand(id: string, setupPrice: number, weight: number): Candidate {
   return {
     source: "comparable", id, label: id, attributes: ATTRS,
     setupPrice, monthlyPrice: setupPrice / 12,
-    outcomeWeight: 1, similarity: weight, weight,
+    similarity: weight, weight,
   };
 }
 

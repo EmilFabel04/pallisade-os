@@ -4,6 +4,7 @@ import { Plus, X } from "lucide-react";
 import { Panel } from "@/components/ui/Panel";
 import { Field, FormGrid, NumberInput, Select, TextInput } from "@/components/ui/Field";
 import { monthlyOpex } from "@/lib/pricing/opex";
+import { monthlyFloor } from "@/lib/pricing/bounds";
 import { PRICED_MODELS } from "@/lib/pricing/prices";
 import { useSettings } from "@/lib/store";
 import { fmtCurrency, uid } from "@/lib/utils";
@@ -18,7 +19,7 @@ export function OpexPanel({
 }) {
   const settings = useSettings();
   const opex = monthlyOpex(quote.opexLines, quote.aiUsage, settings.usdToZar);
-  const floor = Math.round(opex.total * (1 + settings.targetMarginPct));
+  const floor = monthlyFloor(opex.total, settings.targetMarginPct);
 
   const setLine = (id: string, p: Partial<OpexLine>) =>
     onPatch({ opexLines: quote.opexLines.map((l) => (l.id === id ? { ...l, ...p } : l)) });
