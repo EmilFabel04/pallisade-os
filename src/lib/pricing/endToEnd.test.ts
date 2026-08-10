@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { preparePricing, buildBand } from "./band";
+import { adjudicateRequestFrom } from "@/lib/pricing/recompute";
 import { DEFAULT_SETTINGS } from "@/lib/seed";
 import type { BuildAttributes, Comparable, Quote, Settings } from "@/lib/types";
 
@@ -47,6 +48,12 @@ describe("pricing engine end to end", () => {
     expect(band.monthly.target).toBeGreaterThanOrEqual(band.monthly.floor);
     expect(band.setup).toBeNull();
     expect(band.degraded).toContain("no-anchor");
+    // A mis-wired assembly on this degenerate input would collapse to NaN or
+    // undefined rather than 0 — that is the failure a floor≥target comparison
+    // alone would miss, since both sides can go missing together.
+    expect(Number.isFinite(band.monthly.floor)).toBe(true);
+    expect(Number.isFinite(band.monthly.target)).toBe(true);
+    expect(Number.isFinite(band.monthly.stretch)).toBe(true);
   });
 
   it("never quotes a monthly below running cost plus margin", () => {
@@ -56,17 +63,43 @@ describe("pricing engine end to end", () => {
     expect(band.monthly.stretch).toBeGreaterThanOrEqual(band.monthly.target);
   });
 
-  it("orders every band floor ≤ target ≤ stretch", () => {
-    const { band } = run();
-    expect(band.setup!.floor).toBeLessThanOrEqual(band.setup!.target);
-    expect(band.setup!.target).toBeLessThanOrEqual(band.setup!.stretch);
+  it("wires the actual computed bounds through assembly, not just any ordered triple", () => {
+    const { prepared, band } = run();
+    // clampTriple would force floor ≤ target ≤ stretch even if buildBand fed it
+    // the wrong bounds object entirely, so that ordering alone proves nothing.
+    // What it cannot fake is the floor matching the bounds this exact input
+    // computed, and every target/stretch sitting inside that specific range.
+    expect(band.setup!.floor).toBe(prepared.bounds.setup!.floor);
+    expect(band.monthly.floor).toBe(prepared.bounds.monthly.floor);
+
+    expect(band.setup!.target).toBeGreaterThanOrEqual(prepared.bounds.setup!.floor);
+    expect(band.setup!.target).toBeLessThanOrEqual(prepared.bounds.setup!.ceiling);
+    expect(band.setup!.stretch).toBeGreaterThanOrEqual(prepared.bounds.setup!.floor);
+    expect(band.setup!.stretch).toBeLessThanOrEqual(prepared.bounds.setup!.ceiling);
+
+    expect(band.monthly.target).toBeGreaterThanOrEqual(prepared.bounds.monthly.floor);
+    expect(band.monthly.target).toBeLessThanOrEqual(prepared.bounds.monthly.ceiling);
+    expect(band.monthly.stretch).toBeGreaterThanOrEqual(prepared.bounds.monthly.floor);
+    expect(band.monthly.stretch).toBeLessThanOrEqual(prepared.bounds.monthly.ceiling);
   });
 
-  it("prices a licensed build exactly as high as a new one", () => {
-    const newBuild = run().band;
-    const licensed = run({ attributes: { ...ATTRS, buildStatus: "license as-is" } }).band;
-    expect(licensed.setup!.target).toBe(newBuild.setup!.target);
-    expect(licensed.setup!.stretch).toBe(newBuild.setup!.stretch);
+  it("prices a licensed build exactly as high as a new one, and still tells the model which it is", () => {
+    const newRun = run();
+    const licensedRun = run({ attributes: { ...ATTRS, buildStatus: "license as-is" } });
+    expect(licensedRun.band.setup!.target).toBe(newRun.band.setup!.target);
+    expect(licensedRun.band.setup!.stretch).toBe(newRun.band.setup!.stretch);
+
+    // The price half is guaranteed a priori — buildStatus never reaches
+    // similarity() or the bounds math. The half that isn't guaranteed is that
+    // the adjudication request still carries buildStatus through, so the model
+    // knows the build is already done and can reason about margin instead of
+    // build cost. Drop that field from the payload and this fails.
+    const newRequest = adjudicateRequestFrom("Acme", "new", newRun.prepared, null, null);
+    const licensedRequest = adjudicateRequestFrom(
+      "Acme", "license as-is", licensedRun.prepared, null, null,
+    );
+    expect(newRequest.buildStatus).toBe("new");
+    expect(licensedRequest.buildStatus).toBe("license as-is");
   });
 
   it("lets capex widen the ceiling without moving the floor", () => {
@@ -123,8 +156,10 @@ describe("pricing engine end to end", () => {
       ...COMPARABLES,
       { ...COMPARABLES[0], id: "usd", currency: "USD" as const },
     ] });
-    expect(band.degraded).toEqual(
-      expect.arrayContaining(["no-fx-rate", "no-intent", "no-capex", "no-adjudication"]),
+    // Exactly these four, no stray or duplicated codes — arrayContaining would
+    // have let either slip through unnoticed.
+    expect([...band.degraded].sort()).toEqual(
+      ["no-adjudication", "no-capex", "no-fx-rate", "no-intent"],
     );
   });
 });
