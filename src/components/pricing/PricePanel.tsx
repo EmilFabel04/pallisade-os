@@ -224,6 +224,19 @@ export function PricePanel({
           )}
         </div>
 
+        {quote.status === "won" && quote.closedSetup <= 0 && (
+          <p className="text-[0.78rem] text-[var(--color-warning)] mt-4 leading-relaxed">
+            This deal is not counted as a comparable yet — enter the closed setup above, or
+            future quotes will be priced without it.
+          </p>
+        )}
+        {quote.status === "lost" && quote.lostReason === "price" && quote.sentSetup <= 0 && (
+          <p className="text-[0.78rem] text-[var(--color-warning)] mt-4 leading-relaxed">
+            This price loss is not counted as a comparable yet — enter the quoted setup above,
+            or future quotes will be priced without it.
+          </p>
+        )}
+
         <div className="flex flex-wrap gap-2 mt-4">
           <button
             className="btn btn-ghost"
