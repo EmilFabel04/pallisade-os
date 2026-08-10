@@ -16,23 +16,43 @@ export function clampTriple(
   const notes: string[] = [];
   const money = (n: number) => fmtCurrency(n, currency);
 
-  let target = Math.round(proposed.target);
-  let stretch = Math.round(proposed.stretch);
-
-  if (target < bounds.floor) {
-    notes.push(`${label} target raised to the ${money(bounds.floor)} floor.`);
-    target = bounds.floor;
-  } else if (target > bounds.ceiling) {
-    notes.push(`${label} target capped at the ${money(bounds.ceiling)} ceiling.`);
-    target = bounds.ceiling;
+  // Fix inverted range: floor > ceiling means collapse to floor
+  let workingBounds = bounds;
+  if (bounds.ceiling < bounds.floor) {
+    notes.push(`${label} range inverted; collapsed to the ${money(bounds.floor)} floor.`);
+    workingBounds = { floor: bounds.floor, ceiling: bounds.floor };
   }
 
-  if (stretch < bounds.floor) {
-    notes.push(`${label} stretch raised to the ${money(bounds.floor)} floor.`);
-    stretch = bounds.floor;
-  } else if (stretch > bounds.ceiling) {
-    notes.push(`${label} stretch capped at the ${money(bounds.ceiling)} ceiling.`);
-    stretch = bounds.ceiling;
+  // Treat non-finite proposals as absent; substitute floor
+  let targetInput = proposed.target;
+  if (!Number.isFinite(targetInput)) {
+    notes.push(`${label} target was not a usable number; set to the ${money(workingBounds.floor)} floor.`);
+    targetInput = workingBounds.floor;
+  }
+
+  let stretchInput = proposed.stretch;
+  if (!Number.isFinite(stretchInput)) {
+    notes.push(`${label} stretch was not a usable number; set to the ${money(workingBounds.floor)} floor.`);
+    stretchInput = workingBounds.floor;
+  }
+
+  let target = Math.round(targetInput);
+  let stretch = Math.round(stretchInput);
+
+  if (target < workingBounds.floor) {
+    notes.push(`${label} target raised to the ${money(workingBounds.floor)} floor.`);
+    target = workingBounds.floor;
+  } else if (target > workingBounds.ceiling) {
+    notes.push(`${label} target capped at the ${money(workingBounds.ceiling)} ceiling.`);
+    target = workingBounds.ceiling;
+  }
+
+  if (stretch < workingBounds.floor) {
+    notes.push(`${label} stretch raised to the ${money(workingBounds.floor)} floor.`);
+    stretch = workingBounds.floor;
+  } else if (stretch > workingBounds.ceiling) {
+    notes.push(`${label} stretch capped at the ${money(workingBounds.ceiling)} ceiling.`);
+    stretch = workingBounds.ceiling;
   }
 
   if (stretch < target) {
@@ -40,5 +60,5 @@ export function clampTriple(
     stretch = target;
   }
 
-  return { triple: { floor: bounds.floor, target, stretch }, notes };
+  return { triple: { floor: workingBounds.floor, target, stretch }, notes };
 }

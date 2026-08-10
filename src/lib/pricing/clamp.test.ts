@@ -39,4 +39,19 @@ describe("clampTriple", () => {
     const { triple } = clampTriple({ target: 5, stretch: 999 }, { floor: 50, ceiling: 50 }, "Setup", "ZAR");
     expect(triple).toEqual({ floor: 50, target: 50, stretch: 50 });
   });
+
+  it("treats NaN proposals as absent and substitutes the floor with notes", () => {
+    const { triple, notes } = clampTriple({ target: NaN, stretch: NaN }, BOUNDS, "Setup", "ZAR");
+    expect(triple.target).toBe(100000);
+    expect(triple.stretch).toBe(100000);
+    expect(notes).toHaveLength(2);
+    expect(notes.join(" ")).toContain("target was not a usable number");
+    expect(notes.join(" ")).toContain("stretch was not a usable number");
+  });
+
+  it("detects inverted range and collapses to the floor", () => {
+    const { triple, notes } = clampTriple({ target: 300, stretch: 50 }, { floor: 200, ceiling: 100 }, "Setup", "ZAR");
+    expect(triple).toEqual({ floor: 200, target: 200, stretch: 200 });
+    expect(notes.join(" ")).toContain("range inverted");
+  });
 });
