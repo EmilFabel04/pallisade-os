@@ -212,10 +212,15 @@ excludes USD comparables from matching with a `degraded` note, and a `minimumSet
 Both collections carry company-attributable money. Following
 `docs/superpowers/specs/2026-08-06-disclosure-boundary-design.md`:
 
-- **Excluded** from the content engine's `collectCandidates` in `harvest.ts`, for the same
-  reason `metricEntries` is — otherwise daily posts leak what the founder charges.
+- **Excluded** from the content engine, for the same reason `metricEntries` is — otherwise
+  daily posts leak what the founder charges. No edit is required:
+  `collectCandidates` in `src/lib/content/daily/harvest.ts` reads from an explicit `SPECS`
+  allowlist, so a new collection is excluded by construction. A regression test pins that
+  it stays so.
 - **Included** in `AdvisorSnapshot`. Knowing what was quoted to a company is exactly what
-  the Sales Advisor needs.
+  the Sales Advisor needs. This *does* require two edits — `AdvisorSnapshot`'s `Omit` list
+  in `types.ts`, and the explicit destructure in `buildSnapshot`
+  (`src/lib/advisorClient.ts`), which is an allowlist rather than a spread.
 
 ## The pricing engine
 
@@ -327,9 +332,18 @@ Three narrow routes under `src/app/api/pricing/`, following the existing `/api/*
 (Anthropic SDK, module-level `MODEL` constant). Client access via
 `src/lib/pricingClient.ts`, following `contentClient.ts`.
 
-All three use `claude-sonnet-5` and **structured outputs** (`output_config.format` with a
-JSON schema) rather than parsing JSON out of prose, so a malformed response is rejected at
-the API layer and retried rather than reaching the engine.
+All three use `claude-sonnet-5` and return **schema-validated JSON via a forced tool call**
+rather than prose that has to be parsed — `tools: [saveTool]` with
+`tool_choice: { type: "tool", name: ... }`, reading `toolUse.input`. This is the pattern
+already proven in `prep/route.ts` and `advisor/route.ts`, including its two guards: a
+missing `tool_use` block and a `stop_reason === "max_tokens"` both surface as errors rather
+than as a silently empty result.
+
+The alternative — `output_config.format` structured outputs — is deliberately not used.
+It is documented as incompatible with citations, and the capex route runs `web_search`,
+whose results are citation-bearing; forcing a `tool_choice` also pre-empts the server-side
+search loop. The capex route therefore follows `brain/route.ts` instead: `web_search` plus
+a `save_capex` tool under `tool_choice: auto`, looping until `save_capex` is called.
 
 | Route | Input | Output | Effort |
 |---|---|---|---|
