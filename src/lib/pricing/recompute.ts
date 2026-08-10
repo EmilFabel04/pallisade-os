@@ -22,9 +22,16 @@ export function adjudicateRequestFrom(
     weight: c.weight,
   }));
 
+  // `bounds.notes` exists to explain a clamp to the founder (e.g. "capped at
+  // R150,000 — Kestrelmoor lost on price at that number") — it can name another
+  // client. That is provenance for a human reading the price band, not a
+  // briefing for the model, so it is emptied here; the numeric floors and
+  // ceilings the model needs to respect travel through untouched.
+  const bounds = { ...prepared.bounds, notes: [] };
+
   return {
     company,
-    bounds: prepared.bounds,
+    bounds,
     anchor: prepared.setupAnchor,
     matched,
     intent,
