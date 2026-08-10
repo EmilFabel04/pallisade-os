@@ -5,6 +5,7 @@ import type {
   MilestoneStatus,
   Priority,
   ProjectStage,
+  QuoteStatus,
   TaskStatus,
   Urgency,
 } from "./types";
@@ -120,6 +121,19 @@ export function interactionTone(t: InteractionType): Tone {
       return "positive";
     case "cold call":
       return "neutral";
+    default:
+      return "neutral";
+  }
+}
+
+export function quoteStatusTone(s: QuoteStatus): Tone {
+  switch (s) {
+    case "won":
+      return "positive";
+    case "lost":
+      return "muted";
+    case "sent":
+      return "info";
     default:
       return "neutral";
   }
