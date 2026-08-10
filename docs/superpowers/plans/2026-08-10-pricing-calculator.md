@@ -780,7 +780,7 @@ export function similarity(a: BuildAttributes, b: BuildAttributes): number {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/lib/pricing/attributes.test.ts`
-Expected: PASS — 11 tests.
+Expected: PASS — 12 tests.
 
 - [ ] **Step 5: Commit**
 
