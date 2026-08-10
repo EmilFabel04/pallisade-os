@@ -46,6 +46,15 @@ describe("normalizeIntent", () => {
     expect(r.signals).toEqual([]);
     expect(r.risks).toEqual([]);
   });
+
+  it("degrades a null payload to safe defaults", () => {
+    const r = normalizeIntent(null as unknown as Record<string, unknown>, NOW);
+    expect(r.score).toBe(0);
+    expect(r.band).toBe("cold");
+    expect(r.signals).toEqual([]);
+    expect(r.risks).toEqual([]);
+    expect(r.generatedAt).toBe(NOW);
+  });
 });
 
 describe("normalizeCapex", () => {
@@ -86,6 +95,16 @@ describe("normalizeCapex", () => {
   it("treats a non-numeric headcount as unknown", () => {
     expect(normalizeCapex({ band: "mid", headcount: "lots" }, NOW).headcount).toBeNull();
   });
+
+  it("degrades a null payload to safe defaults", () => {
+    const r = normalizeCapex(null as unknown as Record<string, unknown>, NOW);
+    expect(r.band).toBe("unknown");
+    expect(r.confidence).toBe("low");
+    expect(r.headcount).toBeNull();
+    expect(r.revenueNote).toBe("");
+    expect(r.evidence).toEqual([]);
+    expect(r.generatedAt).toBe(NOW);
+  });
 });
 
 describe("normalizeAdjudication", () => {
@@ -107,6 +126,13 @@ describe("normalizeAdjudication", () => {
 
   it("zeroes an unusable monthly so the floor clamp catches it", () => {
     const a = normalizeAdjudication({});
+    expect(a.monthly).toEqual({ target: 0, stretch: 0 });
+    expect(a.reasoning).toBe("");
+  });
+
+  it("degrades a null payload to safe defaults", () => {
+    const a = normalizeAdjudication(null as unknown as Record<string, unknown>);
+    expect(a.setup).toBeNull();
     expect(a.monthly).toEqual({ target: 0, stretch: 0 });
     expect(a.reasoning).toBe("");
   });
