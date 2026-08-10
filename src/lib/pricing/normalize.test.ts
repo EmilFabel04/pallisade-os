@@ -105,6 +105,43 @@ describe("normalizeCapex", () => {
     expect(r.evidence).toEqual([]);
     expect(r.generatedAt).toBe(NOW);
   });
+
+  it("forces an asserted band down to unknown when no evidence is supplied", () => {
+    const r = normalizeCapex({ band: "enterprise", confidence: "high", evidence: [] }, NOW);
+    expect(r.band).toBe("unknown");
+    expect(r.confidence).toBe("low");
+  });
+
+  it("forces an asserted band down to unknown when every evidence entry lacks a URL", () => {
+    const r = normalizeCapex(
+      {
+        band: "enterprise",
+        confidence: "high",
+        evidence: [{ claim: "2000 staff" }, { claim: "$47B revenue" }],
+      },
+      NOW,
+    );
+    expect(r.band).toBe("unknown");
+    expect(r.confidence).toBe("low");
+    expect(r.evidence).toEqual([]);
+  });
+
+  it("keeps an asserted band when at least one evidence entry is properly sourced", () => {
+    const r = normalizeCapex(
+      {
+        band: "enterprise",
+        confidence: "high",
+        evidence: [
+          { claim: "No source" },
+          { claim: "2000 staff", url: "https://example.com/about" },
+        ],
+      },
+      NOW,
+    );
+    expect(r.band).toBe("enterprise");
+    expect(r.confidence).toBe("high");
+    expect(r.evidence).toEqual([{ claim: "2000 staff", url: "https://example.com/about" }]);
+  });
 });
 
 describe("normalizeAdjudication", () => {

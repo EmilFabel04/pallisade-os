@@ -51,10 +51,10 @@ export function normalizeIntent(raw: Record<string, unknown>, now: string): Inte
 export function normalizeCapex(raw: Record<string, unknown>, now: string): CapexRead {
   const r = raw ?? {};
   const rawBand = str(r.band) as CapexBand;
-  const band = CAPEX_BANDS.includes(rawBand) ? rawBand : "unknown";
+  let band = CAPEX_BANDS.includes(rawBand) ? rawBand : "unknown";
 
   const rawConfidence = str(r.confidence) as CapexRead["confidence"];
-  const confidence = (CONFIDENCES as readonly string[]).includes(rawConfidence)
+  let confidence = (CONFIDENCES as readonly string[]).includes(rawConfidence)
     ? rawConfidence
     : "low";
 
@@ -63,6 +63,17 @@ export function normalizeCapex(raw: Record<string, unknown>, now: string): Capex
   const evidence = rows(r.evidence)
     .map((e) => ({ claim: str(e.claim), url: str(e.url) }))
     .filter((e) => e.url.length > 0);
+
+  // capexMultiplier only special-cases "unknown" — every other band scales a
+  // real price ceiling. A band with nothing citable behind it, once the
+  // unsourced entries above are dropped, is not research, it is a guess, and
+  // a guess must not move that ceiling. Force the band (and the confidence
+  // that honestly goes with "we found nothing") back down rather than trust
+  // whatever the model asserted on faith.
+  if (evidence.length === 0) {
+    band = "unknown";
+    confidence = "low";
+  }
 
   return {
     band,
