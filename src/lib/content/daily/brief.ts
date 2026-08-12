@@ -4,7 +4,10 @@
    detail from a specific record. */
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { PILLARS, FORMATS, type MaterialItem, type PostBrief } from "./types";
+import {
+  PILLARS, FORMATS,
+  type ContentPillar, type PostFormat, type MaterialItem, type PostBrief,
+} from "./types";
 import { PILLAR_META, FORMAT_META, DISCLOSURE_RULES } from "./craft";
 import {
   validateBriefs, type RotationMemory,
@@ -19,7 +22,29 @@ export interface BriefPromptInput {
   today: string;
 }
 
-export const BRIEF_SCHEMA: Anthropic.Tool = {
+/**
+ * What the model may still choose today.
+ *
+ * Derived from the same memory validateBriefs judges against, so the menu the
+ * model is offered and the rule it is graded by cannot drift apart. Both the
+ * prompt and the tool schema are built from this — a blocked pillar is never
+ * presented as an option and the enum will not accept one, which is stronger
+ * than asking the model not to pick it. buildMemory guarantees at least
+ * CHOICES_NEEDED of each remains.
+ */
+export function allowedChoices(memory: RotationMemory): {
+  pillars: ContentPillar[];
+  formats: PostFormat[];
+} {
+  return {
+    pillars: PILLARS.filter((p) => !memory.recentPillars.has(p)),
+    formats: FORMATS.filter((f) => !memory.recentFormats.has(f)),
+  };
+}
+
+export function briefSchema(memory: RotationMemory): Anthropic.Tool {
+  const { pillars, formats } = allowedChoices(memory);
+  return {
   name: "submit_briefs",
   description: "Submit exactly two post briefs for today.",
   input_schema: {
@@ -33,8 +58,8 @@ export const BRIEF_SCHEMA: Anthropic.Tool = {
           type: "object",
           properties: {
             slot: { type: "integer", enum: [1, 2] },
-            pillar: { type: "string", enum: [...PILLARS] },
-            format: { type: "string", enum: [...FORMATS] },
+            pillar: { type: "string", enum: pillars },
+            format: { type: "string", enum: formats },
             claim: {
               type: "string",
               description:
@@ -66,7 +91,8 @@ export const BRIEF_SCHEMA: Anthropic.Tool = {
     },
     required: ["briefs"],
   },
-};
+  };
+}
 
 export function buildBriefPrompt(input: BriefPromptInput): string {
   const { ledger, memory, positioning, fingerprint, today } = input;
@@ -82,8 +108,14 @@ export function buildBriefPrompt(input: BriefPromptInput): string {
     )
     .join("\n\n");
 
-  const pillars = PILLARS.map((p) => `- ${p}: ${PILLAR_META[p].description}`).join("\n");
-  const formats = FORMATS.map((f) => `- ${f}: ${FORMAT_META[f].shape}`).join("\n");
+  // Only the still-choosable options are catalogued. Listing all six and then
+  // naming the blocked ones separately asks the model to subtract one list
+  // from another, and on 2026-08-12 it simply did not — it picked two pillars
+  // and two formats the prompt had already named as blocked, twice running.
+  // An option that is not on the menu cannot be ordered.
+  const { pillars: okPillars, formats: okFormats } = allowedChoices(memory);
+  const pillars = okPillars.map((p) => `- ${p}: ${PILLAR_META[p].description}`).join("\n");
+  const formats = okFormats.map((f) => `- ${f}: ${FORMAT_META[f].shape}`).join("\n");
 
   const blockedPillars = [...memory.recentPillars.entries()]
     .map(([p, d]) => `${p} (used ${d})`).join(", ") || "none";
@@ -110,9 +142,9 @@ export function buildBriefPrompt(input: BriefPromptInput): string {
     // rescued by the draft stage — the claim itself is the disclosure.
     DISCLOSURE_RULES,
     ``,
-    `PILLARS:\n${pillars}`,
+    `PILLARS — the complete set you may choose from today:\n${pillars}`,
     ``,
-    `FORMATS:\n${formats}`,
+    `FORMATS — the complete set you may choose from today:\n${formats}`,
     ``,
     `HARD CONSTRAINTS — a brief breaking any of these is rejected and you will be asked again:`,
     `- Pillars used within the last ${PILLAR_WINDOW_DAYS} days and therefore blocked: ${blockedPillars}`,
@@ -194,12 +226,15 @@ export async function chooseBriefs(
 ): Promise<PostBrief[]> {
   const prompt = buildBriefPrompt(input);
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
+  // Built from the same memory the briefs are validated against, so the enum
+  // the model must satisfy and the rule it is graded by are one source.
+  const schema = briefSchema(memory);
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 2048,
-      tools: [BRIEF_SCHEMA],
+      tools: [schema],
       tool_choice: { type: "tool", name: "submit_briefs" },
       messages,
     });

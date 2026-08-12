@@ -7,7 +7,7 @@ import { runDaily, preconditionCode } from "@/lib/content/daily/run";
 import { chooseBriefs } from "@/lib/content/daily/brief";
 import { draftPost } from "@/lib/content/daily/draft";
 import { revisePost } from "@/lib/content/daily/revise";
-import { listPosts, recentPosts, savePosts, saveRun, latestRun } from "@/lib/content/daily/store";
+import { listPosts, recentPosts, replaceDayPosts, saveRun, latestRun } from "@/lib/content/daily/store";
 import { todayISO } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -62,8 +62,10 @@ export async function POST(req: Request) {
       draftPost,
       revisePost,
       loadRecentPosts: recentPosts,
+      // The run owns its date. A forced regeneration replaces the day rather
+      // than stacking a second pair on top of the first — see replaceDayPosts.
       persist: async (p, r) => {
-        await savePosts(p);
+        await replaceDayPosts(today, p);
         await saveRun(r);
       },
     });

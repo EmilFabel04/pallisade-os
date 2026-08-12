@@ -212,6 +212,39 @@ describe("runDaily", () => {
     expect(run.status).toBe("thin");
   });
 
+  it("completes, and says so, when the rotation windows were exhausted", async () => {
+    // 2026-08-12 in production: two posts on 08-11 and four on 08-10 put every
+    // pillar and every format inside its window, the brief stage was handed an
+    // unsatisfiable constraint set, and the run died as brief_invalid → 502.
+    // It must now finish, and must not pretend the rotation was respected.
+    const history: ContentPost[] = [
+      ["a", "2026-08-11", "proof", "numbers"],
+      ["b", "2026-08-11", "build-log", "short-punch"],
+      ["c", "2026-08-10", "client-pain", "claim-defence"],
+      ["d", "2026-08-10", "contrarian", "one-idea"],
+      ["e", "2026-08-10", "teardown", "before-after"],
+      ["f", "2026-08-10", "lesson", "scene"],
+    ].map(([id, date, pillar, format]) => ({
+      id, date, slot: 1, pillar, format, sourceRefs: [], claim: "", body: "",
+      openingLine: "An opener.", checks: [], revisions: 0, status: "posted",
+      killReason: null, editedBody: null, createdAt: "", updatedAt: "",
+    })) as ContentPost[];
+
+    const { run, posts } = await runDaily(deps({
+      today: "2026-08-12",
+      loadRecentPosts: vi.fn(async () => history),
+    }));
+
+    expect(posts).toHaveLength(2);
+    expect(run.status).toBe("thin");
+    expect(run.degraded.join(" ")).toMatch(/rotation/i);
+  });
+
+  it("says nothing about rotation on a day that did not need relaxing", async () => {
+    const { run } = await runDaily(deps());
+    expect(run.degraded.join(" ")).not.toMatch(/rotation/i);
+  });
+
   it("refuses to run with fewer than three voice samples", async () => {
     const thin = data();
     thin.voiceSamples = thin.voiceSamples.slice(0, 2);

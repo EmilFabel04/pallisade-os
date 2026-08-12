@@ -75,6 +75,42 @@ export async function savePosts(posts: ContentPost[]): Promise<void> {
   );
 }
 
+/**
+ * Hand a whole day's posts to the store, replacing whatever that date held.
+ *
+ * The daily run owns its date, and every "Generate today's posts" click sends
+ * force:true. savePosts alone could not express that: it inserts under a fresh
+ * uid per run, so a regenerated day ACCUMULATED posts instead of replacing
+ * them. Production carried four posts for 2026-08-10 — two in slot 1, two in
+ * slot 2 — which spent four of six pillars and four of six formats in a single
+ * day and left every rotation window exhausted by 2026-08-12.
+ *
+ * An empty set is a no-op, not a wipe. runDaily persists `[]` when it fails,
+ * and a failed regeneration must not destroy posts already kept or edited.
+ *
+ * The delete and the inserts go in one batch so the day is never briefly empty
+ * to a concurrent reader.
+ */
+export async function replaceDayPosts(
+  date: string,
+  posts: ContentPost[],
+): Promise<void> {
+  if (posts.length === 0) return;
+  await ensureContentSchema();
+  await getClient().batch(
+    [
+      { sql: `DELETE FROM contentPosts WHERE date = ?`, args: [date] },
+      ...posts.map((p) => ({
+        sql: `INSERT INTO contentPosts (id, date, json, updated_at) VALUES (?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET date = excluded.date, json = excluded.json,
+                                            updated_at = excluded.updated_at`,
+        args: [p.id, p.date, JSON.stringify(p), p.updatedAt],
+      })),
+    ],
+    "write",
+  );
+}
+
 export async function patchPost(
   id: string,
   changes: Partial<ContentPost>,

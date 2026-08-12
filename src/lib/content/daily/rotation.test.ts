@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildMemory, validateBriefs } from "./rotation";
-import type { ContentPost, PostBrief } from "./types";
+import { buildMemory, validateBriefs, CHOICES_NEEDED } from "./rotation";
+import { PILLARS, FORMATS, type ContentPost, type PostBrief } from "./types";
 
 function post(over: Partial<ContentPost>): ContentPost {
   return {
@@ -118,5 +118,91 @@ describe("validateBriefs", () => {
 
     expect(outOneDayFuture.join(" ")).toMatch(/pillar/i);
     expect(outTenDaysFuture.join(" ")).toMatch(/pillar/i);
+  });
+});
+
+/**
+ * The windows are wider than the supply, so they exhaust on their own.
+ *
+ * Six pillars against a 4-day window at two posts a day consumes up to eight
+ * pillar-slots per window; six formats against a 3-day window consumes six.
+ * Three consecutive days of generation therefore blocks EVERY pillar and
+ * EVERY format, and the brief stage is handed a constraint set with no
+ * solution — the model cannot comply, both attempts are rejected, and the run
+ * dies as `brief_invalid` → 502. That is what took the founder's 2026-08-12
+ * generation down; the history below is the real one, read from production.
+ *
+ * The guardrail exists to force variety, not to deadlock. When variety is
+ * genuinely impossible the correct answer is the least-recently-used option,
+ * so buildMemory releases the oldest holds until the day can be filled.
+ */
+describe("window exhaustion", () => {
+  const PROD_HISTORY: ContentPost[] = [
+    post({ id: "a", date: "2026-08-11", pillar: "proof", format: "numbers" }),
+    post({ id: "b", date: "2026-08-11", pillar: "build-log", format: "short-punch" }),
+    post({ id: "c", date: "2026-08-10", pillar: "client-pain", format: "claim-defence" }),
+    post({ id: "d", date: "2026-08-10", pillar: "contrarian", format: "one-idea" }),
+    post({ id: "e", date: "2026-08-10", pillar: "teardown", format: "before-after" }),
+    post({ id: "f", date: "2026-08-10", pillar: "lesson", format: "scene" }),
+  ];
+  const today = "2026-08-12";
+
+  it("always leaves enough pillars and formats to fill the day", () => {
+    const memory = buildMemory(PROD_HISTORY, today);
+    expect(PILLARS.filter((p) => !memory.recentPillars.has(p)).length)
+      .toBeGreaterThanOrEqual(CHOICES_NEEDED);
+    expect(FORMATS.filter((f) => !memory.recentFormats.has(f)).length)
+      .toBeGreaterThanOrEqual(CHOICES_NEEDED);
+  });
+
+  it("leaves at least one brief pair that validates", () => {
+    // The bug in one assertion: on 2026-08-12 every one of the 1296 possible
+    // pairs was rejected, so no answer existed for the model to give.
+    const memory = buildMemory(PROD_HISTORY, today);
+    const pairs = PILLARS.flatMap((p1) => FORMATS.flatMap((f1) =>
+      PILLARS.flatMap((p2) => FORMATS.map((f2) =>
+        validateBriefs([
+          brief({ slot: 1, pillar: p1, format: f1 }),
+          brief({ slot: 2, pillar: p2, format: f2 }),
+        ], memory),
+      ))));
+    expect(pairs.filter((v) => v.length === 0).length).toBeGreaterThan(0);
+  });
+
+  it("releases the oldest hold first, keeping the freshest rotation intact", () => {
+    // 08-10's holds are closer to expiring than 08-11's, so they come back
+    // first. Releasing a pillar used yesterday would repeat the newest post.
+    // Asserted as exact sets, not just "proof is absent": with every option
+    // blocked, a check that merely counts what is free passes for any choice
+    // of which two are released, including the worst one.
+    const memory = buildMemory(PROD_HISTORY, today);
+    expect(memory.released.pillars).toEqual(["client-pain", "contrarian"]);
+    expect(memory.released.formats).toEqual(["scene", "one-idea"]);
+    expect(memory.recentPillars.has("proof")).toBe(true);
+    expect(memory.recentPillars.has("build-log")).toBe(true);
+    expect(memory.recentFormats.has("numbers")).toBe(true);
+    expect(memory.recentFormats.has("short-punch")).toBe(true);
+  });
+
+  it("reports what it released so the run can say the rotation was relaxed", () => {
+    const memory = buildMemory(PROD_HISTORY, today);
+    expect(memory.released.pillars.length).toBeGreaterThan(0);
+    expect(memory.released.formats.length).toBeGreaterThan(0);
+  });
+
+  it("releases nothing while the windows still leave room", () => {
+    const memory = buildMemory(
+      [post({ date: "2026-08-11", pillar: "proof", format: "numbers" })], today,
+    );
+    expect(memory.released).toEqual({ pillars: [], formats: [] });
+    expect(memory.recentPillars.has("proof")).toBe(true);
+  });
+
+  it("never releases a source record — reuse is an editorial failure, not a rotation one", () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      post({ id: `s${i}`, date: "2026-08-11",
+             sourceRefs: [{ collection: "painPoints", id: `pp${i}`, anchor: "a" }] }));
+    const memory = buildMemory(many, today);
+    expect(memory.recentSources.size).toBe(30);
   });
 });

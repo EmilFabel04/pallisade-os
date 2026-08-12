@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildBriefPrompt, chooseBriefs, BRIEF_SCHEMA } from "./brief";
+import { buildBriefPrompt, chooseBriefs, briefSchema } from "./brief";
 import { buildMemory } from "./rotation";
-import type { MaterialItem, PostBrief } from "./types";
+import { PILLARS, FORMATS, type ContentPost, type MaterialItem, type PostBrief } from "./types";
 
 const ledger: MaterialItem[] = [
   { collection: "painPoints", id: "pp1", date: "2026-08-03",
@@ -10,6 +10,25 @@ const ledger: MaterialItem[] = [
   { collection: "scorecards", id: "sc1", date: "2026-08-02",
     text: "Shipped the ingest job. Broke twice.",
     anchors: [], pillarHints: ["build-log", "lesson"], score: 30 },
+];
+
+function post(over: Partial<ContentPost>): ContentPost {
+  return {
+    id: "x", date: "2026-08-03", slot: 1, pillar: "proof", format: "numbers",
+    sourceRefs: [], claim: "", body: "", openingLine: "An opener.", checks: [],
+    revisions: 0, status: "posted", killReason: null, editedBody: null,
+    createdAt: "", updatedAt: "", ...over,
+  };
+}
+
+/** The 2026-08-12 production history: every pillar and format inside window. */
+const EXHAUSTED: ContentPost[] = [
+  post({ id: "a", date: "2026-08-11", pillar: "proof", format: "numbers" }),
+  post({ id: "b", date: "2026-08-11", pillar: "build-log", format: "short-punch" }),
+  post({ id: "c", date: "2026-08-10", pillar: "client-pain", format: "claim-defence" }),
+  post({ id: "d", date: "2026-08-10", pillar: "contrarian", format: "one-idea" }),
+  post({ id: "e", date: "2026-08-10", pillar: "teardown", format: "before-after" }),
+  post({ id: "f", date: "2026-08-10", pillar: "lesson", format: "scene" }),
 ];
 
 const base = {
@@ -76,16 +95,65 @@ describe("buildBriefPrompt", () => {
     expect(buildBriefPrompt(base)).toMatch(/claim/i);
     expect(buildBriefPrompt(base)).toMatch(/anchor/i);
   });
+
+  it("catalogues only the pillars and formats still choosable today", () => {
+    // The catalogue used to list all six regardless, leaving the model to
+    // subtract the blocked line from it. On 2026-08-12 it did not subtract.
+    const memory = buildMemory(
+      [post({ date: "2026-08-03", pillar: "proof", format: "numbers" })], "2026-08-04",
+    );
+    const p = buildBriefPrompt({ ...base, memory });
+    expect(p).not.toContain(`- proof: `);
+    expect(p).not.toContain(`- numbers: `);
+    expect(p).toContain(`- lesson: `);
+  });
+
+  it("still offers two pillars and two formats when every window is exhausted", () => {
+    const p = buildBriefPrompt({ ...base, memory: buildMemory(EXHAUSTED, "2026-08-12") });
+    const listed = (all: readonly string[]) => all.filter((x) => p.includes(`- ${x}: `)).length;
+    expect(listed(PILLARS)).toBeGreaterThanOrEqual(2);
+    expect(listed(FORMATS)).toBeGreaterThanOrEqual(2);
+  });
 });
 
-describe("BRIEF_SCHEMA", () => {
+describe("briefSchema", () => {
+  const clean = buildMemory([], "2026-08-04");
+
+  function enums(memory: Parameters<typeof briefSchema>[0]) {
+    const props = briefSchema(memory).input_schema.properties as Record<string, unknown>;
+    const items = (props.briefs as {
+      items: { required: string[]; properties: Record<string, { enum: string[] }> };
+    }).items;
+    return items;
+  }
+
   it("requires two briefs with the load-bearing fields", () => {
-    const props = BRIEF_SCHEMA.input_schema.properties as Record<string, unknown>;
-    expect(props.briefs).toBeDefined();
-    const items = (props.briefs as { items: { required: string[] } }).items;
-    expect(items.required).toEqual(
+    expect(enums(clean).required).toEqual(
       expect.arrayContaining(["slot", "pillar", "format", "claim", "anchor", "sourceRefs"]),
     );
+  });
+
+  it("offers every pillar and format when nothing is blocked", () => {
+    expect(enums(clean).properties.pillar.enum).toEqual([...PILLARS]);
+    expect(enums(clean).properties.format.enum).toEqual([...FORMATS]);
+  });
+
+  it("drops blocked options from the enum so a violation cannot be expressed", () => {
+    // The prompt asked the model not to pick a blocked pillar and on
+    // 2026-08-12 it picked one anyway, twice. A narrowed enum is not a
+    // request — the tool call cannot carry the value at all.
+    const memory = buildMemory(
+      [post({ date: "2026-08-03", pillar: "proof", format: "numbers" })], "2026-08-04",
+    );
+    expect(enums(memory).properties.pillar.enum).not.toContain("proof");
+    expect(enums(memory).properties.format.enum).not.toContain("numbers");
+    expect(enums(memory).properties.pillar.enum).toContain("lesson");
+  });
+
+  it("never narrows below the two distinct choices the day needs", () => {
+    const memory = buildMemory(EXHAUSTED, "2026-08-12");
+    expect(enums(memory).properties.pillar.enum.length).toBeGreaterThanOrEqual(2);
+    expect(enums(memory).properties.format.enum.length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -208,6 +276,33 @@ describe("chooseBriefs", () => {
     };
     expect(first.tool_choice).toEqual({ type: "tool", name: "submit_briefs" });
     expect(first.tools.map((t) => t.name)).toContain("submit_briefs");
+  });
+
+  it("succeeds on the exhausted history that produced the 502", async () => {
+    // The closing of the loop: anything the narrowed schema PERMITS must be
+    // something validateBriefs ACCEPTS. A model that simply obeys the enum is
+    // simulated by taking the first two options it offers. Before the fix this
+    // history left zero legal brief pairs and chooseBriefs threw brief_invalid
+    // on both attempts, which the route turned into upstream_failed / 502.
+    const memory = buildMemory(EXHAUSTED, "2026-08-12");
+    const props = briefSchema(memory).input_schema.properties as Record<string, unknown>;
+    const items = (props.briefs as {
+      items: { properties: Record<string, { enum: string[] }> };
+    }).items;
+    const okPillars = items.properties.pillar.enum;
+    const okFormats = items.properties.format.enum;
+
+    const obedient: PostBrief[] = [
+      { ...valid[0], pillar: okPillars[0] as never, format: okFormats[0] as never },
+      { ...valid[1], pillar: okPillars[1] as never, format: okFormats[1] as never },
+    ];
+
+    const out = await chooseBriefs(
+      stubClient([obedient]),
+      { ...base, memory, today: "2026-08-12" },
+      memory,
+    );
+    expect(out).toHaveLength(2);
   });
 
   it("throws when the retry also violates the guardrails", async () => {

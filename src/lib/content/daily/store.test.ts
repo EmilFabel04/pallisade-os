@@ -24,6 +24,46 @@ beforeAll(async () => {
   await store.ensureContentSchema();
 });
 
+describe("replaceDayPosts", () => {
+  it("replaces the day rather than stacking a second set on top of it", async () => {
+    // Every "Generate today's posts" click sends force:true, and the old path
+    // inserted under fresh ids — so a regenerated day ACCUMULATED posts. On
+    // 2026-08-10 that left four posts with duplicate slots, which consumed
+    // four pillars and four formats of a six-strong rotation in one day and
+    // exhausted every window two days later.
+    const day = "2026-09-01";
+    await store.replaceDayPosts(day, [
+      post({ id: "r1", date: day, slot: 1, pillar: "proof" }),
+      post({ id: "r2", date: day, slot: 2, pillar: "lesson" }),
+    ]);
+    await store.replaceDayPosts(day, [
+      post({ id: "r3", date: day, slot: 1, pillar: "teardown" }),
+      post({ id: "r4", date: day, slot: 2, pillar: "contrarian" }),
+    ]);
+
+    const rows = await store.listPosts(day);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.id).sort()).toEqual(["r3", "r4"]);
+    expect(rows.map((r) => r.slot).sort()).toEqual([1, 2]);
+  });
+
+  it("leaves the day untouched when the run produced nothing", async () => {
+    // A failed run persists an empty set. Wiping the day on that path would
+    // destroy posts the founder had already kept or edited.
+    const day = "2026-09-02";
+    await store.replaceDayPosts(day, [post({ id: "k1", date: day })]);
+    await store.replaceDayPosts(day, []);
+    expect(await store.listPosts(day)).toHaveLength(1);
+  });
+
+  it("does not touch other days", async () => {
+    await store.replaceDayPosts("2026-09-03", [post({ id: "o1", date: "2026-09-03" })]);
+    await store.replaceDayPosts("2026-09-04", [post({ id: "o2", date: "2026-09-04" })]);
+    expect(await store.listPosts("2026-09-03")).toHaveLength(1);
+    expect(await store.listPosts("2026-09-04")).toHaveLength(1);
+  });
+});
+
 describe("posts", () => {
   it("round-trips a post through save and list", async () => {
     await store.savePosts([post()]);

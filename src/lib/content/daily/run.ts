@@ -120,6 +120,21 @@ export async function runDaily(
     }
 
     const memory = buildMemory(history, today);
+    // The windows can block every option at once — six pillars cannot cover a
+    // 4-day window at two posts a day. buildMemory hands the oldest holds back
+    // rather than letting the brief stage face a constraint set with no
+    // solution, but a repeat the founder did not ask for is not something to
+    // do quietly: it is the one degradation they can act on, by writing the
+    // day themselves or accepting a nearer repeat.
+    const relaxed = [...memory.released.pillars, ...memory.released.formats];
+    if (relaxed.length > 0) {
+      run.status = "thin";
+      run.degraded.push(
+        `rotation relaxed — every pillar or format was inside its cooldown, so ` +
+          `${relaxed.join(", ")} came back early`,
+      );
+    }
+
     const briefs = await deps.chooseBriefs(
       client,
       { ledger, memory, positioning, fingerprint, today },

@@ -2,12 +2,16 @@
    the model is not trusted to remember what it wrote last Tuesday. */
 
 import { daysBetween } from "@/lib/utils";
+import { PILLARS, FORMATS } from "./types";
 import type { ContentPost, PostBrief, ContentPillar, PostFormat } from "./types";
 
 export const PILLAR_WINDOW_DAYS = 4;
 export const FORMAT_WINDOW_DAYS = 3;
 export const SOURCE_WINDOW_DAYS = 21;
 export const OPENER_HISTORY = 30;
+
+/** Distinct pillars and formats one day needs: two posts that must differ. */
+export const CHOICES_NEEDED = 2;
 
 export interface RotationMemory {
   /** Pillars used within PILLAR_WINDOW_DAYS, mapped to the date used. */
@@ -16,9 +20,50 @@ export interface RotationMemory {
   /** "collection:id" keys used within SOURCE_WINDOW_DAYS. */
   recentSources: Map<string, string>;
   recentOpeners: string[];
+  /**
+   * Holds given back because the windows blocked more than the day could
+   * spare. Empty on a normal day; non-empty means the run should say so.
+   */
+  released: { pillars: ContentPillar[]; formats: PostFormat[] };
 }
 
 const sourceKey = (collection: string, id: string) => `${collection}:${id}`;
+
+/**
+ * Give back the oldest holds until CHOICES_NEEDED options are free again.
+ *
+ * The windows are wider than the supply and exhaust on their own: six pillars
+ * against a 4-day window at two posts a day consumes up to eight pillar-slots
+ * per window, six formats against a 3-day window consumes exactly six. Three
+ * consecutive days of generation blocks every option, and the brief stage is
+ * then handed a constraint set with no solution — the model cannot comply,
+ * both attempts are rejected, and the run dies as `brief_invalid` → 502. That
+ * is precisely how 2026-08-12 failed.
+ *
+ * Widening the windows or shrinking them to fit is the wrong fix: either way
+ * the guardrail is one busy week from deadlocking again. The guardrail exists
+ * to force variety, and when variety is arithmetically impossible the best
+ * available answer is the least-recently-used option — not an error.
+ *
+ * Oldest first, because the hold nearest to expiring is the cheapest to give
+ * back; releasing yesterday's pillar would repeat the newest post. Ties break
+ * on the canonical order so two runs on the same history agree.
+ *
+ * Mutates `blocked` and returns what it removed.
+ */
+function releaseOldest<T>(blocked: Map<T, string>, all: readonly T[]): T[] {
+  const shortfall = CHOICES_NEEDED - (all.length - blocked.size);
+  if (shortfall <= 0) return [];
+
+  const freed = [...blocked.entries()]
+    .sort(([aKey, aDate], [bKey, bDate]) =>
+      aDate === bDate ? all.indexOf(aKey) - all.indexOf(bKey) : aDate < bDate ? -1 : 1)
+    .slice(0, shortfall)
+    .map(([key]) => key);
+
+  for (const key of freed) blocked.delete(key);
+  return freed;
+}
 
 export function buildMemory(posts: ContentPost[], today: string): RotationMemory {
   const byRecency = [...posts].sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -52,10 +97,20 @@ export function buildMemory(posts: ContentPost[], today: string): RotationMemory
     }
   }
 
+  // Sources are deliberately NOT released. Running the same record twice is an
+  // editorial failure the reader can see, not a rotation preference — and the
+  // ledger has already dropped used records, so an empty ledger surfaces as
+  // the "no material" degradation rather than as a repeat.
+  const released = {
+    pillars: releaseOldest(recentPillars, PILLARS),
+    formats: releaseOldest(recentFormats, FORMATS),
+  };
+
   return {
     recentPillars,
     recentFormats,
     recentSources,
+    released,
     recentOpeners: byRecency
       .map((p) => p.openingLine)
       .filter(Boolean)
