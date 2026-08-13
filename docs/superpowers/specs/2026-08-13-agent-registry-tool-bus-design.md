@@ -5,20 +5,25 @@
 
 ## Problem
 
-Pallisade OS has four conversational AI surfaces — Brain, Sales Advisor, Meeting Prep and
-Projects chat. Each one hand-rolls its own system prompt, assembles its own tool array,
-and runs its own copy of the same tool-use loop. The four API routes that implement them
-total 653 lines and differ only in which tools they gather:
+Pallisade OS has three conversational AI surfaces — Brain, Sales Advisor and Projects
+chat. Each hand-rolls its own system prompt, assembles its own tool array, and runs its
+own copy of the same tool-use loop. The three routes total 482 lines and differ only in
+which tools they gather:
 
-| Route | Lines | Tools assembled |
-| --- | --- | --- |
-| `api/advisor` | 178 | `TOOLS` + `PROJECT_CONTEXT_TOOLS` + `EMAIL_TOOLS` + `CALENDAR_TOOLS` |
-| `api/brain` | 157 | `DRIVE_TOOLS` + `PROJECT_CONTEXT_TOOLS` |
-| `api/projects/chat` | 147 | `PROJECT_TOOLS` |
-| `api/prep` | 171 | one inline tool |
+| Route | Lines | Shape | Tools assembled |
+| --- | --- | --- | --- |
+| `api/advisor` | 178 | loop | `TOOLS` + `PROJECT_CONTEXT_TOOLS` + `EMAIL_TOOLS` + `CALENDAR_TOOLS` |
+| `api/brain` | 157 | loop ×2 modes | `DRIVE_TOOLS` + `PROJECT_CONTEXT_TOOLS` (+ `web_search`) |
+| `api/projects/chat` | 147 | loop | `PROJECT_TOOLS` |
+| `api/prep` | 171 | **one-shot** | one inline `save_playbook` tool, forced `tool_choice` |
 
-All four use `claude-sonnet-4-6`, all four cap at `MAX_ITERATIONS = 8`, and all four run
-the same `stop_reason === "tool_use"` cycle. The loop is written four times.
+All three loops use `claude-sonnet-4-6`, all cap at `MAX_ITERATIONS = 8`, and all run the
+same `stop_reason === "tool_use"` cycle. The loop is written three times.
+
+`api/prep` is listed for contrast: it is a single forced-`tool_choice` call with no loop
+and no message thread (`prep/route.ts:147-152`), so it is a structured generator, not a
+conversational surface. It joins the registry when Meeting Prep is rebuilt as something
+the founder can actually talk to (see Out of scope).
 
 Three consequences follow, and they are the founder's actual complaints.
 
@@ -65,14 +70,15 @@ Adding a persona today means adding a route. There is nowhere to put the eight o
   founder's confirmation. Grantable per agent rather than welded to the Advisor.
 - **The mock is deleted. Failures fail loudly.** No fallback path may render a
   non-answer as an answer.
-- **Conversational surfaces only.** The registry covers Brain, Advisor, Meeting Prep and
-  Projects chat. Content Studio's brief/draft/revise stages, pricing adjudication, news
-  curation and AI Business Review keep their purpose-built pipeline code. They need
+- **Conversational surfaces only.** The registry covers Brain, Advisor and Projects chat.
+  Content Studio's brief/draft/revise stages, pricing adjudication, news curation, AI
+  Business Review and Meeting Prep keep their purpose-built code. They need
   schema-constrained output and deterministic gates, which a persona abstraction fights.
-  AI Business Review is one-shot in particular — `review/page.tsx` is a form that posts
-  text and renders a typed result, with no message thread and no tool loop — so it is not
-  a registry agent. Its mock still dies (see Disposition of the mock); it simply becomes a
-  real structured call rather than an agent.
+  Business Review and Meeting Prep are one-shot generators in particular — a form or a
+  forced `tool_choice` call producing a typed result, with no message thread and no loop
+  — so neither is a registry agent today. Business Review's mock still dies (see
+  Disposition of the mock); it simply becomes a real structured call. Meeting Prep joins
+  the registry only when it is rebuilt as a conversation.
 - **Repo files are the baseline; the database may override the body.** The founder tunes
   personas live in Settings; the vendored file stays version-controlled and diffable.
 - **A surface renders a roster.** Brain becomes a bench of specialists rather than one
@@ -269,7 +275,9 @@ Sequenced follow-ups, each its own spec:
    `readCommitsApi` and linked-repo gating.
 2. **`fathom` tools** — sync past meeting summaries and transcripts via the Fathom public
    API (REST, webhooks, OAuth, TypeScript SDK at developers.fathom.ai).
-3. **Meeting Prep rebuild** — on `sales-discovery-coach` plus Fathom history.
+3. **Meeting Prep rebuild** — on `sales-discovery-coach` plus Fathom history. This is
+   where prep stops being a one-shot `save_playbook` generator and becomes a conversation,
+   and so also where it migrates onto the registry as a fourth surface.
 4. **Content Studio image prompts** — a new pipeline stage adapted from
    `design-image-prompt-engineer`. Pipeline code, not a registry agent.
 5. **Pricing comparables** — the `comparables` table holds three synthetic fixtures
