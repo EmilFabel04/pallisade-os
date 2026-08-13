@@ -470,7 +470,8 @@ describe("toolsFor", () => {
     const granted = names(toolsFor(["crm", "projects", "email", "calendar", "drive", "web"], ctx({
       emailEnabled: true, calendarEnabled: true,
     })));
-    for (const w of ["create_task", "create_lead", "update_lead", "update_task", "log_interaction", "create_project"]) {
+    for (const w of ["create_task", "create_lead", "update_lead", "update_task",
+                     "log_interaction", "create_project", "create_calendar_event"]) {
       expect(granted).not.toContain(w);
     }
   });
@@ -483,6 +484,17 @@ describe("toolsFor", () => {
     const granted = names(toolsFor(["email", "calendar"], ctx({ emailEnabled: true, calendarEnabled: true })));
     expect(granted).toContain("query_emails");
     expect(granted).toContain("query_calendar");
+  });
+
+  it("does NOT grant create_calendar_event through the calendar group", () => {
+    // create_calendar_event is a mutation. The calendar group is read-only;
+    // without this split, granting `calendar` would smuggle in a write tool.
+    expect(names(toolsFor(["calendar"], ctx({ calendarEnabled: true })))).toEqual(["query_calendar"]);
+  });
+
+  it("grants create_calendar_event only with writes AND a connected calendar", () => {
+    expect(names(toolsFor(["writes"], ctx({ calendarEnabled: true })))).toContain("create_calendar_event");
+    expect(names(toolsFor(["writes"], ctx({ calendarEnabled: false })))).not.toContain("create_calendar_event");
   });
 
   it("marks web_search as a server-executed tool", () => {
@@ -549,6 +561,21 @@ export const WRITE_TOOL_NAMES = new Set(WRITE_TOOLS_DEFS.map((t) => t.name));
 export const READ_TOOL_NAMES = new Set(READ_TOOLS.map((t) => t.name));
 ```
 
+**Also split `CALENDAR_TOOLS`.** `create_calendar_event` is a mutation — it is already in the
+private `WRITE_TOOLS` set at line 155, so it correctly queues a proposal — but it currently
+lives inside `CALENDAR_TOOLS`. Left as-is, granting the `calendar` group would hand an agent
+a write tool without a `writes` grant, which contradicts the spec's "`writes` off by
+default". Task 15 grants the Brain `calendar`, so this is not hypothetical.
+
+```ts
+export const CALENDAR_READ_TOOLS: ToolDef[] = [ /* query_calendar */ ];
+export const CALENDAR_WRITE_TOOLS: ToolDef[] = [ /* create_calendar_event */ ];
+export const CALENDAR_TOOLS: ToolDef[] = [...CALENDAR_READ_TOOLS, ...CALENDAR_WRITE_TOOLS];
+```
+
+Keep `CALENDAR_TOOLS` exported — `CALENDAR_READ_TOOL_NAMES` and existing importers rely on
+it until Task 12 rewrites the advisor route.
+
 The three `generate_*` "skill" tools are deliberately dropped from `TOOLS` here — Tasks 9 and 10 retire them. Delete their schema entries and their `case` arms in `resolveTool`, and delete the now-unused `import { generateCallSummary, generateBusinessReview, generateTomorrowPlan } from "@/lib/ai"` at the top of the file.
 
 Replace the private `const WRITE_TOOLS = new Set([...])` at line 155 with `WRITE_TOOL_NAMES` and update its use at line 199.
@@ -595,12 +622,16 @@ export const SERVER_TOOL_NAMES = new Set([WEB_SEARCH.name]);
 function grantsFor(group: CapabilityGroup, ctx: AgentContext): AgentTool[] {
   switch (group) {
     case "crm": return READ_TOOLS;
-    case "writes": return WRITE_TOOLS_DEFS;
+    // create_calendar_event rides with the other mutations, but only when the
+    // calendar is actually connected.
+    case "writes":
+      return ctx.calendarEnabled ? [...WRITE_TOOLS_DEFS, ...CALENDAR_WRITE_TOOLS] : WRITE_TOOLS_DEFS;
     case "projects": return PROJECT_CONTEXT_TOOLS;
     case "drive": return DRIVE_TOOLS;
     case "web": return [WEB_SEARCH];
     case "email": return ctx.emailEnabled ? EMAIL_TOOLS : [];
-    case "calendar": return ctx.calendarEnabled ? CALENDAR_TOOLS : [];
+    // READ tools only. create_calendar_event is a mutation and belongs to `writes`.
+    case "calendar": return ctx.calendarEnabled ? CALENDAR_READ_TOOLS : [];
     // Specified in the design, implemented in follow-up specs. An agent may
     // declare them today and simply receive nothing.
     case "repo": return [];
@@ -642,7 +673,19 @@ export async function dispatch(name: string, args: Args, ctx: AgentContext): Pro
 }
 ```
 
-Note: `create_calendar_event` is in `CALENDAR_TOOLS` but not `CALENDAR_READ_TOOL_NAMES`, and it is a write. Add it to `WRITE_TOOLS_DEFS`' name set handling by ensuring `dispatch` checks `WRITE_TOOL_NAMES` before `CALENDAR_READ_TOOL_NAMES` is consulted — it already does, because `CALENDAR_READ_TOOL_NAMES` contains only `query_calendar`, and `create_calendar_event` falls through to `resolveTool`'s write path. Verify this with the test below.
+**Dispatch routing for `create_calendar_event`:** `CALENDAR_READ_TOOL_NAMES` contains only
+`query_calendar`, so `create_calendar_event` falls past the calendar branch and reaches
+`resolveTool`, whose private `WRITE_TOOLS` set (line 155) already contains it — it is queued
+as a proposal, not executed. That is the behaviour to preserve. Add a dispatch test:
+
+```ts
+it("queues a calendar event as a proposal rather than creating it", async () => {
+  const c = ctx({ calendarEnabled: true });
+  const out = await dispatch("create_calendar_event", { summary: "Call Acme", start: "2026-08-20T10:00:00" }, c);
+  expect(JSON.parse(out).queued).toBe(true);
+  expect(c.proposals).toHaveLength(1);
+});
+```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -1216,7 +1259,14 @@ tools: [projects]
 ```ts
 import { describe, it, expect } from "vitest";
 import { loadRegistry } from "@/lib/agents/registry";
-import { CAPABILITY_GROUPS } from "@/lib/agents/types";
+import { toolsFor } from "@/lib/agents/capabilities";
+import { CAPABILITY_GROUPS, type AgentContext } from "@/lib/agents/types";
+
+const baseCtx = (): AgentContext => ({
+  today: "2026-08-13", businessName: "P", founderName: "E", services: "S",
+  snapshot: null, proposals: [], emailEnabled: false, calendarEnabled: false,
+  driveAccountId: null,
+});
 
 describe("the shipped agent roster", () => {
   it("loads every file in src/agents without a validation error", async () => {
@@ -1235,6 +1285,22 @@ describe("the shipped agent roster", () => {
     const reg = await loadRegistry();
     for (const [id, spec] of reg) {
       expect(spec.tools.includes("writes")).toBe(id === "sales-advisor");
+    }
+  });
+
+  it("resolves no mutation tool for any agent that did not declare writes", async () => {
+    // Declaration alone is not the guarantee — a read group could smuggle a
+    // mutation in (create_calendar_event used to live in CALENDAR_TOOLS).
+    // Assert on the RESOLVED tool set, with every integration switched on.
+    const MUTATIONS = ["create_task", "create_lead", "update_lead", "update_task",
+                       "log_interaction", "create_project", "create_calendar_event"];
+    const full = { ...baseCtx(), emailEnabled: true, calendarEnabled: true };
+    for (const [id, spec] of await loadRegistry()) {
+      if (spec.tools.includes("writes")) continue;
+      const granted = toolsFor(spec.tools, full).map((t) => t.name);
+      for (const m of MUTATIONS) {
+        expect(granted, `${id} must not resolve ${m}`).not.toContain(m);
+      }
     }
   });
 
