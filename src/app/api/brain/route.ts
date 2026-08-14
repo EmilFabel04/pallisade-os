@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { apiError } from "@/lib/api/errors";
-import { getAgent } from "@/lib/agents/registry";
+import { getAgent, AgentNotFound } from "@/lib/agents/registry";
 import { runAgent, DEFAULT_MODEL } from "@/lib/agents/runtime";
 import { renderBody } from "@/lib/agents/render";
 import { formatAttachmentsBlock } from "@/lib/brain/attachments";
+import { resolveAvailability } from "@/lib/brain/availability";
 import type { AgentContext, AgentSpec } from "@/lib/agents/types";
 
 export const runtime = "nodejs";
@@ -48,6 +49,12 @@ export async function POST(req: Request) {
     return apiError("bad_request", 400);
   }
 
+  // Restores the pre-migration guard: reject empty input before any upstream
+  // call rather than letting it reach the SDK and surface as a 502.
+  if (!body.messages || body.messages.length === 0) {
+    return apiError("missing_messages", 400);
+  }
+
   // `mode` is still accepted so existing clients keep working: strategist and
   // brainstorm are now two agents rather than two branches. `agentId` (Task
   // 14's picker) wins when both are present.
@@ -56,12 +63,21 @@ export async function POST(req: Request) {
   let spec: AgentSpec;
   try {
     spec = await getAgent(agentId);
-  } catch {
-    return apiError("agent_not_found", 404);
+  } catch (err) {
+    // AgentNotFound means the id genuinely doesn't exist. Anything else —
+    // a readdir failure, a malformed .md throwing from buildSpec, a
+    // loadOverrides DB error — is a real server failure and must not be
+    // silently relabeled "not found" with an empty console. apiError only
+    // logs when passed a cause, so the distinction matters for anyone
+    // debugging a 500-shaped problem that now reads 404.
+    if (err instanceof AgentNotFound) return apiError("agent_not_found", 404);
+    return apiError("agent_failed", 502, err);
   }
 
   const envModel = process.env.BRAIN_MODEL?.trim();
   if (envModel) spec = { ...spec, model: envModel };
+
+  const { emailEnabled, calendarEnabled } = await resolveAvailability(spec);
 
   const ctx: AgentContext = {
     today: new Date().toISOString().slice(0, 10),
@@ -72,13 +88,8 @@ export async function POST(req: Request) {
     // dereference ctx.snapshot are never granted to a Brain agent.
     snapshot: null,
     proposals: [],
-    // Neither Brain persona declares the "email"/"calendar" capability
-    // groups today, and the availability checks are DB-backed (they touch
-    // the founder's production database). Wiring them in only when a Brain
-    // agent actually asks for them avoids a new, unnecessary DB dependency
-    // on every Brain turn.
-    emailEnabled: false,
-    calendarEnabled: false,
+    emailEnabled,
+    calendarEnabled,
     driveAccountId: body.context?.driveAccountId ?? null,
   };
 

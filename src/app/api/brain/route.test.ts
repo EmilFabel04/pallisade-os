@@ -8,12 +8,25 @@
    src/app/api/agents/route.test.ts.
 
    The Anthropic SDK is stubbed the same way (src/app/api/ai/route.test.ts)
-   so no test makes a real network call.
+   so no test makes a real network call. emailToolsAvailable/
+   calendarToolsAvailable are DB-backed too (src/lib/gmail/accounts.ts) —
+   stubbed at the module boundary for the same reason, which also lets
+   individual tests control what they resolve to.
    ============================================================ */
 
 import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import type { AgentSpec } from "@/lib/agents/types";
 
 const { mockCreate } = vi.hoisted(() => ({ mockCreate: vi.fn() }));
+const overridesState = vi.hoisted(() => ({ reject: false }));
+const { mockEmailAvailable, mockCalendarAvailable } = vi.hoisted(() => ({
+  mockEmailAvailable: vi.fn(),
+  mockCalendarAvailable: vi.fn(),
+}));
+// Lets one test substitute a custom AgentSpec (e.g. one that declares the
+// "email" capability group, which no shipped Brain persona does today) while
+// every other test still exercises the real registry against src/agents.
+const registryOverride = vi.hoisted(() => ({ spec: null as AgentSpec | null }));
 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class Anthropic {
@@ -22,11 +35,34 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }));
 
 vi.mock("@/lib/agents/overrides", () => ({
-  loadOverrides: () => Promise.resolve(new Map<string, string>()),
+  loadOverrides: () =>
+    overridesState.reject
+      ? Promise.reject(new Error("db unavailable"))
+      : Promise.resolve(new Map<string, string>()),
 }));
 
+vi.mock("@/lib/gmail/advisorEmail", () => ({
+  emailToolsAvailable: mockEmailAvailable,
+}));
+
+vi.mock("@/lib/calendar/advisorCalendar", () => ({
+  calendarToolsAvailable: mockCalendarAvailable,
+}));
+
+vi.mock("@/lib/agents/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/agents/registry")>();
+  return {
+    ...actual,
+    getAgent: async (id: string) => {
+      if (registryOverride.spec && id === registryOverride.spec.id) return registryOverride.spec;
+      return actual.getAgent(id);
+    },
+  };
+});
+
 import { GET, POST } from "@/app/api/brain/route";
-import { resetRegistryCache } from "@/lib/agents/registry";
+import { resolveAvailability } from "@/lib/brain/availability";
+import { resetRegistryCache, AgentNotFound } from "@/lib/agents/registry";
 
 const savedKey = process.env.ANTHROPIC_API_KEY;
 const savedModel = process.env.BRAIN_MODEL;
@@ -35,6 +71,10 @@ beforeEach(() => {
   process.env.ANTHROPIC_API_KEY = "test-key";
   delete process.env.BRAIN_MODEL;
   mockCreate.mockReset();
+  overridesState.reject = false;
+  registryOverride.spec = null;
+  mockEmailAvailable.mockReset().mockResolvedValue(false);
+  mockCalendarAvailable.mockReset().mockResolvedValue(false);
   resetRegistryCache();
 });
 
@@ -95,10 +135,39 @@ describe("POST /api/brain — error semantics", () => {
     expect((await res.json()).error).toBe("bad_request");
   });
 
+  it("400 missing_messages when messages is missing or empty — rejected before any upstream call", async () => {
+    const res1 = await call({});
+    expect(res1.status).toBe(400);
+    expect((await res1.json()).error).toBe("missing_messages");
+
+    const res2 = await call({ messages: [] });
+    expect(res2.status).toBe(400);
+    expect((await res2.json()).error).toBe("missing_messages");
+
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it("404 agent_not_found for an unknown agentId", async () => {
     const res = await call({ agentId: "nope", messages: msgs });
     expect(res.status).toBe(404);
     expect((await res.json()).error).toBe("agent_not_found");
+  });
+
+  it("502 agent_failed, and logs the cause, when the registry fails for a reason OTHER than an unknown id", async () => {
+    overridesState.reject = true;
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await call({ messages: msgs });
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.error).toBe("agent_failed");
+      // The old code's bare `catch { return apiError("agent_not_found", 404) }`
+      // relabeled every registry failure as 404 with an empty console — this
+      // is the regression test for that.
+      expect(errSpy).toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("502 agent_failed, and never leaks the raw upstream message, when the model call throws", async () => {
@@ -117,6 +186,10 @@ describe("POST /api/brain — agent resolution", () => {
     await call({ messages: msgs });
     const toolNames = mockCreate.mock.calls[0][0].tools.map((t: { name: string }) => t.name);
     expect(toolNames).toEqual(["list_projects", "get_project_context"]);
+    // Neither shipped Brain persona declares email/calendar — confirms the
+    // zero-DB-contact claim: the availability checks are never even called.
+    expect(mockEmailAvailable).not.toHaveBeenCalled();
+    expect(mockCalendarAvailable).not.toHaveBeenCalled();
   });
 
   it("mode: 'brainstorm' resolves product-brainstorm (drive + web tools too)", async () => {
@@ -180,6 +253,24 @@ describe("POST /api/brain — attachments", () => {
   });
 });
 
+describe("POST /api/brain — no unsubstituted placeholder ever reaches the model", () => {
+  it("strategist: every {{token}} in the persona body is rendered before the system prompt is sent", async () => {
+    mockCreate.mockResolvedValue(textResponse("hi"));
+    await call({ messages: msgs });
+    const system = mockCreate.mock.calls[0][0].system;
+    expect(system).not.toMatch(/\{\{/);
+    expect(system).toContain("the founder"); // the default founderName substitution landed
+  });
+
+  it("product-brainstorm: same guarantee", async () => {
+    mockCreate.mockResolvedValue(textResponse("hi"));
+    await call({ mode: "brainstorm", messages: msgs, context: { founderName: "Emil" } });
+    const system = mockCreate.mock.calls[0][0].system;
+    expect(system).not.toMatch(/\{\{/);
+    expect(system).toContain("Emil");
+  });
+});
+
 describe("POST /api/brain — response shape", () => {
   it("returns content and stoppedBy", async () => {
     mockCreate.mockResolvedValue(textResponse("the answer"));
@@ -194,5 +285,76 @@ describe("POST /api/brain — response shape", () => {
     const res = await call({ messages: msgs });
     const json = await res.json();
     expect(json.content).toBe("I couldn't produce a response — try rephrasing.");
+  });
+});
+
+describe("resolveAvailability — only resolves the checks a spec's declared tools actually need", () => {
+  const spec = (tools: AgentSpec["tools"]): Pick<AgentSpec, "tools"> => ({ tools });
+
+  it("neither group declared: both false, neither DB-backed check is called", async () => {
+    const result = await resolveAvailability(spec(["projects"]));
+    expect(result).toEqual({ emailEnabled: false, calendarEnabled: false });
+    expect(mockEmailAvailable).not.toHaveBeenCalled();
+    expect(mockCalendarAvailable).not.toHaveBeenCalled();
+  });
+
+  it('"email" declared: only the email check runs', async () => {
+    mockEmailAvailable.mockResolvedValue(true);
+    const result = await resolveAvailability(spec(["email"]));
+    expect(result).toEqual({ emailEnabled: true, calendarEnabled: false });
+    expect(mockEmailAvailable).toHaveBeenCalledTimes(1);
+    expect(mockCalendarAvailable).not.toHaveBeenCalled();
+  });
+
+  it('"calendar" declared: only the calendar check runs', async () => {
+    mockCalendarAvailable.mockResolvedValue(true);
+    const result = await resolveAvailability(spec(["calendar"]));
+    expect(result).toEqual({ emailEnabled: false, calendarEnabled: true });
+    expect(mockCalendarAvailable).toHaveBeenCalledTimes(1);
+    expect(mockEmailAvailable).not.toHaveBeenCalled();
+  });
+
+  it('"writes" declared: counts as wanting calendar too (create_calendar_event rides with the other mutations)', async () => {
+    mockCalendarAvailable.mockResolvedValue(true);
+    const result = await resolveAvailability(spec(["writes"]));
+    expect(result.calendarEnabled).toBe(true);
+    expect(mockCalendarAvailable).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("POST /api/brain — a spec that declares 'email' actually receives the email tools", () => {
+  it("wires ctx.emailEnabled through to the resolved tool list end to end", async () => {
+    registryOverride.spec = {
+      id: "email-test-agent", name: "T", description: "D", color: "#fff", emoji: "A", vibe: "V",
+      surface: "brain", tools: ["email"], body: "SYSTEM {{today}}",
+    };
+    mockEmailAvailable.mockResolvedValue(true);
+    mockCreate.mockResolvedValue(textResponse("hi"));
+
+    await call({ agentId: "email-test-agent", messages: msgs });
+
+    expect(mockEmailAvailable).toHaveBeenCalledTimes(1);
+    const toolNames = mockCreate.mock.calls[0][0].tools.map((t: { name: string }) => t.name);
+    expect(toolNames).toContain("query_emails");
+  });
+
+  it("the same spec receives nothing when the inbox isn't actually connected", async () => {
+    registryOverride.spec = {
+      id: "email-test-agent", name: "T", description: "D", color: "#fff", emoji: "A", vibe: "V",
+      surface: "brain", tools: ["email"], body: "SYSTEM {{today}}",
+    };
+    mockEmailAvailable.mockResolvedValue(false);
+    mockCreate.mockResolvedValue(textResponse("hi"));
+
+    await call({ agentId: "email-test-agent", messages: msgs });
+
+    const toolNames = mockCreate.mock.calls[0][0].tools.map((t: { name: string }) => t.name);
+    expect(toolNames).not.toContain("query_emails");
+  });
+});
+
+describe("AgentNotFound export", () => {
+  it("is a real Error subclass, as the route's catch relies on", () => {
+    expect(new AgentNotFound("x")).toBeInstanceOf(Error);
   });
 });
