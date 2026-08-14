@@ -15,7 +15,17 @@ function str(meta: Record<string, string | string[]>, key: string, id: string): 
 }
 
 export function buildSpec(id: string, source: string): AgentSpec {
-  const { meta, body } = parseFrontmatter(source);
+  // parseFrontmatter throws structural errors ("missing frontmatter",
+  // "unterminated frontmatter") that know nothing about agents. Re-throw with
+  // the id attached — otherwise a boot failure across the whole roster reports
+  // only that *a* file is malformed, and names none of them.
+  let parsed;
+  try {
+    parsed = parseFrontmatter(source);
+  } catch (err) {
+    throw new Error(`agent "${id}": ${(err as Error).message}`);
+  }
+  const { meta, body } = parsed;
 
   for (const key of REQUIRED) str(meta, key, id);
 

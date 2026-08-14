@@ -25,17 +25,19 @@ describe("buildSpec", () => {
   it("rejects an unknown capability group, naming file and field", () => {
     const bad = OK.replace("[crm, projects]", "[crm, crmm]");
     expect(() => buildSpec("deal-strategist", bad))
-      .toThrow(/deal-strategist.*tools.*crmm/s);
+      .toThrow(/^agent "deal-strategist": field "tools" has unknown capability group "crmm"/);
   });
 
   it("rejects an unknown surface", () => {
     const bad = OK.replace("surface: brain", "surface: nowhere");
-    expect(() => buildSpec("deal-strategist", bad)).toThrow(/surface.*nowhere/s);
+    expect(() => buildSpec("deal-strategist", bad))
+      .toThrow(/^agent "deal-strategist": field "surface" has unknown value "nowhere"/);
   });
 
   it("rejects a missing required field", () => {
     const bad = OK.replace("name: Deal Strategist\n", "");
-    expect(() => buildSpec("deal-strategist", bad)).toThrow(/deal-strategist.*name/s);
+    expect(() => buildSpec("deal-strategist", bad))
+      .toThrow(/^agent "deal-strategist": field "name" is required/);
   });
 
   it("rejects an empty body", () => {
@@ -51,6 +53,11 @@ describe("buildSpec", () => {
   it("reads an optional model override", () => {
     const s = buildSpec("x", OK.replace("surface: brain", "surface: brain\nmodel: claude-opus-4-6"));
     expect(s.model).toBe("claude-opus-4-6");
+  });
+
+  it("names the agent when the frontmatter block is missing entirely", () => {
+    expect(() => buildSpec("deal-strategist", "no frontmatter here"))
+      .toThrow(/^agent "deal-strategist": .*frontmatter/s);
   });
 });
 
