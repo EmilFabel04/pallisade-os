@@ -1,8 +1,4 @@
-import type { AdvisorSnapshot, ProposedAction, Scorecard, Task } from "@/lib/types";
-import {
-  generateCallSummary, generateBusinessReview, generateTomorrowPlan,
-} from "@/lib/ai";
-import { todayScorecard, openTasks, followUpsDueToday } from "@/lib/selectors";
+import type { AdvisorSnapshot, ProposedAction } from "@/lib/types";
 import {
   queryLeads, queryTasks, queryProjects, queryInteractions,
   searchPainPoints, getPipelineMetrics,
@@ -26,8 +22,7 @@ const dateStr = (description = "") => ({ type: "string", description: `ISO date 
 
 /* ---------------- schemas ---------------- */
 
-export const TOOLS: ToolDef[] = [
-  // ---- read ----
+export const READ_TOOLS: ToolDef[] = [
   { name: "query_leads", description: "Search/filter CRM leads. Returns compact lead records (with ids).",
     input_schema: obj({
       status: s("e.g. new, contacted, interested, call booked, proposal, won, lost"),
@@ -50,21 +45,11 @@ export const TOOLS: ToolDef[] = [
     input_schema: obj({ query: s("free-text"), industry: s(), urgency: enumStr(["low", "medium", "high"]), limit: n() }) },
   { name: "get_pipeline_metrics", description: "Dashboard metrics: pipeline counts/value, today's activity, follow-ups due.",
     input_schema: obj({}) },
+];
 
-  // ---- skills ----
-  { name: "generate_call_summary", description: "Turn rough interaction notes into a structured call summary.",
-    input_schema: obj({
-      rawNotes: s(), whatTheySaid: s(), painPoints: s(), objections: s(),
-      buyingSignals: s(), company: s(), contact: s(),
-    }, ["rawNotes"]) },
-  { name: "generate_business_review", description: "Turn a messy end-of-day brain-dump into a structured business review.",
-    input_schema: obj({ text: s("the daily update text") }, ["text"]) },
-  { name: "generate_tomorrow_plan", description: "Produce tomorrow's top-3 priorities from current open tasks, follow-ups and the latest scorecard.",
-    input_schema: obj({}) },
-
-  // ---- write (proposed, need confirmation) ----
-  // NB: read email tools (EMAIL_TOOLS) are appended by the route only when a
-  // Gmail inbox is connected — they resolve async and aren't part of resolveTool.
+// NB: read email tools (EMAIL_TOOLS) are appended by the route only when a
+// Gmail inbox is connected — they resolve async and aren't part of resolveTool.
+export const WRITE_TOOLS_DEFS: ToolDef[] = [
   { name: "create_task", description: "Propose creating a task.",
     input_schema: obj({
       title: s(), category: s(), priority: enumStr(["low", "medium", "high"]),
@@ -106,6 +91,10 @@ export const TOOLS: ToolDef[] = [
     }, ["name"]) },
 ];
 
+export const TOOLS: ToolDef[] = [...READ_TOOLS, ...WRITE_TOOLS_DEFS];
+
+export const READ_TOOL_NAMES = new Set(READ_TOOLS.map((t) => t.name));
+
 /* Read tools for connected Gmail inboxes. Appended to the tool list by the route
    only when at least one inbox is connected, and resolved asynchronously
    (see resolveEmailTool) since they hit the Gmail API. */
@@ -138,9 +127,12 @@ export const EMAIL_TOOL_NAMES = new Set(EMAIL_TOOLS.map((t) => t.name));
    client-side via the calendar API on confirmation. */
 const arr = (description = "") => ({ type: "array", items: { type: "string" }, description });
 
-export const CALENDAR_TOOLS: ToolDef[] = [
+export const CALENDAR_READ_TOOLS: ToolDef[] = [
   { name: "query_calendar", description: "List the founder's upcoming Google Calendar events. Returns compact events — never invent meetings.",
     input_schema: obj({ days: n("look-ahead window, default 7"), query: s("free-text filter, optional") }) },
+];
+
+export const CALENDAR_WRITE_TOOLS: ToolDef[] = [
   { name: "create_calendar_event", description: "Propose creating a Google Calendar event (e.g. booking a call). Resolve relative times against today's date and pass `start` as a full ISO date-time. Queued for the founder's confirmation.",
     input_schema: obj({
       summary: s("event title"),
@@ -150,11 +142,16 @@ export const CALENDAR_TOOLS: ToolDef[] = [
     }, ["summary", "start"]) },
 ];
 
-export const CALENDAR_READ_TOOL_NAMES = new Set(["query_calendar"]);
+export const CALENDAR_TOOLS: ToolDef[] = [...CALENDAR_READ_TOOLS, ...CALENDAR_WRITE_TOOLS];
 
-const WRITE_TOOLS = new Set([
-  "create_task", "create_lead", "update_lead", "update_task", "log_interaction",
-  "create_project", "create_calendar_event",
+export const CALENDAR_READ_TOOL_NAMES = new Set(CALENDAR_READ_TOOLS.map((t) => t.name));
+
+// create_calendar_event is a mutation queued as a proposal, not executed here —
+// it belongs in this set even though it lives in CALENDAR_WRITE_TOOLS, not
+// WRITE_TOOLS_DEFS, so that resolveTool still routes it to the proposal queue.
+export const WRITE_TOOL_NAMES = new Set([
+  ...WRITE_TOOLS_DEFS.map((t) => t.name),
+  ...CALENDAR_WRITE_TOOLS.map((t) => t.name),
 ]);
 
 /* ---------------- descriptions for proposal cards ---------------- */
@@ -187,7 +184,7 @@ export function describeAction(tool: string, a: Args): string {
 
 /**
  * Resolve a tool call to a JSON string result.
- * Read & skill tools run inline against the snapshot.
+ * Read tools run inline against the snapshot.
  * Write tools push a ProposedAction and return a synthetic "queued" result.
  */
 export function resolveTool(
@@ -196,7 +193,7 @@ export function resolveTool(
   snapshot: AdvisorSnapshot,
   proposals: ProposedAction[],
 ): string {
-  if (WRITE_TOOLS.has(name)) {
+  if (WRITE_TOOL_NAMES.has(name)) {
     const action: ProposedAction = {
       id: `act_${proposals.length + 1}_${name}`,
       tool: name,
@@ -216,27 +213,6 @@ export function resolveTool(
     case "search_pain_points": return JSON.stringify(searchPainPoints(snapshot, args));
     case "get_pipeline_metrics": return JSON.stringify(getPipelineMetrics(snapshot, args));
 
-    // Skill tools run the deterministic local generators from ai.ts (not the
-    // Claude-backed /api/ai route) on purpose: it keeps this loop synchronous and
-    // avoids a nested model call inside each tool turn.
-    case "generate_call_summary":
-      return JSON.stringify(generateCallSummary({
-        rawNotes: String(args.rawNotes ?? ""),
-        whatTheySaid: args.whatTheySaid as string | undefined,
-        painPoints: args.painPoints as string | undefined,
-        objections: args.objections as string | undefined,
-        buyingSignals: args.buyingSignals as string | undefined,
-        company: args.company as string | undefined,
-        contact: args.contact as string | undefined,
-      }));
-    case "generate_business_review":
-      return JSON.stringify(generateBusinessReview(String(args.text ?? "")));
-    case "generate_tomorrow_plan": {
-      const sc: Scorecard | null = todayScorecard(snapshot.scorecards);
-      const open: Task[] = openTasks(snapshot.tasks);
-      const due = followUpsDueToday(snapshot.leads, snapshot.tasks);
-      return JSON.stringify(generateTomorrowPlan({ scorecard: sc, openTasks: open, dueFollowUps: due }));
-    }
     default:
       return JSON.stringify({ error: `unknown tool: ${name}` });
   }

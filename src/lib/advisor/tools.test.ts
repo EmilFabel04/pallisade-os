@@ -16,10 +16,9 @@ function emptySnapshot(): AdvisorSnapshot {
 }
 
 describe("TOOLS", () => {
-  it("exposes read, skill, and write tools with valid schemas", () => {
+  it("exposes read and write tools with valid schemas", () => {
     const names = TOOLS.map((t) => t.name);
     expect(names).toContain("query_leads");
-    expect(names).toContain("generate_call_summary");
     expect(names).toContain("create_task");
     for (const t of TOOLS) {
       expect(t.input_schema.type).toBe("object");
