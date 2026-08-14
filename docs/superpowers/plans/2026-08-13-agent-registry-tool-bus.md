@@ -1301,7 +1301,7 @@ git commit -m "feat(agents): single agent runtime replacing three route loops"
 ### Task 7: Migrate existing personas to agent files
 
 **Files:**
-- Create: `src/agents/sales-advisor.md`, `src/agents/strategist.md`, `src/agents/product-brainstorm.md`, `src/agents/project-copilot.md`
+- Create: `src/agents/sales-advisor.md`, `src/agents/strategist.md`, `src/agents/product-brainstorm.md`
 - Modify: `next.config.ts` — add `outputFileTracingIncludes`
 - Test: `src/lib/agents/roster.test.ts`
 
