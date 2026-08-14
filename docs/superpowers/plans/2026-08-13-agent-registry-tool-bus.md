@@ -1843,9 +1843,19 @@ export async function POST(req: Request) {
   // brainstorm are now two agents rather than two branches.
   const agentId = body.agentId ?? (body.mode === "brainstorm" ? "product-brainstorm" : "strategist");
 
+  // Distinguish a genuinely unknown id from a registry failure. getAgent also
+  // propagates anything loadRegistry throws — a readdir error, a buildSpec
+  // validation failure from a malformed .md, a loadOverrides DB error. A bare
+  // catch reports all of those as "agent_not_found" for an id that exists, with
+  // an EMPTY server console, because apiError only logs when given a cause.
+  // That matters most at Tasks 15 and 16, which add agent files and DB writes.
   let spec: AgentSpec;
-  try { spec = await getAgent(agentId); }
-  catch { return apiError("agent_not_found", 404); }
+  try {
+    spec = await getAgent(agentId);
+  } catch (err) {
+    if (err instanceof AgentNotFound) return apiError("agent_not_found", 404);
+    return apiError("agent_failed", 502, err);
+  }
 
   const ctx: AgentContext = {
     today: new Date().toISOString().slice(0, 10),
@@ -1854,10 +1864,29 @@ export async function POST(req: Request) {
     services: body.context?.services || DEFAULT_SERVICES,
     snapshot: body.snapshot ?? null,
     proposals: [],
-    emailEnabled: await emailToolsAvailable(),
-    calendarEnabled: await calendarToolsAvailable(),
+    // Resolve availability only for groups this agent actually declares. Today
+    // both Brain personas declare neither, so this costs zero DB contact — and
+    // when Task 15 grants strategist `email` and `calendar`, it starts working
+    // automatically. Hardcoding `false` would make that task silently deliver a
+    // Brain with no inbox, since toolsFor returns [] for a disabled group.
+    // `writes` is included because capabilities.ts reads calendarEnabled for it.
+    ...(await resolveAvailability(spec)),
     driveAccountId: body.context?.driveAccountId ?? null,
   };
+```
+
+with:
+
+```ts
+async function resolveAvailability(spec: AgentSpec) {
+  const wantsEmail = spec.tools.includes("email");
+  const wantsCalendar = spec.tools.includes("calendar") || spec.tools.includes("writes");
+  const [emailEnabled, calendarEnabled] = await Promise.all([
+    wantsEmail ? emailToolsAvailable() : Promise.resolve(false),
+    wantsCalendar ? calendarToolsAvailable() : Promise.resolve(false),
+  ]);
+  return { emailEnabled, calendarEnabled };
+}
 
   let rendered = renderBody(spec.body, ctx);
   const attachments = formatAttachmentsBlock(body.attachments ?? []);
@@ -2064,10 +2093,21 @@ Fetch with `curl -sL https://raw.githubusercontent.com/msitarzewski/agency-agent
 
 ```ts
 // Append to src/lib/agents/roster.test.ts
+// Assert on RESOLVED tools, not declared groups. A declaration check passes
+// even when the route hands the bus `emailEnabled: false` and the Brain
+// receives zero inbox tools — which is exactly the trap Task 11's review
+// caught. Declared groups are necessary but nowhere near sufficient.
 it("gives the Brain strategist real access to the business", async () => {
   const spec = (await loadRegistry()).get("strategist")!;
   for (const g of ["crm", "projects", "email", "calendar", "drive", "web"]) {
     expect(spec.tools).toContain(g);
+  }
+  const granted = toolsFor(spec.tools, {
+    ...baseCtx(), emailEnabled: true, calendarEnabled: true,
+  }).map((t) => t.name);
+  for (const t of ["query_leads", "query_emails", "query_calendar",
+                   "drive_search", "list_projects", "web_search"]) {
+    expect(granted).toContain(t);
   }
 });
 
