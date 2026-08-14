@@ -211,20 +211,36 @@ describe("buildSpec", () => {
     expect(s.model).toBeUndefined();
   });
 
+  // These assertions are anchored and quote the exact field, deliberately.
+  // An unordered substring regex like /deal-strategist.*name/s passes against
+  // `field "surname" is required`, and /deal-strategist.*tools.*crmm/s passes
+  // against a lazy `agent "x": invalid: ${JSON.stringify(meta)}` dump — a raw
+  // dump contains every token the regex looks for. Anchoring is what makes a
+  // future regression to a generic error message fail the test.
   it("rejects an unknown capability group, naming file and field", () => {
     const bad = OK.replace("[crm, projects]", "[crm, crmm]");
     expect(() => buildSpec("deal-strategist", bad))
-      .toThrow(/deal-strategist.*tools.*crmm/s);
+      .toThrow(/^agent "deal-strategist": field "tools" has unknown capability group "crmm"/);
   });
 
   it("rejects an unknown surface", () => {
     const bad = OK.replace("surface: brain", "surface: nowhere");
-    expect(() => buildSpec("deal-strategist", bad)).toThrow(/surface.*nowhere/s);
+    expect(() => buildSpec("deal-strategist", bad))
+      .toThrow(/^agent "deal-strategist": field "surface" has unknown value "nowhere"/);
   });
 
   it("rejects a missing required field", () => {
     const bad = OK.replace("name: Deal Strategist\n", "");
-    expect(() => buildSpec("deal-strategist", bad)).toThrow(/deal-strategist.*name/s);
+    expect(() => buildSpec("deal-strategist", bad))
+      .toThrow(/^agent "deal-strategist": field "name" is required/);
+  });
+
+  it("names the agent when the frontmatter block is missing entirely", () => {
+    // parseFrontmatter throws a structural error that knows nothing about
+    // agents. buildSpec must add the id, or a boot failure across 8+ files
+    // says only "missing frontmatter" and names none of them.
+    expect(() => buildSpec("deal-strategist", "no frontmatter here"))
+      .toThrow(/^agent "deal-strategist": .*frontmatter/s);
   });
 
   it("rejects an empty body", () => {
@@ -333,7 +349,17 @@ function str(meta: Record<string, string | string[]>, key: string, id: string): 
 }
 
 export function buildSpec(id: string, source: string): AgentSpec {
-  const { meta, body } = parseFrontmatter(source);
+  // parseFrontmatter throws structural errors ("missing frontmatter",
+  // "unterminated frontmatter") that know nothing about agents. Re-throw with
+  // the id attached — otherwise a boot failure across the whole roster reports
+  // only that *a* file is malformed, and names none of them.
+  let parsed;
+  try {
+    parsed = parseFrontmatter(source);
+  } catch (err) {
+    throw new Error(`agent "${id}": ${(err as Error).message}`);
+  }
+  const { meta, body } = parsed;
 
   for (const key of REQUIRED) str(meta, key, id);
 
