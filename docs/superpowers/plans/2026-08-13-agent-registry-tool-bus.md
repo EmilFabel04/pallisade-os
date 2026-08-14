@@ -2108,6 +2108,23 @@ legacy branch, which is exactly today's behaviour.
 
 This is the task that answers "the Brain is very underdeveloped". `strategist.md` goes from `tools: [projects]` to `tools: [crm, projects, drive, email, calendar, web]` — it can now see leads, interactions, quotes, the pipeline and the inbox.
 
+**The strategist's body must be updated too** (revised 2026-08-14 after this task's review). An
+earlier instruction said to leave it byte-identical; that is wrong here. `strategist.md:27-29`
+names only `list_projects` and `get_project_context`, and its sole anti-fabrication clause is
+scoped to *project* state. An agent holding 15 tools that is told about 2 — and forbidden from
+inventing project state but not leads, numbers or conversations — is the exact defect Task 3
+fixed on the Advisor, and the exact complaint that motivated this branch. Replace the
+`THE FOUNDER'S REAL WORK` block with one naming the pipeline, inbox and calendar tools, and
+extend the grounding rule to all of them. Match the file's existing voice.
+
+**`compactLead` gains `createdAt` and `updatedAt`** (`src/lib/advisor/readTools.ts:10-15`). The
+Pipeline Analyst's standing diagnostic asks for leads created in the last 30 days versus the
+30 before, and for leads whose `lastContact` predates `updatedAt`. Neither field survives the
+projection today, so those steps are unanswerable — a persona whose thesis is "every number
+traceable to a tool call" would have to refuse a fixed step forever, or invent it. Adding the
+two fields makes the instructions true and gives the Advisor the same signal; top-of-funnel
+rate is the founder's earliest indicator and is currently invisible to every agent.
+
 Adapt the three new personas from `agency-agents`, rewriting each against Pallisade's real domain rather than importing verbatim:
 
 | File | Upstream source | tools |
