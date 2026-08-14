@@ -303,3 +303,57 @@ None block.
    its `FIND` string if more than one line matches (warns, doesn't block).
    None of the 14 mutants run here hit this, but a careless future find
    string could silently mutate two call sites at once.
+
+## Final whole-branch review (2026-08-14)
+
+Dispatched over all 35 commits after Task 17. **4 Important, 0 Critical.** All four were
+cross-task seams — defects that only exist where independently-reviewed pieces meet, which is
+why no per-task review found them.
+
+1. **The strategist had Drive tools that always failed, and relayed a false statement.**
+   Task 15 granted `drive`; the Brain page only forwarded `driveAccountId` for
+   `product-brainstorm`. So the *default* Brain agent held `drive_search`/`drive_read_file`
+   and got `{"error":"Google Drive is not connected"}` from every call — then told the founder
+   their connected Drive was disconnected. The identical defect class Task 15 caught for the
+   CRM snapshot, one layer over. `driveAccountId` is now resolved server-side, gated on the
+   declared group, and the client field is gone.
+
+2. **A cached rejection defeated the registry's own retry fix.** `overrides.ts` cached a
+   rejected `schemaReady` permanently. `registry.ts` clears its cache on failure so a
+   transient fault retries — but that retry calls `loadOverrides` → `ensureAgentSchema` and
+   got the same poisoned promise back. The registry's fix could not work, and this branch put
+   the registry on the hot path of every AI surface. Fixed in `overrides.ts` and in
+   `content/daily/store.ts`, which carried the original bug.
+
+3. **Silent truncation survived.** Both routes returned `stoppedBy`; no client read it and no
+   page rendered it, so a capped turn was byte-indistinguishable from a complete one — the
+   behaviour the spec's error table exists to remove. `stop_reason: "max_tokens"` was also
+   folded into `"end"`, making the likelier truncation channel unrepresentable. Now its own
+   reason, threaded to both clients, with an actionable notice on both pages.
+
+4. **Three Brain personas interpolate `{{services}}` the Brain never populated.** The Advisor
+   page sends `settings.services`; the Brain page did not, so the three new specialists
+   silently ignored the founder's Services setting.
+
+Final state: **1011 tests**, `tsc --noEmit` clean, `npm run build` clean. Re-review of the fix
+wave: all four addressed, no new breakage, merge ready.
+
+### What the reviews taught
+
+Fourteen real defects across 11 fix rounds. **Eleven originated in the plan, not the
+implementation** — the subagents built what was specified, accurately; the specification kept
+being wrong in ways only adversarial reading found.
+
+The recurring species is the one this project already documented on the content-studio branch:
+**an assertion that passes against the thing it is meant to detect.** It appeared four more
+times here — Task 2's error regexes passed against a generic error dump; Task 6's
+`SERVER_TOOL_NAMES` filter was deletable with all 8 tests green; Task 6's iteration-cap test
+never checked the partial answer in its own name; Task 15's implementer caught its own vacuous
+test by reverting the fix and watching it still pass.
+
+A second species emerged that the earlier branch did not name: **a capability granted but not
+wired.** A tool can appear in the list the model receives and still answer every call with an
+error. It happened twice — the CRM snapshot and Drive — and both times the grant assertions
+were green, because they assert that a declared group resolves to real tool *definitions*, not
+that a resolved tool returns *data*. When `repo` and `fathom` are implemented, they need the
+deeper assertion from day one.
