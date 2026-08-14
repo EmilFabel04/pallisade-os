@@ -12,6 +12,7 @@ import { MicButton } from "@/components/ui/MicButton";
 import { getBrainStatus, sendBrainTurn, getDriveStatus } from "@/lib/brainClient";
 import type { BrainThread, BrainAttachment, ChatMessage } from "@/lib/types";
 import { AgentPicker } from "@/components/agents/AgentPicker";
+import { threadAgentId } from "@/lib/brain/mode";
 import { uid, nowISO } from "@/lib/utils";
 
 export default function BrainPage() {
@@ -29,17 +30,19 @@ export default function BrainPage() {
   const deepLinked = useRef(false);
   const searchParams = useSearchParams();
 
-  // strategist/brainstorm used to be a mode toggle; they are now two agents.
-  // isBrainstorm still decides attachments/Drive/thread-bucketing because the
-  // persisted BrainThread schema only has room for those two buckets today.
+  // strategist/brainstorm used to be a mode toggle; they are now five agents.
+  // isBrainstorm still decides attachments/Drive and the page's copy — those
+  // are genuinely brainstorm-only affordances, not a bucketing scheme.
   const isBrainstorm = agentId === "product-brainstorm";
 
   useEffect(() => { getBrainStatus().then((s) => setConfigured(s.configured)); }, []);
   useEffect(() => { if (isBrainstorm) getDriveStatus().then(setDrive); }, [isBrainstorm]);
 
+  // One bucket per agent, resolved the same way the thread is reopened, so a
+  // thread never shows in a list that would then restore a different agent.
   const threads = useMemo(
-    () => brainThreads.filter((t) => (t.mode === "brainstorm") === isBrainstorm),
-    [brainThreads, isBrainstorm],
+    () => brainThreads.filter((t) => threadAgentId(t) === agentId),
+    [brainThreads, agentId],
   );
 
   const active = useMemo<BrainThread | null>(
@@ -60,7 +63,7 @@ export default function BrainPage() {
 
   const selectThread = (id: string) => {
     const t = brainThreads.find((x) => x.id === id);
-    if (t) setAgentId(t.mode === "brainstorm" ? "product-brainstorm" : "strategist");
+    if (t) setAgentId(threadAgentId(t));
     setActiveId(id);
     setError(null);
   };
@@ -70,7 +73,10 @@ export default function BrainPage() {
     if (active) return active;
     const thread = store.create("brainThreads", {
       title: seedTitle.slice(0, 48) || (isBrainstorm ? "New brainstorm" : "New thread"),
+      // agentId is the truth; mode is written alongside it so a rollback to the
+      // two-mode Brain still reads the thread instead of dropping it.
       mode: isBrainstorm ? "brainstorm" : "strategist",
+      agentId,
       messages: [],
       attachments: [],
     } as Omit<BrainThread, "id" | "createdAt" | "updatedAt">) as BrainThread;

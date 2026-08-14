@@ -333,6 +333,11 @@ export interface BrainAttachment {
 export interface BrainThread extends BaseRecord {
   title: string;                      // auto-derived from the first user message
   mode: "strategist" | "brainstorm";   // legacy rows read as "strategist" via threadMode()
+  /** Which Brain agent owns the thread. Optional so rows written before the
+   *  roster existed still parse — threadAgentId() resolves those through
+   *  `mode`, which is still written alongside it so a rollback can read the
+   *  row. Widening `mode` instead would have broken exactly that. */
+  agentId?: string;
   messages: ChatMessage[];
   attachments?: BrainAttachment[];      // brainstorm session source docs
 }

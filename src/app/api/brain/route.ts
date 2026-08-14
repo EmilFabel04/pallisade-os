@@ -7,6 +7,7 @@ import { renderBody } from "@/lib/agents/render";
 import { formatAttachmentsBlock } from "@/lib/brain/attachments";
 import { resolveAvailability } from "@/lib/brain/availability";
 import type { AgentContext, AgentSpec } from "@/lib/agents/types";
+import type { AdvisorSnapshot } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,23 @@ const DEFAULT_SERVICES =
  *  responsible for splicing BRAIN_MODEL onto the resolved spec. */
 function resolvedModel(): string {
   return process.env.BRAIN_MODEL?.trim() || DEFAULT_MODEL;
+}
+
+/**
+ * The CRM read tools (query_leads, get_pipeline_metrics, …) resolve against a
+ * snapshot. The Advisor gets one from the client with every turn; the Brain
+ * client sends none, so it is loaded here from the same DB the client store
+ * persists to — the pattern resolveProjectContextTool already uses for
+ * list_projects. Without it, an agent declaring `crm` receives the tools and
+ * then gets {"error":"no snapshot available for this tool"} from every call.
+ *
+ * Loaded ONLY for a spec that declares `crm`, mirroring resolveAvailability:
+ * an agent that never asks for the CRM costs zero DB reads.
+ */
+async function crmSnapshot(spec: AgentSpec): Promise<AdvisorSnapshot | null> {
+  if (!spec.tools.includes("crm")) return null;
+  const { loadAll } = await import("@/lib/db/sqlite");
+  return await loadAll();
 }
 
 export async function GET() {
@@ -79,14 +97,24 @@ export async function POST(req: Request) {
 
   const { emailEnabled, calendarEnabled } = await resolveAvailability(spec);
 
+  let snapshot: AdvisorSnapshot | null;
+  try {
+    snapshot = await crmSnapshot(spec);
+  } catch (err) {
+    // A whole-DB read failing is a server failure, not a tool failure: every
+    // CRM answer this turn would be wrong. Fail loudly with the cause logged
+    // rather than letting the agent narrate around an empty pipeline.
+    return apiError("agent_failed", 502, err);
+  }
+
   const ctx: AgentContext = {
     today: new Date().toISOString().slice(0, 10),
     businessName: body.context?.businessName || "Pallisade Data",
     founderName: body.context?.founderName || "the founder",
     services: body.context?.services || DEFAULT_SERVICES,
-    // Brain carries no snapshot surface — the write/read tool resolvers that
-    // dereference ctx.snapshot are never granted to a Brain agent.
-    snapshot: null,
+    // Read-side only. `proposals` stays empty because no Brain agent declares
+    // `writes`, so nothing here can queue a mutation.
+    snapshot,
     proposals: [],
     emailEnabled,
     calendarEnabled,

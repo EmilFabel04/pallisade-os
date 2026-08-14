@@ -23,6 +23,11 @@ const { mockEmailAvailable, mockCalendarAvailable } = vi.hoisted(() => ({
   mockEmailAvailable: vi.fn(),
   mockCalendarAvailable: vi.fn(),
 }));
+// The route now loads a snapshot server-side for any agent declaring `crm`
+// (the CRM read resolvers need one and Brain has no client snapshot). loadAll
+// reads the founder's REAL production DB — stub it at the module boundary, for
+// the same reason loadOverrides is stubbed above.
+const { mockLoadAll } = vi.hoisted(() => ({ mockLoadAll: vi.fn() }));
 // Lets one test substitute a custom AgentSpec (e.g. one that declares the
 // "email" capability group, which no shipped Brain persona does today) while
 // every other test still exercises the real registry against src/agents.
@@ -48,6 +53,8 @@ vi.mock("@/lib/gmail/advisorEmail", () => ({
 vi.mock("@/lib/calendar/advisorCalendar", () => ({
   calendarToolsAvailable: mockCalendarAvailable,
 }));
+
+vi.mock("@/lib/db/sqlite", () => ({ loadAll: mockLoadAll }));
 
 vi.mock("@/lib/agents/registry", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/agents/registry")>();
@@ -75,7 +82,22 @@ beforeEach(() => {
   registryOverride.spec = null;
   mockEmailAvailable.mockReset().mockResolvedValue(false);
   mockCalendarAvailable.mockReset().mockResolvedValue(false);
+  mockLoadAll.mockReset().mockResolvedValue(snapshotFixture());
   resetRegistryCache();
+});
+
+/** Minimal DataShape stand-in — only what the CRM read resolvers touch. */
+const snapshotFixture = () => ({
+  leads: [{
+    id: "lead_1", company: "Lanternpost Capital", contactName: "A", contactRole: "COO",
+    email: "", phone: "", linkedinUrl: "", industry: "asset management", companyType: "",
+    source: "referral", status: "proposal", quality: "high", painPoint: "manual month-end pack",
+    objection: "", buyingSignal: "asked for pricing", lastContact: "2026-08-01",
+    nextFollowUp: "2026-08-20", notes: "", solutionIdea: "", estimatedValue: 180000, owner: "",
+    createdAt: "2026-07-01", updatedAt: "2026-08-01",
+  }],
+  interactions: [], projects: [], tasks: [], scorecards: [], painPoints: [],
+  quotes: [], comparables: [], milestones: [], dialLists: [],
 });
 
 afterAll(() => {
@@ -180,16 +202,30 @@ describe("POST /api/brain — error semantics", () => {
   });
 });
 
+/* Task 15 widened strategist.md from [projects] to
+   [crm, projects, drive, email, calendar, web]. With both integrations
+   disconnected (the beforeEach default) that resolves to exactly this, in
+   declaration order. Pinned as an array, not arrayContaining, so a group
+   silently dropped from the frontmatter fails here too. */
+const STRATEGIST_TOOLS_OFFLINE = [
+  "query_leads", "query_tasks", "query_projects", "query_interactions",
+  "search_pain_points", "get_pipeline_metrics",
+  "list_projects", "get_project_context",
+  "drive_search", "drive_read_file",
+  "web_search",
+];
+
 describe("POST /api/brain — agent resolution", () => {
-  it("defaults to strategist (project tools only) with neither mode nor agentId", async () => {
+  it("defaults to strategist — which now reaches the whole business, not just projects", async () => {
     mockCreate.mockResolvedValue(textResponse("hi"));
     await call({ messages: msgs });
     const toolNames = mockCreate.mock.calls[0][0].tools.map((t: { name: string }) => t.name);
-    expect(toolNames).toEqual(["list_projects", "get_project_context"]);
-    // Neither shipped Brain persona declares email/calendar — confirms the
-    // zero-DB-contact claim: the availability checks are never even called.
-    expect(mockEmailAvailable).not.toHaveBeenCalled();
-    expect(mockCalendarAvailable).not.toHaveBeenCalled();
+    expect(toolNames).toEqual(STRATEGIST_TOOLS_OFFLINE);
+    // It declares email + calendar now, so both availability checks run —
+    // and both resolve false here, which is exactly why a declaration-only
+    // assertion is worthless: nothing inbox-shaped is in the list above.
+    expect(mockEmailAvailable).toHaveBeenCalledTimes(1);
+    expect(mockCalendarAvailable).toHaveBeenCalledTimes(1);
   });
 
   it("mode: 'brainstorm' resolves product-brainstorm (drive + web tools too)", async () => {
@@ -199,20 +235,111 @@ describe("POST /api/brain — agent resolution", () => {
     expect(toolNames).toEqual(
       expect.arrayContaining(["list_projects", "get_project_context", "drive_search", "drive_read_file", "web_search"]),
     );
+    // product-brainstorm declares neither group — the zero-DB-contact claim
+    // still holds for the agents that don't ask for those integrations.
+    expect(mockEmailAvailable).not.toHaveBeenCalled();
+    expect(mockCalendarAvailable).not.toHaveBeenCalled();
   });
 
   it("an unrecognised mode falls back to strategist", async () => {
     mockCreate.mockResolvedValue(textResponse("hi"));
     await call({ mode: "not-a-real-mode", messages: msgs });
     const toolNames = mockCreate.mock.calls[0][0].tools.map((t: { name: string }) => t.name);
-    expect(toolNames).toEqual(["list_projects", "get_project_context"]);
+    expect(toolNames).toEqual(STRATEGIST_TOOLS_OFFLINE);
   });
 
   it("agentId wins over mode when both are present", async () => {
     mockCreate.mockResolvedValue(textResponse("hi"));
     await call({ mode: "brainstorm", agentId: "strategist", messages: msgs });
     const toolNames = mockCreate.mock.calls[0][0].tools.map((t: { name: string }) => t.name);
-    expect(toolNames).toEqual(["list_projects", "get_project_context"]);
+    expect(toolNames).toEqual(STRATEGIST_TOOLS_OFFLINE);
+  });
+
+  it("hands the strategist the inbox and calendar tools once they ARE connected — and still no mutation", async () => {
+    mockEmailAvailable.mockResolvedValue(true);
+    mockCalendarAvailable.mockResolvedValue(true);
+    mockCreate.mockResolvedValue(textResponse("hi"));
+    await call({ messages: msgs });
+    const toolNames = mockCreate.mock.calls[0][0].tools.map((t: { name: string }) => t.name);
+    expect(toolNames).toEqual(expect.arrayContaining([
+      "query_leads", "query_emails", "query_calendar", "drive_search", "list_projects", "web_search",
+    ]));
+    // calendarEnabled is what makes create_calendar_event reachable — but only
+    // through the `writes` group, which no Brain agent declares.
+    for (const m of ["create_calendar_event", "create_task", "update_lead", "log_interaction"]) {
+      expect(toolNames).not.toContain(m);
+    }
+  });
+
+  it("each bench specialist reaches the CRM read tools", async () => {
+    mockCreate.mockResolvedValue(textResponse("hi"));
+    for (const agentId of ["deal-strategist", "discovery-coach", "pipeline-analyst"]) {
+      mockCreate.mockClear();
+      await call({ agentId, messages: msgs });
+      const toolNames = mockCreate.mock.calls[0][0].tools.map((t: { name: string }) => t.name);
+      expect(toolNames, agentId).toEqual(expect.arrayContaining([
+        "query_leads", "query_interactions", "search_pain_points", "get_pipeline_metrics",
+      ]));
+    }
+  });
+});
+
+/* The trap one level below "declared vs resolved": a tool can be in the list
+   the model receives and still answer every call with an error. Brain sends no
+   client snapshot, and the CRM resolvers read one — so before this route loads
+   it server-side, every query_leads call came back
+   {"error":"no snapshot available for this tool"} and the agent narrated
+   around it. These tests execute a real tool call through the runtime. */
+describe("POST /api/brain — the CRM tools return data, not an error", () => {
+  const toolUse = (name: string) => ({
+    content: [{ type: "tool_use", id: "tu_1", name, input: {} }],
+    stop_reason: "tool_use",
+  });
+
+  /** The tool_result the runtime fed back on the second model call. */
+  const resultText = (): string => {
+    const followUp = mockCreate.mock.calls[1][0].messages.at(-1) as {
+      content: { content: string }[];
+    };
+    return followUp.content[0].content;
+  };
+
+  it("resolves query_leads against a server-loaded snapshot", async () => {
+    mockCreate.mockResolvedValueOnce(toolUse("query_leads")).mockResolvedValueOnce(textResponse("done"));
+    await call({ messages: msgs });
+    expect(mockLoadAll).toHaveBeenCalledTimes(1);
+    const out = resultText();
+    expect(out).not.toContain("no snapshot");
+    expect(out).toContain("Lanternpost Capital");
+  });
+
+  it("resolves get_pipeline_metrics too", async () => {
+    mockCreate.mockResolvedValueOnce(toolUse("get_pipeline_metrics")).mockResolvedValueOnce(textResponse("done"));
+    await call({ messages: msgs });
+    expect(resultText()).not.toContain("no snapshot");
+  });
+
+  // Same principle as resolveAvailability: an agent that never asks for the
+  // CRM must not pay for a full DB read on every turn.
+  it("never touches the DB for an agent that does not declare crm", async () => {
+    mockCreate.mockResolvedValue(textResponse("hi"));
+    await call({ mode: "brainstorm", messages: msgs });
+    expect(mockLoadAll).not.toHaveBeenCalled();
+  });
+
+  it("502s with a logged cause when the snapshot load fails, rather than degrading silently", async () => {
+    // The model call must succeed, so the 502 can only come from the snapshot.
+    mockCreate.mockResolvedValue(textResponse("hi"));
+    mockLoadAll.mockRejectedValue(new Error("db unavailable"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await call({ messages: msgs });
+      expect(res.status).toBe(502);
+      expect((await res.json()).error).toBe("agent_failed");
+      expect(errSpy).toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 });
 

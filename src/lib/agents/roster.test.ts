@@ -12,6 +12,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { loadRegistry } from "@/lib/agents/registry";
 import { toolsFor } from "@/lib/agents/capabilities";
+import { renderBody } from "@/lib/agents/render";
 import { CAPABILITY_GROUPS, type AgentContext } from "@/lib/agents/types";
 
 vi.mock("@/lib/agents/overrides", () => ({
@@ -69,6 +70,47 @@ describe("the shipped agent roster", () => {
     }
   });
 
+  // The point of the whole branch: the Brain was "very underdeveloped" because
+  // its tool grant resolved to exactly two project tools. Assert on RESOLVED
+  // tools, not declared groups — a declaration check still passes when the bus
+  // hands back nothing because an integration reads as disconnected, which is
+  // the trap Task 11's review caught.
+  it("gives the Brain strategist real access to the business", async () => {
+    const spec = (await loadRegistry()).get("strategist")!;
+    for (const g of ["crm", "projects", "email", "calendar", "drive", "web"]) {
+      expect(spec.tools).toContain(g);
+    }
+    const granted = toolsFor(spec.tools, {
+      ...baseCtx(), emailEnabled: true, calendarEnabled: true,
+    }).map((t) => t.name);
+    for (const t of ["query_leads", "query_emails", "query_calendar",
+                     "drive_search", "list_projects", "web_search"]) {
+      expect(granted).toContain(t);
+    }
+  });
+
+  it("puts a bench of specialists on the brain surface", async () => {
+    const brain = [...(await loadRegistry()).values()].filter((s) => s.surface === "brain");
+    expect(brain.length).toBeGreaterThanOrEqual(5);
+  });
+
+  // Each bench specialist is only worth shipping if the tools it is told to
+  // reach for actually arrive. Same rule as above: resolved, not declared.
+  it("resolves the CRM read tools for every bench specialist", async () => {
+    const reg = await loadRegistry();
+    const full = { ...baseCtx(), emailEnabled: true, calendarEnabled: true };
+    for (const id of ["deal-strategist", "discovery-coach", "pipeline-analyst"]) {
+      const spec = reg.get(id);
+      expect(spec, `${id} must be on the roster`).toBeTruthy();
+      expect(spec!.surface).toBe("brain");
+      const granted = toolsFor(spec!.tools, full).map((t) => t.name);
+      for (const t of ["query_leads", "query_interactions", "search_pain_points",
+                       "get_pipeline_metrics"]) {
+        expect(granted, `${id} must resolve ${t}`).toContain(t);
+      }
+    }
+  });
+
   it("declares only known capability groups", async () => {
     const reg = await loadRegistry();
     for (const spec of reg.values()) {
@@ -79,5 +121,15 @@ describe("the shipped agent roster", () => {
   it("carries a non-trivial system prompt in every agent", async () => {
     const reg = await loadRegistry();
     for (const spec of reg.values()) expect(spec.body.length).toBeGreaterThan(200);
+  });
+
+  // renderBody leaves an unknown token in place on purpose, so a typo like
+  // {{foundername}} reaches the model verbatim. The Brain route asserts this
+  // for two personas; assert it for the whole shipped roster.
+  it("uses only substitutable placeholders", async () => {
+    for (const [id, spec] of await loadRegistry()) {
+      const rendered = renderBody(spec.body, baseCtx());
+      expect(rendered, `${id} has an unsubstituted placeholder`).not.toMatch(/\{\{/);
+    }
   });
 });

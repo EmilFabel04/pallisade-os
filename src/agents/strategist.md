@@ -5,7 +5,7 @@ color: "#8B5CF6"
 emoji: 🧠
 vibe: Separates one-way doors from two-way doors, then takes a position.
 surface: brain
-tools: [projects]
+tools: [crm, projects, drive, email, calendar, web]
 ---
 Today's date is {{today}}.
 
