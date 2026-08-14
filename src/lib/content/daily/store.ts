@@ -18,7 +18,12 @@ let schemaReady: Promise<void> | null = null;
 export async function ensureContentSchema(): Promise<void> {
   if (schemaReady) return schemaReady;
 
-  schemaReady = (async () => {
+  // Same identity-checked clear as registry.ts:47-51 and agents/overrides.ts.
+  // Without it, one SQLITE_BUSY against the local file DB (the daily cron and
+  // a browser saveAll() contend for the write lock) poisons this promise for
+  // the life of the process, and every content read and write behind it fails
+  // with no self-healing until restart.
+  const attempt: Promise<void> = (async () => {
     const client = getClient();
     const stmts: InStatement[] = [
       {
@@ -43,8 +48,12 @@ export async function ensureContentSchema(): Promise<void> {
       { sql: `CREATE INDEX IF NOT EXISTS idx_contentRuns_date ON contentRuns(date)`, args: [] },
     ];
     await client.batch(stmts, "write");
-  })();
+  })().catch((err: unknown) => {
+    if (schemaReady === attempt) schemaReady = null;
+    throw err;
+  });
 
+  schemaReady = attempt;
   return schemaReady;
 }
 

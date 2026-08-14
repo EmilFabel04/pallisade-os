@@ -19,7 +19,21 @@ let schemaReady: Promise<void> | null = null;
 
 export async function ensureAgentSchema(): Promise<void> {
   if (schemaReady) return schemaReady;
-  schemaReady = (async () => {
+
+  // A rejected bootstrap must not stick around forever. One SQLITE_BUSY —
+  // the daily cron or a browser saveAll() holding the write lock is the
+  // realistic trigger — used to poison this promise until process restart,
+  // and since this module sits under loadOverrides -> loadRegistry it took
+  // every Brain turn, every Advisor turn, the roster and Settings down with
+  // it. registry.ts clears its own cache on failure precisely so a transient
+  // fault retries; that retry lands here, so without this the registry's fix
+  // cannot work.
+  //
+  // Clearing checks that `schemaReady` still refers to THIS attempt before
+  // nulling it, mirroring registry.ts:47-51: a later, successful attempt can
+  // land while this one is still in flight, and an unconditional clear would
+  // discard it once the stale attempt finally rejects.
+  const attempt: Promise<void> = (async () => {
     const stmts: InStatement[] = [
       {
         sql: `CREATE TABLE IF NOT EXISTS agentOverrides (
@@ -31,7 +45,12 @@ export async function ensureAgentSchema(): Promise<void> {
       },
     ];
     await getClient().batch(stmts, "write");
-  })();
+  })().catch((err: unknown) => {
+    if (schemaReady === attempt) schemaReady = null;
+    throw err;
+  });
+
+  schemaReady = attempt;
   return schemaReady;
 }
 
