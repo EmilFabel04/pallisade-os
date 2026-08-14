@@ -39,15 +39,23 @@ vi.mock("@/lib/agents/overrides", () => ({
 // explicit-dir calls the first describe block makes) untouched.
 const AGENTS_DIR = join(process.cwd(), "src", "agents");
 const fsRedirect = vi.hoisted(() => ({ from: "", to: "" }));
+// Lets one test pause a specific readdir call mid-flight (see the
+// interleaving test below) so a reset + a second, successful load can happen
+// while the first is still pending.
+const fsGate = vi.hoisted(() => ({ dir: "", promise: Promise.resolve() as Promise<void> }));
+// Counts real readdir invocations so a test can assert the filesystem was
+// NOT re-read — i.e. the cache is still serving the value it already has.
+const fsCalls = vi.hoisted(() => ({ readdir: 0 }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
-    readdir: (path: unknown, ...rest: unknown[]) =>
-      (actual.readdir as (...a: unknown[]) => unknown)(
-        path === fsRedirect.from ? fsRedirect.to : path,
-        ...rest,
-      ),
+    readdir: async (path: unknown, ...rest: unknown[]) => {
+      fsCalls.readdir += 1;
+      const resolved = path === fsRedirect.from ? fsRedirect.to : path;
+      if (fsGate.dir && resolved === fsGate.dir) await fsGate.promise;
+      return (actual.readdir as (...a: unknown[]) => unknown)(resolved, ...rest);
+    },
     readFile: (path: unknown, ...rest: unknown[]) => {
       const p = path as string;
       const redirected =
@@ -120,6 +128,9 @@ describe("registry cache: getAgent, listAgents, resetRegistryCache", () => {
     overridesState.map = new Map();
     fsRedirect.from = AGENTS_DIR;
     fsRedirect.to = "";
+    fsGate.dir = "";
+    fsGate.promise = Promise.resolve();
+    fsCalls.readdir = 0;
   });
 
   it("listAgents returns cards for one surface only, sorted by name", async () => {
@@ -199,5 +210,40 @@ describe("registry cache: getAgent, listAgents, resetRegistryCache", () => {
     fsRedirect.to = dir;
     // No resetRegistryCache() call here — the rejected load must not have stuck.
     expect((await getAgent("a")).name).toBe("A");
+  });
+
+  it("a rejection from a superseded load must not clobber a newer, valid cache", async () => {
+    // call1: start a load against a directory that will fail (ENOENT), but
+    // pause its readdir mid-flight so we can interleave a reset and a
+    // second, successful load before call1 actually settles.
+    const badDir = join(tmpdir(), `agents-missing-${Math.random().toString(36).slice(2)}`);
+    fsRedirect.to = badDir;
+    let releaseGate!: () => void;
+    fsGate.dir = badDir;
+    fsGate.promise = new Promise<void>((resolve) => { releaseGate = resolve; });
+
+    const call1 = getAgent("a"); // in flight, paused before its readdir settles
+
+    // Interleaving: something (Task 16's Settings editor is the documented
+    // trigger) resets the cache while call1 is still pending...
+    resetRegistryCache();
+
+    // ...and a fresh, successful load starts and completes, becoming cached.
+    const dir2 = fixtureDir({ "a.md": file("A", "brain") });
+    dirs.push(dir2);
+    fsRedirect.to = dir2;
+    expect((await getAgent("a")).name).toBe("A");
+    const readdirCallsAfterFreshLoad = fsCalls.readdir;
+
+    // Now let call1's readdir resolve — against the bad directory it
+    // captured before fsRedirect.to changed — so call1 rejects.
+    releaseGate();
+    await expect(call1).rejects.toThrow();
+
+    // The rejection from the now-superseded call1 must not have discarded
+    // the valid cache the fresh load just populated: a further call must
+    // return the same cached data WITHOUT re-reading the filesystem.
+    expect((await getAgent("a")).name).toBe("A");
+    expect(fsCalls.readdir).toBe(readdirCallsAfterFreshLoad);
   });
 });

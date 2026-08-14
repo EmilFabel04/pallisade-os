@@ -37,10 +37,18 @@ function registry(): Promise<Map<string, AgentSpec>> {
     // process restarts. Clear the cache on failure so the next call retries
     // from scratch. (This bug exists in content/daily/store.ts's schemaReady
     // and was inherited by overrides.ts's schemaReady; do not inherit it here.)
-    cache = loadRegistry().catch((err: unknown) => {
-      cache = null;
+    //
+    // Clearing must check that `cache` still refers to THIS attempt before
+    // nulling it. resetRegistryCache() plus a newer, successful load can
+    // land while this attempt is still in flight (Task 16's Settings editor
+    // calls resetRegistryCache() after writing an override); an unconditional
+    // clear would then discard that newer, valid cache out from under it once
+    // this stale attempt finally rejects.
+    const attempt: Promise<Map<string, AgentSpec>> = loadRegistry().catch((err: unknown) => {
+      if (cache === attempt) cache = null;
       throw err;
     });
+    cache = attempt;
   }
   return cache;
 }
