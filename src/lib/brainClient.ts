@@ -10,7 +10,7 @@ export async function getBrainStatus(): Promise<{ configured: boolean; model: st
 
 export async function sendBrainTurn(params: {
   messages: { role: "user" | "assistant"; content: string }[];
-  mode?: "strategist" | "brainstorm";
+  agentId?: string;
   attachments?: { name: string; content: string }[];
   context: { businessName: string; founderName: string; driveAccountId?: string };
 }): Promise<{ content: string }> {

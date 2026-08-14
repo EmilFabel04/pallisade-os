@@ -11,14 +11,14 @@ import { MessageBubble } from "@/components/advisor/MessageBubble";
 import { MicButton } from "@/components/ui/MicButton";
 import { getBrainStatus, sendBrainTurn, getDriveStatus } from "@/lib/brainClient";
 import type { BrainThread, BrainAttachment, ChatMessage } from "@/lib/types";
-import { threadMode, type BrainMode } from "@/lib/brain/mode";
+import { AgentPicker } from "@/components/agents/AgentPicker";
 import { uid, nowISO } from "@/lib/utils";
 
 export default function BrainPage() {
   const store = useStore();
   const { brainThreads, settings } = store;
 
-  const [mode, setMode] = useState<BrainMode>("strategist");
+  const [agentId, setAgentId] = useState("strategist");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -29,12 +29,17 @@ export default function BrainPage() {
   const deepLinked = useRef(false);
   const searchParams = useSearchParams();
 
+  // strategist/brainstorm used to be a mode toggle; they are now two agents.
+  // isBrainstorm still decides attachments/Drive/thread-bucketing because the
+  // persisted BrainThread schema only has room for those two buckets today.
+  const isBrainstorm = agentId === "product-brainstorm";
+
   useEffect(() => { getBrainStatus().then((s) => setConfigured(s.configured)); }, []);
-  useEffect(() => { if (mode === "brainstorm") getDriveStatus().then(setDrive); }, [mode]);
+  useEffect(() => { if (isBrainstorm) getDriveStatus().then(setDrive); }, [isBrainstorm]);
 
   const threads = useMemo(
-    () => brainThreads.filter((t) => threadMode(t) === mode),
-    [brainThreads, mode],
+    () => brainThreads.filter((t) => (t.mode === "brainstorm") === isBrainstorm),
+    [brainThreads, isBrainstorm],
   );
 
   const active = useMemo<BrainThread | null>(
@@ -51,11 +56,11 @@ export default function BrainPage() {
 
   const newThread = () => { setActiveId(null); setInput(""); setError(null); };
 
-  const switchMode = (m: BrainMode) => { setMode(m); setActiveId(null); setInput(""); setError(null); };
+  const selectAgent = (id: string) => { setAgentId(id); setActiveId(null); setInput(""); setError(null); };
 
   const selectThread = (id: string) => {
     const t = brainThreads.find((x) => x.id === id);
-    if (t) setMode(threadMode(t));
+    if (t) setAgentId(t.mode === "brainstorm" ? "product-brainstorm" : "strategist");
     setActiveId(id);
     setError(null);
   };
@@ -64,8 +69,8 @@ export default function BrainPage() {
   const ensureThread = (seedTitle: string): BrainThread => {
     if (active) return active;
     const thread = store.create("brainThreads", {
-      title: seedTitle.slice(0, 48) || (mode === "brainstorm" ? "New brainstorm" : "New thread"),
-      mode,
+      title: seedTitle.slice(0, 48) || (isBrainstorm ? "New brainstorm" : "New thread"),
+      mode: isBrainstorm ? "brainstorm" : "strategist",
       messages: [],
       attachments: [],
     } as Omit<BrainThread, "id" | "createdAt" | "updatedAt">) as BrainThread;
@@ -109,14 +114,14 @@ export default function BrainPage() {
     try {
       const reply = await sendBrainTurn({
         messages: withUser.map((m) => ({ role: m.role, content: m.content })),
-        mode,
-        attachments: mode === "brainstorm"
+        agentId,
+        attachments: isBrainstorm
           ? (thread.attachments ?? []).map((a) => ({ name: a.name, content: a.content }))
           : undefined,
         context: {
           businessName: settings.businessName,
           founderName: settings.founderName,
-          driveAccountId: mode === "brainstorm" ? drive.accountId ?? undefined : undefined,
+          driveAccountId: isBrainstorm ? drive.accountId ?? undefined : undefined,
         },
       });
       const assistantMsg: ChatMessage = {
@@ -148,7 +153,6 @@ export default function BrainPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, store.ready, brainThreads.length]);
 
-  const isBrainstorm = mode === "brainstorm";
   const attachments = active?.attachments ?? [];
 
   return (
@@ -160,20 +164,7 @@ export default function BrainPage() {
           : "Your strategic sparring partner for positioning and the big calls — thinking like a founder who has scaled and taken companies public."}
       />
 
-      {/* mode toggle */}
-      <div className="inline-flex rounded-lg border border-[var(--color-line-strong)] p-0.5 bg-[var(--color-surface-2)]">
-        {(["strategist", "brainstorm"] as BrainMode[]).map((m) => (
-          <button
-            key={m}
-            onClick={() => switchMode(m)}
-            className={`px-3 py-1.5 text-[0.8rem] rounded-md transition-colors ${
-              mode === m ? "bg-[var(--color-surface)] text-[var(--color-ink)] font-medium" : "text-[var(--color-muted)]"
-            }`}
-          >
-            {m === "strategist" ? "Strategist" : "Brainstorm"}
-          </button>
-        ))}
-      </div>
+      <AgentPicker surface="brain" value={agentId} onChange={selectAgent} />
 
       {configured === false && (
         <Panel>
