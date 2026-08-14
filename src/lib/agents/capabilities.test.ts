@@ -121,4 +121,12 @@ describe("dispatch", () => {
     expect(JSON.parse(out).queued).toBe(true);
     expect(c.proposals).toHaveLength(1);
   });
+
+  it("queues a write even when the context carries no snapshot", async () => {
+    // Brain-like surface: no snapshot. Writes must still queue, not error.
+    const c = ctx({ snapshot: null });
+    const out = await dispatch("create_task", { title: "Call Acme" }, c);
+    expect(JSON.parse(out).queued).toBe(true);
+    expect(c.proposals).toHaveLength(1);
+  });
 });

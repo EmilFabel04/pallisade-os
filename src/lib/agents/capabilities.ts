@@ -7,6 +7,7 @@
    duplicated across the advisor, brain and project-chat routes.
    ============================================================ */
 
+import type { AdvisorSnapshot } from "@/lib/types";
 import type { ToolDef } from "@/lib/advisor/tools";
 import {
   READ_TOOLS, WRITE_TOOLS_DEFS, WRITE_TOOL_NAMES, READ_TOOL_NAMES, resolveTool,
@@ -74,7 +75,16 @@ export async function dispatch(name: string, args: Args, ctx: AgentContext): Pro
     if (PROJECT_CONTEXT_TOOL_NAMES.has(name)) return await resolveProjectContextTool(name, args);
     if (DRIVE_TOOL_NAMES.has(name)) return await resolveBrainTool(name, args, ctx.driveAccountId);
 
-    if (READ_TOOL_NAMES.has(name) || WRITE_TOOL_NAMES.has(name)) {
+    // Writes are checked FIRST and deliberately skip the snapshot guard.
+    // resolveTool's write branch pushes the ProposedAction and returns before
+    // ever dereferencing the snapshot, and surfaces like Brain carry no
+    // snapshot at all — guarding writes on it would silently degrade every
+    // proposal to an error payload the moment a snapshot-less surface is
+    // granted `writes`, with no symptom but the agent apologising.
+    if (WRITE_TOOL_NAMES.has(name)) {
+      return resolveTool(name, args, ctx.snapshot as AdvisorSnapshot, ctx.proposals);
+    }
+    if (READ_TOOL_NAMES.has(name)) {
       if (!ctx.snapshot) throw new Error("no snapshot available for this tool");
       return resolveTool(name, args, ctx.snapshot, ctx.proposals);
     }

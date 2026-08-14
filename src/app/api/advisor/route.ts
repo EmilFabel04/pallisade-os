@@ -62,8 +62,7 @@ export async function POST(req: Request) {
     `never overrides substance — stay grounded in the real data, never invent numbers or history, never let ` +
     `enthusiasm turn into fluff or length. Confident and concise beats verbose every time.\n\n` +
     `Use the read tools (query_*, search_pain_points, get_pipeline_metrics) to ground every answer in the ` +
-    `founder's real data — never invent leads, numbers or history. Use the skill tools to generate call ` +
-    `summaries, business reviews and tomorrow plans when helpful.\n\n` +
+    `founder's real data — never invent leads, numbers or history.\n\n` +
     `When the founder wants to change data, call the matching write tool (create_task, create_lead, ` +
     `update_lead, update_task, log_interaction, create_project). You can fully edit a lead with update_lead ` +
     `(any field — contact details, firmographics, pipeline status, value, notes) and edit/reschedule/complete ` +
