@@ -36,6 +36,30 @@ describe("queryLeads", () => {
     expect(out[0]).not.toHaveProperty("notes"); // compact shape drops bulky fields
   });
 
+  // The Pipeline Analyst's standing diagnostic asks for the lead-creation rate
+  // over the last 30 days vs the 30 before, and flags a lead whose lastContact
+  // is older than its updatedAt. Both are unanswerable unless the compact row
+  // carries these two timestamps — get_pipeline_metrics only counts today.
+  it("carries createdAt and updatedAt so ageing and creation-rate are computable", () => {
+    const snap = emptySnapshot();
+    snap.leads = [
+      { ...base, id: "l1", createdAt: "2026-07-20T09:00:00.000Z", updatedAt: "2026-08-11T09:00:00.000Z",
+        company: "Acme", contactName: "", contactRole: "", email: "", phone: "",
+        linkedinUrl: "", industry: "", companyType: "", source: "referral", status: "proposal",
+        quality: "high", painPoint: "", objection: "", buyingSignal: "", lastContact: "2026-07-25",
+        nextFollowUp: null, notes: "", solutionIdea: "", estimatedValue: 0, owner: "" },
+    ];
+    const [row] = queryLeads(snap, {});
+    expect(row.createdAt).toBe("2026-07-20T09:00:00.000Z");
+    expect(row.updatedAt).toBe("2026-08-11T09:00:00.000Z");
+    // …and the record-edited-without-a-conversation signal is now derivable.
+    expect(row.lastContact! < row.updatedAt).toBe(true);
+    // Still compact: the bulky free-text fields stay dropped.
+    for (const k of ["notes", "solutionIdea", "objection", "linkedinUrl"]) {
+      expect(row).not.toHaveProperty(k);
+    }
+  });
+
   it("filters by hasFollowUp", () => {
     const snap = emptySnapshot();
     snap.leads = [

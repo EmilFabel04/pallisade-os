@@ -7,11 +7,18 @@ import {
 
 /* ---------- compact projections (keep tool results small) ---------- */
 
+// createdAt/updatedAt are carried deliberately: lead-creation rate over a
+// window is the founder's earliest top-of-funnel signal and get_pipeline_metrics
+// only reports leadsCreatedToday, and `lastContact` older than `updatedAt`
+// means the record was edited without a conversation happening. Neither is
+// derivable from the other fields, so dropping them made both invisible to
+// every agent.
 const compactLead = (l: Lead) => ({
   id: l.id, company: l.company, contact: l.contactName, status: l.status,
   quality: l.quality, source: l.source, industry: l.industry,
   nextFollowUp: l.nextFollowUp, lastContact: l.lastContact,
   estimatedValue: l.estimatedValue, painPoint: l.painPoint, buyingSignal: l.buyingSignal,
+  createdAt: l.createdAt, updatedAt: l.updatedAt,
 });
 const compactTask = (t: Task) => ({
   id: t.id, title: t.title, status: t.status, category: t.category,

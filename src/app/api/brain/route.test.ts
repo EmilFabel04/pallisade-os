@@ -86,7 +86,10 @@ beforeEach(() => {
   resetRegistryCache();
 });
 
-/** Minimal DataShape stand-in — only what the CRM read resolvers touch. */
+/** What loadAll() actually returns: EVERY collection, not just the ones the
+ *  read tools touch. The route narrows it through buildSnapshot, so the
+ *  fixture has to carry the collections that must NOT survive that narrowing
+ *  (brainThreads, notes, voiceSamples) or the narrowing is never exercised. */
 const snapshotFixture = () => ({
   leads: [{
     id: "lead_1", company: "Lanternpost Capital", contactName: "A", contactRole: "COO",
@@ -94,10 +97,18 @@ const snapshotFixture = () => ({
     source: "referral", status: "proposal", quality: "high", painPoint: "manual month-end pack",
     objection: "", buyingSignal: "asked for pricing", lastContact: "2026-08-01",
     nextFollowUp: "2026-08-20", notes: "", solutionIdea: "", estimatedValue: 180000, owner: "",
-    createdAt: "2026-07-01", updatedAt: "2026-08-01",
+    createdAt: "2026-07-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z",
   }],
   interactions: [], projects: [], tasks: [], scorecards: [], painPoints: [],
   quotes: [], comparables: [], milestones: [], dialLists: [],
+  conversations: [], playbooks: [], targets: [], positioningProfiles: [],
+  voiceSamples: [{ id: "vs_1", text: "PRIVATE WRITING SAMPLE" }],
+  voiceProfile: [], contentThreads: [],
+  brainThreads: [{ id: "bt_1", title: "PRIVATE THREAD", messages: [] }],
+  newsFeed: [], newsInterests: [], newsBookmarks: [],
+  notes: [{ id: "n_1", body: "PRIVATE NOTE" }],
+  metricEntries: [], projectThreads: [],
+  settings: { businessName: "P", founderName: "E" },
 });
 
 afterAll(() => {
@@ -318,6 +329,27 @@ describe("POST /api/brain — the CRM tools return data, not an error", () => {
     await call({ messages: msgs });
     expect(resultText()).not.toContain("no snapshot");
   });
+
+  it("carries the ageing fields a pipeline question needs", async () => {
+    mockCreate.mockResolvedValueOnce(toolUse("query_leads")).mockResolvedValueOnce(textResponse("done"));
+    await call({ messages: msgs });
+    const row = JSON.parse(resultText())[0];
+    // compactLead carries these so "created in the last 30 days" and
+    // "edited without a conversation" are computable, not guessed.
+    expect(row.createdAt).toBe("2026-07-01T00:00:00.000Z");
+    expect(row.updatedAt).toBe("2026-08-01T00:00:00.000Z");
+    // …and still compact.
+    expect(row).not.toHaveProperty("notes");
+  });
+
+  /* The route narrows loadAll() through buildSnapshot. That narrowing is NOT
+     observable from here — the snapshot never enters a model call, and every
+     read tool projects its own output — so a "no secrets reached the model"
+     assertion at this level passes with or without the narrowing and would be
+     false assurance. The narrowing is pinned where it is real, on the function
+     itself: src/lib/advisorClient.test.ts. The fixture above still carries the
+     dropped collections so the route is exercised against the shape loadAll()
+     actually returns. */
 
   // Same principle as resolveAvailability: an agent that never asks for the
   // CRM must not pay for a full DB read on every turn.

@@ -6,6 +6,7 @@ import { runAgent, DEFAULT_MODEL } from "@/lib/agents/runtime";
 import { renderBody } from "@/lib/agents/render";
 import { formatAttachmentsBlock } from "@/lib/brain/attachments";
 import { resolveAvailability } from "@/lib/brain/availability";
+import { buildSnapshot } from "@/lib/advisorClient";
 import type { AgentContext, AgentSpec } from "@/lib/agents/types";
 import type { AdvisorSnapshot } from "@/lib/types";
 
@@ -32,11 +33,16 @@ function resolvedModel(): string {
  *
  * Loaded ONLY for a spec that declares `crm`, mirroring resolveAvailability:
  * an agent that never asks for the CRM costs zero DB reads.
+ *
+ * Narrowed through the same buildSnapshot the Advisor's client uses, so both
+ * surfaces hand the bus an identically-shaped snapshot. Raw loadAll() would
+ * also carry brainThreads, notes and voiceSamples — collections AdvisorSnapshot
+ * deliberately omits.
  */
 async function crmSnapshot(spec: AgentSpec): Promise<AdvisorSnapshot | null> {
   if (!spec.tools.includes("crm")) return null;
   const { loadAll } = await import("@/lib/db/sqlite");
-  return await loadAll();
+  return buildSnapshot(await loadAll());
 }
 
 export async function GET() {
