@@ -10,6 +10,7 @@ import { ThreadList } from "@/components/advisor/ThreadList";
 import { MessageBubble } from "@/components/advisor/MessageBubble";
 import { MicButton } from "@/components/ui/MicButton";
 import { getBrainStatus, sendBrainTurn, getDriveStatus } from "@/lib/brainClient";
+import { stopNotice } from "@/lib/agents/stopNotice";
 import type { BrainThread, BrainAttachment, ChatMessage } from "@/lib/types";
 import { AgentPicker } from "@/components/agents/AgentPicker";
 import { threadAgentId } from "@/lib/brain/mode";
@@ -24,8 +25,13 @@ export default function BrainPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the last turn ended for a reason other than the agent finishing.
+  // Without it a truncated answer reads exactly like a complete one.
+  const [notice, setNotice] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
-  const [drive, setDrive] = useState<{ connected: boolean; accountId: string | null }>({ connected: false, accountId: null });
+  // Connection state only — the account id is resolved server-side now, so
+  // the page has no reason to know it. This drives the "Connect Drive" panel.
+  const [driveConnected, setDriveConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const deepLinked = useRef(false);
   const searchParams = useSearchParams();
@@ -36,7 +42,9 @@ export default function BrainPage() {
   const isBrainstorm = agentId === "product-brainstorm";
 
   useEffect(() => { getBrainStatus().then((s) => setConfigured(s.configured)); }, []);
-  useEffect(() => { if (isBrainstorm) getDriveStatus().then(setDrive); }, [isBrainstorm]);
+  useEffect(() => {
+    if (isBrainstorm) getDriveStatus().then((s) => setDriveConnected(s.connected));
+  }, [isBrainstorm]);
 
   // One bucket per agent, resolved the same way the thread is reopened, so a
   // thread never shows in a list that would then restore a different agent.
@@ -57,15 +65,18 @@ export default function BrainPage() {
   const setMessages = (thread: BrainThread, messages: ChatMessage[]) =>
     store.update("brainThreads", thread.id, { messages });
 
-  const newThread = () => { setActiveId(null); setInput(""); setError(null); };
+  const newThread = () => { setActiveId(null); setInput(""); setError(null); setNotice(null); };
 
-  const selectAgent = (id: string) => { setAgentId(id); setActiveId(null); setInput(""); setError(null); };
+  const selectAgent = (id: string) => {
+    setAgentId(id); setActiveId(null); setInput(""); setError(null); setNotice(null);
+  };
 
   const selectThread = (id: string) => {
     const t = brainThreads.find((x) => x.id === id);
     if (t) setAgentId(threadAgentId(t));
     setActiveId(id);
     setError(null);
+    setNotice(null);
   };
 
   // Create-on-demand so a thread exists before the first message or attachment.
@@ -109,6 +120,7 @@ export default function BrainPage() {
     const text = input.trim();
     if (!text || loading) return;
     setError(null);
+    setNotice(null);
 
     const thread = ensureThread(text);
     const userMsg: ChatMessage = { id: uid("msg"), role: "user", content: text, createdAt: nowISO() };
@@ -127,13 +139,18 @@ export default function BrainPage() {
         context: {
           businessName: settings.businessName,
           founderName: settings.founderName,
-          driveAccountId: isBrainstorm ? drive.accountId ?? undefined : undefined,
+          // deal-strategist, discovery-coach and pipeline-analyst all
+          // interpolate {{services}}. Without this the route fell through to
+          // its hardcoded default and the founder's Settings edit was silently
+          // ignored on this surface while the Advisor honoured it.
+          services: settings.services,
         },
       });
       const assistantMsg: ChatMessage = {
         id: uid("msg"), role: "assistant", content: reply.content, createdAt: nowISO(),
       };
       setMessages(thread, [...withUser, assistantMsg]);
+      setNotice(stopNotice(reply.stoppedBy));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -184,7 +201,7 @@ export default function BrainPage() {
         </Panel>
       )}
 
-      {isBrainstorm && configured !== false && !drive.connected && (
+      {isBrainstorm && configured !== false && !driveConnected && (
         <Panel>
           <div className="flex items-start gap-3 p-1">
             <Paperclip size={16} className="text-[var(--color-accent)] mt-0.5" />
@@ -236,6 +253,8 @@ export default function BrainPage() {
           </div>
 
           {error && <p className="text-[0.78rem] text-[var(--color-accent)] mt-3">{error}</p>}
+
+          {notice && <p className="text-[0.78rem] text-[var(--color-muted)] mt-3">{notice}</p>}
 
           {isBrainstorm && attachments.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-3">

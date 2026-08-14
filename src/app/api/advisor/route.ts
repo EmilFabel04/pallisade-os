@@ -4,7 +4,7 @@ import { apiError } from "@/lib/api/errors";
 import { getAgent, AgentNotFound } from "@/lib/agents/registry";
 import { runAgent, DEFAULT_MODEL } from "@/lib/agents/runtime";
 import { renderBody } from "@/lib/agents/render";
-import { resolveAvailability } from "@/lib/brain/availability";
+import { resolveAvailability, resolveDriveAccountId } from "@/lib/brain/availability";
 import { connectedEmails } from "@/lib/gmail/advisorEmail";
 import type { AdvisorSnapshot } from "@/lib/types";
 import type { AgentContext, AgentSpec } from "@/lib/agents/types";
@@ -95,7 +95,14 @@ export async function POST(req: Request) {
     return apiError("agent_failed", 502, err);
   }
 
-  const { emailEnabled, calendarEnabled } = await resolveAvailability(spec);
+  // sales-advisor does not declare `drive` today, so this resolves to null
+  // without a DB read. It is wired anyway so that granting `drive` in the
+  // agent file is all it takes — rather than silently reproducing the Brain's
+  // defect, where the tools arrived and every call answered "not connected".
+  const [{ emailEnabled, calendarEnabled }, driveAccountId] = await Promise.all([
+    resolveAvailability(spec),
+    resolveDriveAccountId(spec),
+  ]);
 
   const ctx: AgentContext = {
     today: new Date().toISOString().slice(0, 10),
@@ -106,7 +113,7 @@ export async function POST(req: Request) {
     proposals: [],
     emailEnabled,
     calendarEnabled,
-    driveAccountId: null,
+    driveAccountId,
   };
 
   let rendered = renderBody(spec.body, ctx);

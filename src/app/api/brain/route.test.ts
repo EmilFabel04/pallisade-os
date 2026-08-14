@@ -28,6 +28,15 @@ const { mockEmailAvailable, mockCalendarAvailable } = vi.hoisted(() => ({
 // reads the founder's REAL production DB — stub it at the module boundary, for
 // the same reason loadOverrides is stubbed above.
 const { mockLoadAll } = vi.hoisted(() => ({ mockLoadAll: vi.fn() }));
+// The route now resolves the Drive account server-side too. listAccounts reads
+// the founder's REAL connected-accounts table and searchFiles/readFileContent
+// call the Google Drive API — both stubbed at the module boundary, same
+// reasoning as loadAll and loadOverrides above.
+const { mockListAccounts } = vi.hoisted(() => ({ mockListAccounts: vi.fn() }));
+const { mockSearchFiles, mockReadFileContent } = vi.hoisted(() => ({
+  mockSearchFiles: vi.fn(),
+  mockReadFileContent: vi.fn(),
+}));
 // Lets one test substitute a custom AgentSpec (e.g. one that declares the
 // "email" capability group, which no shipped Brain persona does today) while
 // every other test still exercises the real registry against src/agents.
@@ -56,6 +65,13 @@ vi.mock("@/lib/calendar/advisorCalendar", () => ({
 
 vi.mock("@/lib/db/sqlite", () => ({ loadAll: mockLoadAll }));
 
+vi.mock("@/lib/gmail/accounts", () => ({ listAccounts: mockListAccounts }));
+
+vi.mock("@/lib/drive/driveApi", () => ({
+  searchFiles: mockSearchFiles,
+  readFileContent: mockReadFileContent,
+}));
+
 vi.mock("@/lib/agents/registry", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/agents/registry")>();
   return {
@@ -73,16 +89,39 @@ import { resetRegistryCache, AgentNotFound } from "@/lib/agents/registry";
 
 const savedKey = process.env.ANTHROPIC_API_KEY;
 const savedModel = process.env.BRAIN_MODEL;
+const savedGoogleId = process.env.GOOGLE_CLIENT_ID;
+const savedGoogleSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+/** A connected account whose grant includes Drive read scope. */
+const driveAccount = () => ({
+  id: "gm_drive", email: "founder@pallisade.io",
+  tokens: { scope: "https://www.googleapis.com/auth/drive.readonly" },
+  createdAt: "", updatedAt: "",
+});
+
+/** Connected, but Gmail-only — no Drive scope in the grant. */
+const gmailOnlyAccount = () => ({
+  id: "gm_mail", email: "founder@pallisade.io",
+  tokens: { scope: "https://www.googleapis.com/auth/gmail.readonly" },
+  createdAt: "", updatedAt: "",
+});
 
 beforeEach(() => {
   process.env.ANTHROPIC_API_KEY = "test-key";
   delete process.env.BRAIN_MODEL;
+  // isConfigured() gates the Drive resolution; without these the resolver
+  // short-circuits to null and no Drive test could ever be green.
+  process.env.GOOGLE_CLIENT_ID = "test-google-id";
+  process.env.GOOGLE_CLIENT_SECRET = "test-google-secret";
   mockCreate.mockReset();
   overridesState.reject = false;
   registryOverride.spec = null;
   mockEmailAvailable.mockReset().mockResolvedValue(false);
   mockCalendarAvailable.mockReset().mockResolvedValue(false);
   mockLoadAll.mockReset().mockResolvedValue(snapshotFixture());
+  mockListAccounts.mockReset().mockResolvedValue([]);
+  mockSearchFiles.mockReset();
+  mockReadFileContent.mockReset();
   resetRegistryCache();
 });
 
@@ -116,6 +155,10 @@ afterAll(() => {
   else process.env.ANTHROPIC_API_KEY = savedKey;
   if (savedModel === undefined) delete process.env.BRAIN_MODEL;
   else process.env.BRAIN_MODEL = savedModel;
+  if (savedGoogleId === undefined) delete process.env.GOOGLE_CLIENT_ID;
+  else process.env.GOOGLE_CLIENT_ID = savedGoogleId;
+  if (savedGoogleSecret === undefined) delete process.env.GOOGLE_CLIENT_SECRET;
+  else process.env.GOOGLE_CLIENT_SECRET = savedGoogleSecret;
 });
 
 const call = (body: unknown) =>
@@ -300,20 +343,29 @@ describe("POST /api/brain — agent resolution", () => {
    client snapshot, and the CRM resolvers read one — so before this route loads
    it server-side, every query_leads call came back
    {"error":"no snapshot available for this tool"} and the agent narrated
-   around it. These tests execute a real tool call through the runtime. */
-describe("POST /api/brain — the CRM tools return data, not an error", () => {
-  const toolUse = (name: string) => ({
-    content: [{ type: "tool_use", id: "tu_1", name, input: {} }],
-    stop_reason: "tool_use",
-  });
+   around it. These tests execute a real tool call through the runtime.
 
-  /** The tool_result the runtime fed back on the second model call. */
-  const resultText = (): string => {
-    const followUp = mockCreate.mock.calls[1][0].messages.at(-1) as {
-      content: { content: string }[];
-    };
-    return followUp.content[0].content;
+   The SAME defect sat one layer over on Drive, and this section originally
+   covered only the CRM half. Task 15 gave the strategist `drive` and told it
+   to use drive_search, but the page forwarded a driveAccountId only on the
+   brainstorm branch — so for the DEFAULT Brain agent every Drive call answered
+   {"error":"Google Drive is not connected…"}, which the agent then relayed to
+   the founder as a fact about their own integration. The Drive tests below
+   close the class properly: both halves, resolved server-side. */
+const toolUse = (name: string, input: Record<string, unknown> = {}) => ({
+  content: [{ type: "tool_use", id: "tu_1", name, input }],
+  stop_reason: "tool_use",
+});
+
+/** The tool_result the runtime fed back on the second model call. */
+const resultText = (): string => {
+  const followUp = mockCreate.mock.calls[1][0].messages.at(-1) as {
+    content: { content: string }[];
   };
+  return followUp.content[0].content;
+};
+
+describe("POST /api/brain — the CRM tools return data, not an error", () => {
 
   it("resolves query_leads against a server-loaded snapshot", async () => {
     mockCreate.mockResolvedValueOnce(toolUse("query_leads")).mockResolvedValueOnce(textResponse("done"));
@@ -375,6 +427,82 @@ describe("POST /api/brain — the CRM tools return data, not an error", () => {
   });
 });
 
+describe("POST /api/brain — the Drive tools return data, not an error", () => {
+  it("resolves drive_search for the DEFAULT agent, with no client-supplied account id", async () => {
+    // The exact shape of the bug: strategist, no `context` at all.
+    mockListAccounts.mockResolvedValue([driveAccount()]);
+    mockSearchFiles.mockResolvedValue([{ id: "f1", name: "Lanternpost discovery.md" }]);
+    mockCreate.mockResolvedValueOnce(toolUse("drive_search", { query: "lanternpost" }))
+      .mockResolvedValueOnce(textResponse("done"));
+
+    await call({ messages: msgs });
+
+    const out = resultText();
+    expect(out).not.toContain("not connected");
+    expect(out).toContain("Lanternpost discovery.md");
+    // Resolved from the connected account, not from anything the client sent.
+    expect(mockSearchFiles).toHaveBeenCalledWith("gm_drive", "lanternpost");
+  });
+
+  it("resolves drive_read_file too", async () => {
+    mockListAccounts.mockResolvedValue([driveAccount()]);
+    mockReadFileContent.mockResolvedValue("the doc body");
+    mockCreate.mockResolvedValueOnce(toolUse("drive_read_file", { fileId: "f1" }))
+      .mockResolvedValueOnce(textResponse("done"));
+
+    await call({ messages: msgs });
+
+    expect(resultText()).toContain("the doc body");
+    expect(mockReadFileContent).toHaveBeenCalledWith("gm_drive", "f1");
+  });
+
+  it("still resolves it for product-brainstorm, which used to be the only agent that worked", async () => {
+    mockListAccounts.mockResolvedValue([driveAccount()]);
+    mockSearchFiles.mockResolvedValue([{ id: "f1", name: "idea notes.md" }]);
+    mockCreate.mockResolvedValueOnce(toolUse("drive_search")).mockResolvedValueOnce(textResponse("done"));
+
+    await call({ mode: "brainstorm", messages: msgs });
+
+    expect(resultText()).toContain("idea notes.md");
+  });
+
+  it("ignores a driveAccountId posted by the client — the browser cannot name the account", async () => {
+    // Drive genuinely not connected. Pre-fix, this id went straight into
+    // ctx.driveAccountId and out to the Google API.
+    mockListAccounts.mockResolvedValue([]);
+    mockCreate.mockResolvedValueOnce(toolUse("drive_search")).mockResolvedValueOnce(textResponse("done"));
+
+    await call({ messages: msgs, context: { driveAccountId: "someone-elses-account" } });
+
+    expect(mockSearchFiles).not.toHaveBeenCalled();
+    expect(resultText()).toContain("not connected");
+  });
+
+  it("reports not-connected honestly when no account granted Drive scope", async () => {
+    mockListAccounts.mockResolvedValue([gmailOnlyAccount()]);
+    mockCreate.mockResolvedValueOnce(toolUse("drive_search")).mockResolvedValueOnce(textResponse("done"));
+
+    await call({ messages: msgs });
+
+    expect(mockSearchFiles).not.toHaveBeenCalled();
+    expect(resultText()).toContain("not connected");
+  });
+
+  // Same principle as resolveAvailability and the snapshot: an agent that
+  // never asks for Drive must not pay a DB read for it.
+  it("never reads the accounts table for an agent that does not declare drive", async () => {
+    mockCreate.mockResolvedValue(textResponse("hi"));
+    await call({ agentId: "pipeline-analyst", messages: msgs });
+    expect(mockListAccounts).not.toHaveBeenCalled();
+  });
+
+  it("reads it exactly once for an agent that does", async () => {
+    mockCreate.mockResolvedValue(textResponse("hi"));
+    await call({ messages: msgs });
+    expect(mockListAccounts).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("POST /api/brain — BRAIN_MODEL override", () => {
   it("splices the env override onto the resolved spec's model", async () => {
     process.env.BRAIN_MODEL = "claude-opus-4-6";
@@ -409,6 +537,34 @@ describe("POST /api/brain — attachments", () => {
     await call({ messages: msgs });
     const system = mockCreate.mock.calls[0][0].system;
     expect(system).not.toContain("SESSION DOCUMENTS");
+  });
+});
+
+/* deal-strategist, discovery-coach and pipeline-analyst all interpolate
+   {{services}}. roster.test.ts proves the token is SUBSTITUTABLE — it renders
+   every persona against a fixture ctx that already supplies services — which
+   is why it stayed green while the Brain page sent no services at all and
+   every one of these three silently described the founder's business with a
+   hardcoded default. These pin the value, not the substitutability. */
+describe("POST /api/brain — {{services}} carries the founder's real Services setting", () => {
+  const SERVICES = "reconciliation tooling for boutique asset managers";
+
+  it.each(["deal-strategist", "discovery-coach", "pipeline-analyst"])(
+    "%s renders the supplied services, not the route default",
+    async (agentId) => {
+      mockCreate.mockResolvedValue(textResponse("hi"));
+      await call({ agentId, messages: msgs, context: { services: SERVICES } });
+      const system = mockCreate.mock.calls[0][0].system as string;
+      expect(system).toContain(SERVICES);
+      expect(system).not.toContain("bespoke AI systems, workflow automation");
+    },
+  );
+
+  it("falls back to the default only when the client sends none", async () => {
+    mockCreate.mockResolvedValue(textResponse("hi"));
+    await call({ agentId: "deal-strategist", messages: msgs });
+    const system = mockCreate.mock.calls[0][0].system as string;
+    expect(system).toContain("bespoke AI systems, workflow automation");
   });
 });
 

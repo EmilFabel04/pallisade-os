@@ -1,3 +1,11 @@
+import type { AgentStopReason } from "@/lib/agents/types";
+
+export interface BrainReply {
+  content: string;
+  /** Why the turn ended. Absent on a response from an older server build. */
+  stoppedBy?: AgentStopReason;
+}
+
 export async function getBrainStatus(): Promise<{ configured: boolean; model: string }> {
   try {
     const res = await fetch("/api/brain", { method: "GET" });
@@ -12,8 +20,12 @@ export async function sendBrainTurn(params: {
   messages: { role: "user" | "assistant"; content: string }[];
   agentId?: string;
   attachments?: { name: string; content: string }[];
-  context: { businessName: string; founderName: string; driveAccountId?: string };
-}): Promise<{ content: string }> {
+  // Presentation strings only. The Drive account is resolved server-side by
+  // resolveDriveAccountId for any agent that declares `drive`. The browser
+  // used to send it, and only on the brainstorm branch — which is why the
+  // strategist's Drive tools answered "not connected" on every call.
+  context: { businessName: string; founderName: string; services: string };
+}): Promise<BrainReply> {
   const res = await fetch("/api/brain", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -28,7 +40,7 @@ export async function sendBrainTurn(params: {
     throw new Error(typeof err.error === "string" ? err.error : "The request failed.");
   }
 
-  return (await res.json()) as { content: string };
+  return (await res.json()) as BrainReply;
 }
 
 export async function getDriveStatus(): Promise<{ connected: boolean; accountId: string | null }> {

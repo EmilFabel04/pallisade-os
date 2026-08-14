@@ -1,4 +1,5 @@
 import type { AdvisorSnapshot, DataShape, ProposedAction } from "./types";
+import type { AgentStopReason } from "./agents/types";
 
 export interface AdvisorContext {
   businessName: string;
@@ -9,6 +10,8 @@ export interface AdvisorContext {
 export interface AdvisorReply {
   content: string;
   actions: ProposedAction[];
+  /** Why the turn ended. Absent on a response from an older server build. */
+  stoppedBy?: AgentStopReason;
 }
 
 /**

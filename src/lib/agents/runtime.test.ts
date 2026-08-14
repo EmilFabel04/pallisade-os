@@ -121,6 +121,41 @@ describe("runAgent", () => {
     expect(r.content).toBe(`partial-${MAX_ITERATIONS - 1}`);
   });
 
+  /* max_tokens was folded into "end", which made the Advisor's likeliest
+     truncation channel — a 2048-token ceiling with twenty-two tools —
+     unrepresentable, and left the page rendering a cut-off answer as a
+     finished one. */
+  it("reports max_tokens as its own stop reason, and keeps the partial text", async () => {
+    const { client } = stub([
+      { content: [{ type: "text", text: "half an ans" }], stop_reason: "max_tokens" },
+    ]);
+    const r = await runAgent({ spec, messages: [], ctx: ctx(), client });
+    expect(r.stoppedBy).toBe("max_tokens");
+    expect(r.content).toBe("half an ans");
+  });
+
+  it("reports max_tokens even when the truncated turn carried a tool_use block", async () => {
+    // Running out of budget mid-tool_use returns stop_reason "max_tokens"
+    // with a (possibly incomplete) tool_use block. The loop must not treat
+    // that as a normal end, and must not try to answer the partial call.
+    const { client, create } = stub([
+      { content: [
+          { type: "text", text: "looking that up" },
+          { type: "tool_use", id: "tu_1", name: "query_leads", input: {} },
+        ], stop_reason: "max_tokens" },
+      text("never reached"),
+    ]);
+    const r = await runAgent({ spec, messages: [], ctx: ctx(), client });
+    expect(r.stoppedBy).toBe("max_tokens");
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("a normal end_turn is still 'end'", async () => {
+    const { client } = stub([text("complete")]);
+    const r = await runAgent({ spec, messages: [], ctx: ctx(), client });
+    expect(r.stoppedBy).toBe("end");
+  });
+
   it("surfaces a tool failure to the agent instead of throwing", async () => {
     const { client } = stub([toolUse("query_leads"), text("recovered")]);
     // ctx().snapshot is null, so the crm resolver fails inside dispatch

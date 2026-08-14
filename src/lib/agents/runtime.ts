@@ -4,7 +4,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { ProposedAction } from "@/lib/types";
 import { dispatch, toolsFor, SERVER_TOOL_NAMES } from "./capabilities";
-import type { AgentContext, AgentSpec } from "./types";
+import type { AgentContext, AgentSpec, AgentStopReason } from "./types";
 
 export const DEFAULT_MODEL = "claude-sonnet-4-6";
 export const MAX_ITERATIONS = 8;
@@ -20,7 +20,7 @@ export interface MessageCreator {
 export interface RunAgentResult {
   content: string;
   proposals: ProposedAction[];
-  stoppedBy: "end" | "max_iterations";
+  stoppedBy: AgentStopReason;
 }
 
 export async function runAgent(input: {
@@ -64,7 +64,12 @@ export async function runAgent(input: {
     );
 
     if (response.stop_reason !== "tool_use" || localUses.length === 0) {
-      stoppedBy = "end";
+      // max_tokens is its own truncation channel, and folding it into "end"
+      // made it unrepresentable: the Advisor runs at a 2048-token ceiling with
+      // twenty-two tools, where running out of output budget is the *likelier*
+      // way an answer gets cut off. Both non-"end" reasons keep the partial
+      // text — they only change what the surface tells the founder.
+      stoppedBy = response.stop_reason === "max_tokens" ? "max_tokens" : "end";
       break;
     }
 

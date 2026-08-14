@@ -5,7 +5,7 @@ import { getAgent, AgentNotFound } from "@/lib/agents/registry";
 import { runAgent, DEFAULT_MODEL } from "@/lib/agents/runtime";
 import { renderBody } from "@/lib/agents/render";
 import { formatAttachmentsBlock } from "@/lib/brain/attachments";
-import { resolveAvailability } from "@/lib/brain/availability";
+import { resolveAvailability, resolveDriveAccountId } from "@/lib/brain/availability";
 import { buildSnapshot } from "@/lib/advisorClient";
 import type { AgentContext, AgentSpec } from "@/lib/agents/types";
 import type { AdvisorSnapshot } from "@/lib/types";
@@ -54,11 +54,14 @@ interface BrainRequest {
   mode?: "strategist" | "brainstorm";
   agentId?: string;
   attachments?: { name: string; content: string }[];
+  // Presentation-layer strings only. The Drive account id used to arrive here
+  // too; it is now resolved server-side (resolveDriveAccountId) because the
+  // client only ever sent one on the brainstorm branch, and because the
+  // browser must not be able to name the account an agent reads from.
   context?: {
     businessName?: string;
     founderName?: string;
     services?: string;
-    driveAccountId?: string;
   };
 }
 
@@ -101,7 +104,10 @@ export async function POST(req: Request) {
   const envModel = process.env.BRAIN_MODEL?.trim();
   if (envModel) spec = { ...spec, model: envModel };
 
-  const { emailEnabled, calendarEnabled } = await resolveAvailability(spec);
+  const [{ emailEnabled, calendarEnabled }, driveAccountId] = await Promise.all([
+    resolveAvailability(spec),
+    resolveDriveAccountId(spec),
+  ]);
 
   let snapshot: AdvisorSnapshot | null;
   try {
@@ -124,7 +130,7 @@ export async function POST(req: Request) {
     proposals: [],
     emailEnabled,
     calendarEnabled,
-    driveAccountId: body.context?.driveAccountId ?? null,
+    driveAccountId,
   };
 
   let rendered = renderBody(spec.body, ctx);

@@ -21,6 +21,17 @@ export interface AgentSpec {
   body: string;
 }
 
+/**
+ * Why a turn ended. Anything other than "end" means the answer is a partial
+ * one and the surface must say so — the spec's error table promises a capped
+ * turn is "surfaced, partial answer kept", and a truncated answer that renders
+ * identically to a complete one is a failure rendered as an answer.
+ *
+ * Declared here (not in runtime.ts) because both browser clients type their
+ * reply against it, and runtime.ts is server-only.
+ */
+export type AgentStopReason = "end" | "max_iterations" | "max_tokens";
+
 /** Browser-safe projection. Never carries `body` or `tools`. */
 export interface AgentCard {
   id: string;
