@@ -1,14 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, RotateCcw, Trash2, Save, Database, Building2, Sparkles, Loader2 } from "lucide-react";
+import { Check, RotateCcw, Trash2, Save, Database, Building2, Sparkles, Loader2, Lock, AlertCircle } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { aiStatus, type AIStatus } from "@/lib/aiClient";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { Field, NumberInput, TextArea, TextInput } from "@/components/ui/Field";
 import { ConfirmDialog } from "@/components/ui/Modal";
+import { AGENT_SURFACES, type AgentCard, type AgentSpec, type AgentSurface } from "@/lib/agents/types";
 import type { Settings } from "@/lib/types";
+
+const SURFACE_LABEL: Record<AgentSurface, string> = {
+  brain: "Brain",
+  advisor: "Advisor",
+  project: "Project",
+};
+
+type AgentDetail = AgentSpec & { overridden: boolean };
 
 const ACCENT_PRESETS = [
   { name: "Crimson", value: "#e5484d" },
@@ -246,6 +255,8 @@ export default function SettingsPage() {
         )}
       </Panel>
 
+      <AgentsPanel />
+
       <Panel title="Data">
         <div className="flex items-start gap-3 mb-4">
           <Database size={16} className="text-[var(--color-muted)] mt-0.5" />
@@ -283,6 +294,214 @@ export default function SettingsPage() {
         message="This permanently removes every lead, interaction, project, task, scorecard and pain point. Your settings are kept."
         confirmLabel="Clear everything"
       />
+    </div>
+  );
+}
+
+/**
+ * Lists every agent, grouped by surface, with a per-agent persona editor.
+ * Fetches the roster for each surface via GET /api/agents?surface=<s> — the
+ * six-key AgentCard projection Task 14's picker also uses — then each
+ * AgentEditorRow fetches its own full spec (including body and the
+ * read-only tool grant) from GET /api/agents/:id. That second route is the
+ * only place a system prompt crosses into the browser; the roster call
+ * above never carries one.
+ */
+function AgentsPanel() {
+  const [groups, setGroups] = useState<Record<AgentSurface, AgentCard[]> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      AGENT_SURFACES.map((s) =>
+        fetch(`/api/agents?surface=${s}`)
+          .then((res) => (res.ok ? res.json() : { agents: [] }))
+          .catch(() => ({ agents: [] })),
+      ),
+    ).then((results: { agents?: AgentCard[] }[]) => {
+      if (cancelled) return;
+      const next = {} as Record<AgentSurface, AgentCard[]>;
+      AGENT_SURFACES.forEach((s, i) => {
+        next[s] = results[i].agents ?? [];
+      });
+      setGroups(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <Panel title="Agent personas">
+      <div className="flex items-start gap-3 mb-4">
+        <Lock size={16} className="text-[var(--color-muted)] mt-0.5 shrink-0" />
+        <p className="text-[0.82rem] text-[var(--color-muted)] leading-relaxed">
+          Editing a persona here changes only its system prompt. Tool access is fixed in the
+          agent&apos;s file and shown read-only below — it can&apos;t be widened from this screen.
+        </p>
+      </div>
+
+      {!groups && <p className="text-[0.82rem] text-[var(--color-muted)]">Loading agents…</p>}
+
+      {groups &&
+        AGENT_SURFACES.filter((s) => groups[s].length > 0).map((surface) => (
+          <div key={surface} className="mb-5 last:mb-0">
+            <p className="eyebrow mb-2.5">{SURFACE_LABEL[surface]}</p>
+            <div className="space-y-3">
+              {groups[surface].map((card) => (
+                <AgentEditorRow key={card.id} card={card} />
+              ))}
+            </div>
+          </div>
+        ))}
+    </Panel>
+  );
+}
+
+function AgentEditorRow({ card }: { card: AgentCard }) {
+  const [spec, setSpec] = useState<AgentDetail | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState<"saving" | "resetting" | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () =>
+    fetch(`/api/agents/${card.id}`).then((res) => (res.ok ? (res.json() as Promise<AgentDetail>) : null));
+
+  useEffect(() => {
+    let cancelled = false;
+    load().then((data) => {
+      if (cancelled || !data) return;
+      setSpec(data);
+      setDraft(data.body);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.id]);
+
+  const save = async () => {
+    if (!draft.trim()) {
+      setError("A persona can't be saved empty — write something or use Reset to default instead.");
+      return;
+    }
+    setError(null);
+    setBusy("saving");
+    try {
+      const res = await fetch(`/api/agents/${card.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: draft }),
+      });
+      if (!res.ok) throw new Error();
+      const fresh = await load();
+      if (fresh) setSpec(fresh);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch {
+      setError("Couldn't save — try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const reset = async () => {
+    setError(null);
+    setBusy("resetting");
+    try {
+      const res = await fetch(`/api/agents/${card.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      const fresh = await load();
+      if (fresh) {
+        setSpec(fresh);
+        setDraft(fresh.body);
+      }
+    } catch {
+      setError("Couldn't reset — try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const dirty = spec ? draft !== spec.body : false;
+
+  return (
+    <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface-2)] p-3.5">
+      <div className="flex items-start justify-between gap-3 mb-2.5">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <span aria-hidden className="text-[1.1rem] leading-none mt-0.5">{card.emoji}</span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-[0.88rem] text-[var(--color-ink)] font-medium">{card.name}</p>
+              {spec?.overridden && (
+                <span className="chip" style={{ fontSize: "0.68rem", padding: "0.15rem 0.5rem", color: "var(--color-accent)" }}>
+                  Customized
+                </span>
+              )}
+            </div>
+            <p className="text-[0.78rem] text-[var(--color-muted)] mt-0.5">{card.description}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-start gap-2 mb-2.5">
+        <Lock size={12} className="text-[var(--color-dim)] mt-1 shrink-0" />
+        <div className="flex flex-wrap gap-1.5">
+          {spec ? (
+            spec.tools.length > 0 ? (
+              spec.tools.map((t) => (
+                <span
+                  key={t}
+                  className="chip"
+                  style={{ fontSize: "0.68rem", padding: "0.18rem 0.5rem", color: "var(--color-dim)", cursor: "default" }}
+                  title="Tool grants are set in the agent's file and are not editable here."
+                >
+                  {t}
+                </span>
+              ))
+            ) : (
+              <span className="text-[0.72rem] text-[var(--color-dim)]">No tools granted</span>
+            )
+          ) : (
+            <span className="text-[0.72rem] text-[var(--color-dim)]">…</span>
+          )}
+        </div>
+      </div>
+
+      {spec ? (
+        <>
+          <TextArea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={6}
+            spellCheck={false}
+          />
+          {error && (
+            <p className="flex items-center gap-1.5 text-[0.76rem] mt-1.5" style={{ color: "var(--color-accent-soft)" }}>
+              <AlertCircle size={13} /> {error}
+            </p>
+          )}
+          <div className="flex items-center gap-2 mt-2.5">
+            <button className="btn btn-accent" disabled={!dirty || busy !== null} onClick={save}>
+              {busy === "saving" ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : saved ? (
+                <Check size={14} />
+              ) : (
+                <Save size={14} />
+              )}
+              {saved ? "Saved" : "Save"}
+            </button>
+            <button className="btn" disabled={!spec.overridden || busy !== null} onClick={reset}>
+              {busy === "resetting" ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+              Reset to default
+            </button>
+          </div>
+        </>
+      ) : (
+        <p className="text-[0.78rem] text-[var(--color-muted)]">Loading…</p>
+      )}
     </div>
   );
 }
