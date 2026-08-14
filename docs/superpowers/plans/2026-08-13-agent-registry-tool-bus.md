@@ -432,6 +432,7 @@ git commit -m "feat(agents): agent spec types and validation"
 - Create: `src/lib/agents/capabilities.ts`
 - Test: `src/lib/agents/capabilities.test.ts`
 - Modify: `src/lib/advisor/tools.ts` — export `WRITE_TOOL_NAMES` and split read from write tool arrays
+- Modify: `src/app/api/advisor/route.ts` — delete the stale sentence advertising the removed skill tools
 
 **Interfaces:**
 - Consumes: `CapabilityGroup`, `AgentContext` (Task 2); existing `TOOLS`, `EMAIL_TOOLS`, `CALENDAR_TOOLS`, `DRIVE_TOOLS`, `PROJECT_CONTEXT_TOOLS` and their resolvers.
@@ -685,7 +686,16 @@ export async function dispatch(name: string, args: Args, ctx: AgentContext): Pro
     if (PROJECT_CONTEXT_TOOL_NAMES.has(name)) return await resolveProjectContextTool(name, args);
     if (DRIVE_TOOL_NAMES.has(name)) return await resolveBrainTool(name, args, ctx.driveAccountId);
 
-    if (READ_TOOL_NAMES.has(name) || WRITE_TOOL_NAMES.has(name)) {
+    // Writes are checked FIRST and deliberately skip the snapshot guard.
+    // resolveTool's write branch pushes the ProposedAction and returns before
+    // ever dereferencing the snapshot, and surfaces like Brain carry no
+    // snapshot at all — guarding writes on it would silently degrade every
+    // proposal to an error payload the moment a snapshot-less surface is
+    // granted `writes`, with no symptom but the agent apologising.
+    if (WRITE_TOOL_NAMES.has(name)) {
+      return resolveTool(name, args, ctx.snapshot as AdvisorSnapshot, ctx.proposals);
+    }
+    if (READ_TOOL_NAMES.has(name)) {
       if (!ctx.snapshot) throw new Error("no snapshot available for this tool");
       return resolveTool(name, args, ctx.snapshot, ctx.proposals);
     }
