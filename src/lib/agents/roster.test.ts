@@ -27,14 +27,23 @@ const baseCtx = (): AgentContext => ({
 describe("the shipped agent roster", () => {
   it("loads every file in src/agents without a validation error", async () => {
     const reg = await loadRegistry();
-    expect(reg.size).toBeGreaterThanOrEqual(4);
+    expect(reg.size).toBeGreaterThanOrEqual(3);
   });
 
-  it("includes the four migrated personas", async () => {
+  it("includes the three migrated personas", async () => {
     const reg = await loadRegistry();
-    for (const id of ["sales-advisor", "strategist", "product-brainstorm", "project-copilot"]) {
+    for (const id of ["sales-advisor", "strategist", "product-brainstorm"]) {
       expect(reg.has(id)).toBe(true);
     }
+  });
+
+  // A *valid but wrong* surface passes every other test in this file while
+  // silently dropping the agent from the picker listAgents() feeds. Pin it.
+  it("puts each agent on its intended surface", async () => {
+    const reg = await loadRegistry();
+    expect(reg.get("strategist")!.surface).toBe("brain");
+    expect(reg.get("product-brainstorm")!.surface).toBe("brain");
+    expect(reg.get("sales-advisor")!.surface).toBe("advisor");
   });
 
   it("grants writes to the advisor only", async () => {
