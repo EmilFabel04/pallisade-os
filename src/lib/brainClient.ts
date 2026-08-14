@@ -22,7 +22,7 @@ export async function sendBrainTurn(params: {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "request_failed" }));
-    if (err.error === "no_key") {
+    if (err.error === "agent_unconfigured") {
       throw new Error("The Brain needs an ANTHROPIC_API_KEY. Add it to .env.local and restart.");
     }
     throw new Error(typeof err.error === "string" ? err.error : "The request failed.");
