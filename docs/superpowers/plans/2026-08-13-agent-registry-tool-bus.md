@@ -1307,18 +1307,28 @@ git commit -m "feat(agents): single agent runtime replacing three route loops"
 
 **Interfaces:**
 - Consumes: `loadRegistry`, `listAgents` (Task 5).
-- Produces: four agent ids the route migrations in Tasks 11-13 reference by name.
+- Produces: three agent ids the route migrations in Tasks 11-12 reference by name.
 
 Copy each persona **verbatim** from its current prompt builder so the route migrations are behaviour-preserving and reviewable. Interpolated values (`${founder}`, `${today}`) become literal placeholders `{{founderName}}`, `{{today}}`, `{{businessName}}`, `{{services}}`, substituted by the runtime caller in Task 11.
 
 | File | Source | surface | tools |
 | --- | --- | --- | --- |
-| `sales-advisor.md` | `advisor/route.ts:51-77` + the email/calendar appendices at `:91-119` | `advisor` | `[crm, projects, email, calendar, writes]` |
+| `sales-advisor.md` | `advisor/route.ts:51-77` — the base system string ONLY | `advisor` | `[crm, projects, email, calendar, writes]` |
 | `strategist.md` | `brain/prompt.ts` `strategistPrompt` + `PROJECT_TOOLS_BLOCK` | `brain` | `[projects]` |
 | `product-brainstorm.md` | `brain/prompt.ts` `brainstormPrompt` | `brain` | `[projects, drive, web]` |
-| `project-copilot.md` | `projects/prompt.ts` `buildProjectSystemPrompt` | `project` | `[projects]` |
 
-Grants match today's behaviour exactly. Task 15 is where `strategist` gets deepened — keeping that separate means Tasks 11-13 can be reviewed as pure refactors.
+**The email and calendar appendices (`advisor/route.ts:91-119`) stay OUT of the agent file.**
+They are appended today only when the integration is connected. An agent body is one blob
+with no conditional mechanism, so baking them in would have the Advisor announce "Google
+Calendar is connected." when it is not, and instruct it to use `query_emails` for a tool it
+was not granted. Task 12 appends them at runtime, exactly as today, using the same pattern
+Task 11 uses for Brain's attachments. Ruled 2026-08-14.
+
+**There is no `project-copilot.md`.** Projects chat is deferred out of this branch — see the
+spec's "Why Projects chat is deferred". The `project` surface stays in `AGENT_SURFACES` for
+the follow-up; `listAgents("project")` simply returns `[]`.
+
+Grants match today's behaviour exactly. Task 15 is where `strategist` gets deepened — keeping that separate means Tasks 11-12 can be reviewed as pure refactors.
 
 Example header for `strategist.md`:
 
@@ -1351,14 +1361,23 @@ const baseCtx = (): AgentContext => ({
 describe("the shipped agent roster", () => {
   it("loads every file in src/agents without a validation error", async () => {
     const reg = await loadRegistry();
-    expect(reg.size).toBeGreaterThanOrEqual(4);
+    expect(reg.size).toBeGreaterThanOrEqual(3);
   });
 
-  it("includes the four migrated personas", async () => {
+  it("includes the three migrated personas", async () => {
     const reg = await loadRegistry();
-    for (const id of ["sales-advisor", "strategist", "product-brainstorm", "project-copilot"]) {
+    for (const id of ["sales-advisor", "strategist", "product-brainstorm"]) {
       expect(reg.has(id)).toBe(true);
     }
+  });
+
+  // A *valid but wrong* surface passes every other test in this file while
+  // silently dropping the agent from the picker listAgents() feeds. Pin it.
+  it("puts each agent on its intended surface", async () => {
+    const reg = await loadRegistry();
+    expect(reg.get("strategist")!.surface).toBe("brain");
+    expect(reg.get("product-brainstorm")!.surface).toBe("brain");
+    expect(reg.get("sales-advisor")!.surface).toBe("advisor");
   });
 
   it("grants writes to the advisor only", async () => {
@@ -1868,7 +1887,21 @@ git commit -m "refactor(brain): run the Brain on the agent runtime"
 
 Same shape as Task 11, with three differences: `agentId` defaults to `"sales-advisor"`; the response keeps `actions: result.proposals`; and `maxTokens: 2048` preserves the advisor's current budget.
 
-The email and calendar system-prompt appendices (`advisor/route.ts:91-119`) moved into `sales-advisor.md` in Task 7. They are unconditional in the file, while the tools remain conditional via `ctx.emailEnabled` / `ctx.calendarEnabled`. That is acceptable: the prompt describes tools the agent may not have, which it discovers by not being offered them. If this proves confusing in use, gate the appendices with placeholders in a follow-up — do not add branching to the route.
+**`maxTokens: 2048` is not optional.** `runAgent` defaults to 4096 (Brain's value). Omitting it silently doubles this surface's output ceiling and per-call cost.
+
+**Conditional appendices.** `advisor/route.ts:91-119` appends an email block only when Gmail is connected and a calendar block only when Calendar is. Task 7 deliberately left both out of `sales-advisor.md`, because an agent body is one blob with no conditional mechanism — baking them in would have the Advisor announce "Google Calendar is connected." when it is not, and instruct it to call `query_emails` for a tool it was never granted. Reproduce the conditionality here, after `renderBody`, using the same append pattern Task 11 uses for Brain's attachments:
+
+```ts
+let rendered = renderBody(spec.body, ctx);
+if (ctx.emailEnabled) {
+  rendered += `\n\nConnected Gmail inboxes: ${(await connectedEmails()).join(", ")}. ${EMAIL_APPENDIX}`;
+}
+if (ctx.calendarEnabled) rendered += `\n\n${CALENDAR_APPENDIX}`;
+```
+
+Copy `EMAIL_APPENDIX` and `CALENDAR_APPENDIX` verbatim from `advisor/route.ts:92-112` and `:115-118` into module constants in the route. The connected-inbox list is per-request runtime data with no token, which is why it could never live in the agent file.
+
+Assert the conditionality: a test that builds the system string with `emailEnabled: false, calendarEnabled: false` and confirms it contains neither `query_emails` nor `Google Calendar is connected`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1918,59 +1951,29 @@ git commit -m "refactor(advisor): run the Sales Advisor on the agent runtime"
 
 ---
 
-### Task 13: Migrate the Projects chat route onto the runtime
+### Task 13: (removed) — Projects chat migration deferred
 
-**Files:**
-- Modify: `src/app/api/projects/chat/route.ts`
-- Modify: `src/lib/projects/prompt.ts` — persona moves to `project-copilot.md`; keep any snapshot-formatting helpers
+Projects chat is **not** migrated on this branch. Ruled 2026-08-14 after Task 7's review
+found the plan built this task on a capability group that does not grant the tools the route
+actually uses.
 
-`projects/chat` differs in that its system prompt embeds a per-project snapshot. Append that snapshot to the rendered body exactly as Task 11 appends attachments, rather than adding a branch to the runtime.
+`PROJECT_CONTEXT_TOOLS` (what the `projects` group grants: `list_projects`,
+`get_project_context`) and `PROJECT_TOOLS` (what `projects/chat/route.ts:107` grants:
+`list_milestones`, `list_tasks`, `read_repo_status`, `read_commits`, plus five mutations) are
+**disjoint sets**. Migrating onto `projects` would strip the agent of every tool it uses.
 
-- [ ] **Step 1: Write the failing test**
+The mismatch is structural: those tools are scoped to one project and resolve against a
+`ProjectSnapshot`, which `AgentContext` does not carry. There is also a name collision to
+disarm — `src/lib/projects/tools.ts:27` exports its own `SERVER_TOOL_NAMES` meaning "resolved
+by an async server resolver" (and those tools DO get a `tool_result`), the exact inverse of
+`capabilities.ts:35`, which means "executed by Anthropic" (and must NOT). Conflating them
+hangs the project agent.
 
-```ts
-import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+See the spec's "Why Projects chat is deferred". Follow-up item 0 in its Out of scope list.
 
-describe("projects chat route", () => {
-  const src = readFileSync(join(process.cwd(), "src/app/api/projects/chat/route.ts"), "utf8");
-
-  it("no longer contains its own tool-use loop", () => {
-    expect(src).not.toMatch(/MAX_ITERATIONS/);
-    expect(src).not.toMatch(/stop_reason/);
-  });
-
-  it("delegates to the agent runtime", () => {
-    expect(src).toMatch(/runAgent/);
-  });
-});
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `npx vitest run src/app/api/projects`
-Expected: FAIL.
-
-- [ ] **Step 3: Rewrite the route**
-
-Resolve `project-copilot`, render the body, append the project snapshot block, call `runAgent` with `maxTokens: 2048`.
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `npx vitest run && npx tsc --noEmit`
-Expected: full suite PASS. The three duplicated loops are now gone; confirm with
-`grep -rn "MAX_ITERATIONS" src/app` returning nothing.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/app/api/projects src/lib/projects/prompt.ts
-git commit -m "refactor(projects): run project chat on the agent runtime"
-```
+Task numbering is left unchanged so the ledger, briefs and commit history stay aligned.
 
 ---
-
 ### Task 14: Brain roster picker
 
 **Files:**
@@ -2238,4 +2241,4 @@ git commit -m "test(agents): mutation sweep and live verification"
 
 **Known risk.** Task 12 moves the advisor's conditional email and calendar prompt appendices into an unconditional agent file. The tools stay conditional, so the agent may be told about tools it is not offered. This is called out in the task with the reason not to reintroduce branching.
 
-**Type consistency check.** `AgentSpec`, `AgentCard`, `AgentContext`, `CapabilityGroup` and `AgentSurface` are defined once in Task 2 and used unchanged after. `toolsFor`/`dispatch` signatures in Task 3 match their calls in Task 6. `runAgent`'s return shape in Task 6 matches its use in Tasks 11-13. `tomorrowPlan` in Task 9 keeps the exact shape of the `generateTomorrowPlan` it replaces.
+**Type consistency check.** `AgentSpec`, `AgentCard`, `AgentContext`, `CapabilityGroup` and `AgentSurface` are defined once in Task 2 and used unchanged after. `toolsFor`/`dispatch` signatures in Task 3 match their calls in Task 6. `runAgent`'s return shape in Task 6 matches its use in Tasks 11-12. `tomorrowPlan` in Task 9 keeps the exact shape of the `generateTomorrowPlan` it replaces.

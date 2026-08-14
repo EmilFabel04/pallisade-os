@@ -70,7 +70,8 @@ Adding a persona today means adding a route. There is nowhere to put the eight o
   founder's confirmation. Grantable per agent rather than welded to the Advisor.
 - **The mock is deleted. Failures fail loudly.** No fallback path may render a
   non-answer as an answer.
-- **Conversational surfaces only.** The registry covers Brain, Advisor and Projects chat.
+- **Conversational surfaces only, and initially only two of them.** The registry covers Brain
+  and Advisor. **Projects chat is deferred** — see the note below.
   Content Studio's brief/draft/revise stages, pricing adjudication, news curation, AI
   Business Review and Meeting Prep keep their purpose-built code. They need
   schema-constrained output and deterministic gates, which a persona abstraction fights.
@@ -124,6 +125,31 @@ YAML, revisit then.
 
 `repo` and `fathom` are specified here as group names and stubs only. Their tool
 implementations are separate sub-projects (see Out of scope).
+
+### Why Projects chat is deferred
+
+Discovered during Task 7 and ruled on 2026-08-14. The `projects` group above grants
+`PROJECT_CONTEXT_TOOLS` — `list_projects` and `get_project_context`, both cross-project and
+read-only. Projects chat does not use those. It grants `PROJECT_TOOLS`
+(`src/lib/projects/tools.ts:29-70`): `list_milestones`, `list_tasks`, `read_repo_status`,
+`read_commits`, plus five mutations. **The two sets are disjoint**, so migrating that route
+onto the `projects` group would strip the agent of every tool it actually uses.
+
+The mismatch is structural, not clerical. Projects chat's tools are scoped to *one* project
+and resolve against a `ProjectSnapshot`, which `AgentContext` does not carry — it holds an
+`AdvisorSnapshot`. Closing that properly needs a new capability group and a context
+extension, which is a design change rather than a migration.
+
+There is also a name collision to disarm first: `src/lib/projects/tools.ts:27` exports its
+own `SERVER_TOOL_NAMES = new Set(["read_repo_status", "read_commits"])`, meaning *resolved by
+an async server-side resolver* — and those tools **do** receive a `tool_result`
+(`projects/chat/route.ts:128-131`). `capabilities.ts:35` uses the same name to mean
+*executed by Anthropic*, which must **not** receive one. Conflating them would hang the
+project agent.
+
+Brain and Advisor are the surfaces that motivated this work — Brain granted two tools,
+Advisor calling a keyword matcher. Projects chat is not broken. It keeps its own loop until
+a follow-up spec designs project-scoped agent context.
 
 ## Components
 
@@ -271,6 +297,9 @@ deferred exactly this step and its `STATUS.md` item #1 has been open since 2026-
 
 Sequenced follow-ups, each its own spec:
 
+0. **Projects chat migration** — needs a project-scoped capability group and a
+   `projectSnapshot` on `AgentContext`, plus resolution of the `SERVER_TOOL_NAMES` name
+   collision described above. Deferred out of this branch on 2026-08-14.
 1. **`repo` tools** — read a linked repo's files for project context. Extends the existing
    `readCommitsApi` and linked-repo gating.
 2. **`fathom` tools** — sync past meeting summaries and transcripts via the Fathom public
