@@ -21,7 +21,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { DictateTextArea } from "@/components/ui/DictateTextArea";
 import type { BusinessReview } from "@/lib/types";
-import { requestBusinessReview } from "@/lib/aiClient";
+import { requestBusinessReview, AIUnavailable } from "@/lib/aiClient";
 import { latestScorecard } from "@/lib/selectors";
 
 export default function ReviewPage() {
@@ -29,17 +29,23 @@ export default function ReviewPage() {
   const [text, setText] = useState("");
   const [review, setReview] = useState<BusinessReview | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const generate = async () => {
     if (!text.trim()) return;
     setLoading(true);
-    // Calls Claude Sonnet 4.6 via /api/ai; falls back to the local mock if no key.
+    setError(null);
+    // Calls Claude Sonnet 4.6 via /api/ai. No local fallback — a failure
+    // (no key, model error, empty result, network) surfaces as an error
+    // state instead of being rendered as a review.
     try {
       const result = await requestBusinessReview(text, {
         businessName: settings.businessName,
         services: settings.services,
       });
       setReview(result);
+    } catch (err) {
+      setError(err instanceof AIUnavailable ? err.message : "Something went wrong generating the review.");
     } finally {
       setLoading(false);
     }
@@ -91,6 +97,7 @@ export default function ReviewPage() {
               Generate review
             </button>
           </div>
+          {error && <p className="text-[0.78rem] text-[var(--color-accent)] mt-3">{error}</p>}
         </Panel>
 
         {/* Output */}

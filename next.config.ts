@@ -23,6 +23,11 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // The registry reads these at runtime. Without this they exist locally and
+  // are absent from the serverless bundle, so the roster is empty in production.
+  outputFileTracingIncludes: {
+    "/api/**": ["./src/agents/**"],
+  },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },

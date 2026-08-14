@@ -28,7 +28,7 @@ import { InteractionForm } from "@/components/forms/InteractionForm";
 import { INTERACTION_TYPES, type Interaction } from "@/lib/types";
 import { interactionTone } from "@/lib/badges";
 import { fmtDate, relativeDay } from "@/lib/utils";
-import { requestCallSummary } from "@/lib/aiClient";
+import { requestCallSummary, AIUnavailable } from "@/lib/aiClient";
 
 function InteractionsView() {
   const { interactions, update, remove, settings } = useStore();
@@ -41,6 +41,7 @@ function InteractionsView() {
   const [creating, setCreating] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
 
   useEffect(() => {
     if (focusId) setViewId(focusId);
@@ -65,7 +66,10 @@ function InteractionsView() {
 
   const runSummary = async (it: Interaction) => {
     setGenerating(true);
-    // Calls Claude Sonnet 4.6 via /api/ai; falls back to the local mock if no key.
+    setSummaryError(null);
+    // Calls Claude Sonnet 4.6 via /api/ai. No local fallback — a failure
+    // (no key, model error, empty result, network) surfaces as an error
+    // state instead of being rendered as a summary.
     try {
       const summary = await requestCallSummary({
         rawNotes: it.rawNotes,
@@ -78,6 +82,8 @@ function InteractionsView() {
         context: { businessName: settings.businessName, services: settings.services },
       });
       update("interactions", it.id, { summary });
+    } catch (err) {
+      setSummaryError(err instanceof AIUnavailable ? err.message : "Something went wrong generating the summary.");
     } finally {
       setGenerating(false);
     }
@@ -156,7 +162,7 @@ function InteractionsView() {
       {/* Detail + AI */}
       <Modal
         open={!!view}
-        onClose={() => setViewId(null)}
+        onClose={() => { setViewId(null); setSummaryError(null); }}
         title={view ? `${view.type} — ${view.company}` : ""}
         subtitle={view ? `${view.contact || "—"} · ${fmtDate(view.date)}` : ""}
         size="lg"
@@ -195,6 +201,9 @@ function InteractionsView() {
                 </button>
               </div>
               <div className="p-4">
+                {summaryError && (
+                  <p className="text-[0.78rem] text-[var(--color-accent)] mb-3">{summaryError}</p>
+                )}
                 {!view.summary ? (
                   <p className="text-[0.82rem] text-[var(--color-muted)] leading-relaxed">
                     {view.rawNotes.trim()

@@ -94,7 +94,10 @@ export default function NewsPage() {
     const seed = `Let's dig into this and brainstorm what it means for me / what I could build:\n\n**${item.title}**\n${item.url}\n${item.snippet ?? ""}`;
     const thread = store.create("brainThreads", {
       title: item.title.slice(0, 48),
+      // Both, for the same reason brain/page.tsx writes both: agentId is what
+      // the Brain reopens on, mode keeps the row readable after a rollback.
       mode: "brainstorm",
+      agentId: "product-brainstorm",
       messages: [{ id: uid("msg"), role: "user", content: seed, createdAt: nowISO() }],
       attachments: [],
     });

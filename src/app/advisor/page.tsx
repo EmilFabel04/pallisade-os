@@ -11,6 +11,7 @@ import { MicButton } from "@/components/ui/MicButton";
 import { createCalendarEvent } from "@/lib/calendar/calendarClient";
 import { applyAction, type AdvisorStore } from "@/lib/advisor/applyAction";
 import { buildSnapshot, getAdvisorStatus, sendAdvisorTurn } from "@/lib/advisorClient";
+import { stopNotice } from "@/lib/agents/stopNotice";
 import type { ChatMessage, CollectionKey, Conversation, ProposedAction } from "@/lib/types";
 import { uid, nowISO } from "@/lib/utils";
 
@@ -29,6 +30,10 @@ export default function AdvisorPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the last turn ended for a reason other than the advisor
+  // finishing. At a 2048-token ceiling with twenty-two tools that is a real
+  // possibility, and without this a truncated answer reads as a complete one.
+  const [notice, setNotice] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -47,12 +52,13 @@ export default function AdvisorPage() {
   const setMessages = (conv: Conversation, messages: ChatMessage[]) =>
     store.update("conversations", conv.id, { messages });
 
-  const newConversation = () => { setActiveId(null); setInput(""); setError(null); };
+  const newConversation = () => { setActiveId(null); setInput(""); setError(null); setNotice(null); };
 
   const send = async () => {
     const text = input.trim();
     if (!text || loading) return;
     setError(null);
+    setNotice(null);
 
     // Ensure there is an active conversation.
     let conv = active;
@@ -85,6 +91,7 @@ export default function AdvisorPage() {
         actions: reply.actions, createdAt: nowISO(),
       };
       setMessages(conv, [...withUser, assistantMsg]);
+      setNotice(stopNotice(reply.stoppedBy));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -163,7 +170,7 @@ export default function AdvisorPage() {
           <ThreadList
             conversations={conversations}
             activeId={activeId}
-            onSelect={(id) => { setActiveId(id); setError(null); }}
+            onSelect={(id) => { setActiveId(id); setError(null); setNotice(null); }}
             onNew={newConversation}
           />
         </Panel>
@@ -193,6 +200,8 @@ export default function AdvisorPage() {
           </div>
 
           {error && <p className="text-[0.78rem] text-[var(--color-accent)] mt-3">{error}</p>}
+
+          {notice && <p className="text-[0.78rem] text-[var(--color-muted)] mt-3">{notice}</p>}
 
           <div className="flex items-end gap-2 mt-4 pt-4 border-t border-[var(--color-line)]">
             <textarea
