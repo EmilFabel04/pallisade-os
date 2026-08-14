@@ -149,8 +149,12 @@ async function runStructured(
   } as Anthropic.MessageCreateParamsNonStreaming);
 
   const textBlock = response.content.find((b) => b.type === "text");
-  const raw = textBlock && "text" in textBlock ? textBlock.text : "{}";
-  return JSON.parse(raw) as Record<string, unknown>;
+  if (!textBlock || !("text" in textBlock)) {
+    // A 200 with no text block (e.g. stop_reason "refusal") is a failure, not an
+    // empty answer. Manufacturing "{}" here is what let it reach the UI as ✓ Generated.
+    throw new Error("model returned no text block");
+  }
+  return JSON.parse(textBlock.text) as Record<string, unknown>;
 }
 
 function renderCallPrompt(input: Record<string, unknown>): string {
