@@ -1714,14 +1714,17 @@ async function post<T>(kind: string, input: unknown, context?: unknown): Promise
   } catch (err) {
     throw new AIUnavailable("failed", `Model returned an unreadable response: ${(err as Error).message}`);
   }
-  // `!data?.result` alone is NOT enough. api/ai/route.ts stamps `generatedAt`
+  // `!data?.result` alone is NOT enough: api/ai/route.ts stamps `generatedAt`
   // onto whatever it parsed, so an empty model response arrives as a truthy
-  // `{generatedAt}` object and sails past a falsy check — then renders as
-  // "✓ Generated" and crashes the modal on reopen. Check the shape.
-  if (!data?.result || typeof data.result !== "object") {
-    throw new AIUnavailable("failed", "Model returned no result");
-  }
-  return data.result as T;
+  // `{ generatedAt }` object and sails past a falsy check — then renders as
+  // "✓ Generated" and crashes the modal on reopen. A `typeof … !== "object"`
+  // check does not help either: `{ generatedAt }` IS an object. A real result
+  // always carries more than just the timestamp, so require another field.
+  const result = data?.result;
+  const looksReal =
+    result !== null && typeof result === "object" && Object.keys(result as object).length > 1;
+  if (!looksReal) throw new AIUnavailable("failed", "Model returned no result");
+  return result as T;
 }
 
 export async function requestCallSummary(input: {
