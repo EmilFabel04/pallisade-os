@@ -1112,7 +1112,11 @@ describe("runAgent", () => {
     expect(last.content[0].type).toBe("tool_result");
   });
 
-  it("does not synthesise a tool_result for a server-executed tool", async () => {
+  // This one pins pause_turn ONLY. It cannot pin the SERVER_TOOL_NAMES filter:
+  // the pause_turn branch returns before `localUses` is evaluated, and the
+  // block is typed `server_tool_use` so the `b.type === "tool_use"` clause
+  // short-circuits regardless. The next two tests do that job.
+  it("resumes a paused turn without synthesising a tool_result", async () => {
     const { client, create } = stub([
       { content: [{ type: "server_tool_use", id: "s1", name: "web_search", input: {} }], stop_reason: "pause_turn" },
       text("researched"),
@@ -1123,12 +1127,52 @@ describe("runAgent", () => {
     expect(second.messages[second.messages.length - 1].role).toBe("assistant");
   });
 
+  it("synthesises a tool_result only for the local tool use, never the server one", async () => {
+    const { client, create } = stub([
+      { content: [
+          { type: "server_tool_use", id: "s1", name: "web_search", input: {} },
+          { type: "tool_use", id: "tu_1", name: "query_leads", input: {} },
+        ], stop_reason: "tool_use" },
+      text("done"),
+    ]);
+    await runAgent({ spec: { ...spec, tools: ["crm", "web"] }, messages: [], ctx: ctx(), client });
+    const last = create.mock.calls[1][0].messages.at(-1);
+    expect(last.role).toBe("user");
+    expect(last.content).toHaveLength(1);
+    expect(last.content[0].tool_use_id).toBe("tu_1");
+  });
+
+  // Isolates SERVER_TOOL_NAMES specifically: a server tool arriving with the
+  // `tool_use` type. Fails if and only if the name filter is removed.
+  it("never answers a server tool even when it arrives typed as tool_use", async () => {
+    const { client, create } = stub([
+      { content: [{ type: "tool_use", id: "s1", name: "web_search", input: {} }], stop_reason: "tool_use" },
+      text("done"),
+    ]);
+    await runAgent({ spec: { ...spec, tools: ["web"] }, messages: [], ctx: ctx(), client });
+    // No local tool uses ⇒ the loop ends; it must not have queued a tool_result.
+    const pushed = create.mock.calls[1]?.[0]?.messages ?? [];
+    expect(pushed.some((m: { role: string; content: unknown }) =>
+      m.role === "user" && Array.isArray(m.content) &&
+      m.content.some((c: { tool_use_id?: string }) => c.tool_use_id === "s1"))).toBe(false);
+  });
+
   it("stops at the iteration cap and keeps the partial answer", async () => {
-    const responses = Array.from({ length: MAX_ITERATIONS }, () => toolUse("query_leads"));
+    // Each response carries text AND a tool_use, so the accumulated partial
+    // answer is observable. A fixture of bare tool_uses leaves content "" and
+    // the assertion below cannot fail — which is the whole point of the test.
+    const responses = Array.from({ length: MAX_ITERATIONS }, (_, i) => ({
+      content: [
+        { type: "text", text: `partial-${i}` },
+        { type: "tool_use", id: `tu_${i}`, name: "query_leads", input: {} },
+      ],
+      stop_reason: "tool_use",
+    }));
     const { client, create } = stub(responses);
     const r = await runAgent({ spec, messages: [], ctx: ctx(), client });
     expect(create).toHaveBeenCalledTimes(MAX_ITERATIONS);
     expect(r.stoppedBy).toBe("max_iterations");
+    expect(r.content).toBe(`partial-${MAX_ITERATIONS - 1}`);
   });
 
   it("surfaces a tool failure to the agent instead of throwing", async () => {
