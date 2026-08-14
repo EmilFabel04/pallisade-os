@@ -78,7 +78,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    // No key configured — tell the client so it falls back to the local mock.
+    // No key configured — the client surfaces this as "No model configured".
     return NextResponse.json({ error: "no_key" }, { status: 503 });
   }
 
@@ -123,7 +123,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ error: "unknown_kind" }, { status: 400 });
   } catch (err) {
-    // Surface the failure so the client can fall back to the mock.
+    // Surface the failure to the client as an error state — never a mock answer.
     return apiError(UPSTREAM_FAILED, 502, err);
   }
 }
