@@ -2075,7 +2075,36 @@ git commit -m "feat(brain): agent picker replaces the mode toggle"
 **Files:**
 - Modify: `src/agents/strategist.md` — widen the tool grant
 - Create: `src/agents/deal-strategist.md`, `src/agents/discovery-coach.md`, `src/agents/pipeline-analyst.md`
+- Modify: `src/lib/types.ts` — add `agentId?` to `BrainThread`
+- Modify: `src/app/brain/page.tsx` — persist and restore `agentId`
 - Modify: `src/lib/agents/roster.test.ts`
+
+### Thread memory (ruled 2026-08-14)
+
+`BrainThread.mode` is `"strategist" | "brainstorm"` and `brain/page.tsx` uses it twice: at
+`:41` to filter the thread list into two buckets, and at `:63` to restore the agent when a
+thread is opened. With five agents on the surface, a Deal Strategist thread could only
+persist as `"strategist"` and would silently reopen as the generic Brain.
+
+Add an optional field rather than widening the union — `BrainThread` is in `COLLECTIONS`, so
+existing rows round-trip through the client store and must keep parsing:
+
+```ts
+export interface BrainThread extends BaseRecord {
+  title: string;
+  mode: "strategist" | "brainstorm";  // legacy; kept so old rows still read
+  agentId?: string;                    // which agent this thread belongs to
+  messages: ChatMessage[];
+  attachments?: BrainAttachment[];
+}
+```
+
+Read precedence on open: `t.agentId ?? (t.mode === "brainstorm" ? "product-brainstorm" : "strategist")`.
+Write both on create — `agentId` for the truth, `mode` so a rollback still reads the thread.
+The thread-list filter groups by the resolved agent id, not by `mode`.
+
+A migration is not needed and must not be written: absent `agentId` resolves through the
+legacy branch, which is exactly today's behaviour.
 
 This is the task that answers "the Brain is very underdeveloped". `strategist.md` goes from `tools: [projects]` to `tools: [crm, projects, drive, email, calendar, web]` — it can now see leads, interactions, quotes, the pipeline and the inbox.
 
@@ -2087,7 +2116,27 @@ Adapt the three new personas from `agency-agents`, rewriting each against Pallis
 | `discovery-coach.md` | `sales/sales-discovery-coach.md` | `[crm, calendar]` |
 | `pipeline-analyst.md` | `sales/sales-pipeline-analyst.md` | `[crm, email]` |
 
-Fetch with `curl -sL https://raw.githubusercontent.com/msitarzewski/agency-agents/main/<path>`. For each, keep the framework content (SPIN, Gap Selling, MEDDIC and similar) and replace the generic agency framing with Pallisade's: a solo B2B agency selling bespoke AI systems to boutique asset managers, whose data lives in the CRM tools the agent can call. Every persona must instruct the agent to ground claims in tool output and never invent leads, numbers or history — matching the rule already in `sales-advisor.md`.
+Fetch with `curl -sL https://raw.githubusercontent.com/msitarzewski/agency-agents/main/<path>`.
+
+**Heavy rewrite, ruled 2026-08-14.** Keep the framework content — SPIN's four question
+classes, Gap Selling's current-state/future-state mapping, MEDDIC, and any concrete question
+banks. Those are the durable value. Rewrite everything around them:
+
+- The upstream files address "account executives and SDRs" at a company with a sales team.
+  This is one founder, selling bespoke AI systems, workflow automation and reporting tools to
+  boutique asset managers and B2B service businesses in South Africa. No SDRs, no handoffs, no
+  quota, no manager.
+- Name the actual tools each agent can call, and instruct it to reach for them before
+  advising — `query_leads`, `query_interactions`, `search_pain_points`,
+  `get_pipeline_metrics`, `query_emails`, `query_calendar`. A coach that says "review your
+  discovery notes" when it can *read* them is the generic-ness the founder complained about.
+- Every persona must forbid inventing leads, numbers or history, matching the rule already in
+  `sales-advisor.md`. Ground claims in tool output.
+- Cut upstream's deliverable templates that assume a CRM this app does not have.
+
+The target: reading the file, it should be obvious it was written for this business and not
+for a generic agency. If a paragraph would read identically for any B2B company, rewrite or
+cut it.
 
 - [ ] **Step 1: Write the failing test**
 
