@@ -62,16 +62,29 @@ describe("POST /api/projects/chat", () => {
   });
 
   // The whole point of the migration: the browser names WHICH project, never
-  // what is in it. A snapshot in the body must have no effect.
+  // what is in it. A snapshot in the body must have no effect — not on the
+  // project, not on its milestones, not on its tasks. Empty forged arrays
+  // would pass this even under a partial-trust bug (e.g.
+  // `milestones: body.snapshot?.milestones ?? dbMilestones`), because
+  // buildProjectStateBlock prints "(none yet)" for an empty list either way
+  // — so the forged snapshot carries real content in every field.
   it("loads the project from the DB and ignores a client-supplied snapshot", async () => {
     await post({
       projectId: "p1",
       messages: [{ role: "user", content: "status?" }],
-      snapshot: { project: { ...PROJECT, name: "Forged Project" }, milestones: [], tasks: [] },
+      snapshot: {
+        project: { ...PROJECT, name: "Forged Project" },
+        milestones: [{ ...MILESTONE, name: "Forged Milestone" }],
+        tasks: [{ ...TASK, title: "Forged Task" }],
+      },
     });
     const system = mockCreate.mock.calls[0][0].system as string;
     expect(system).toContain("Acme Dashboard");
+    expect(system).toContain("Ingest");
+    expect(system).toContain("Auth handshake");
     expect(system).not.toContain("Forged Project");
+    expect(system).not.toContain("Forged Milestone");
+    expect(system).not.toContain("Forged Task");
   });
 
   it("grants the nine delivery tools", async () => {
@@ -119,10 +132,22 @@ describe("POST /api/projects/chat", () => {
   });
 
   it("502s with the cause when the DB read fails", async () => {
-    mockLoadAll.mockRejectedValue(new Error("db unavailable"));
-    const res = await post({ projectId: "p1", messages: [{ role: "user", content: "hi" }] });
-    expect(res.status).toBe(502);
-    await expect(res.json()).resolves.toMatchObject({ error: "agent_failed" });
+    // apiError logs only when passed a cause (src/lib/api/errors.ts:20) — a
+    // 502 that never spies-in on console.error would stay green even if the
+    // route dropped the third argument and turned this into a silent
+    // production failure. Assert the actual thrown error reached the log,
+    // not merely that something did.
+    const dbError = new Error("db unavailable");
+    mockLoadAll.mockRejectedValue(dbError);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await post({ projectId: "p1", messages: [{ role: "user", content: "hi" }] });
+      expect(res.status).toBe(502);
+      await expect(res.json()).resolves.toMatchObject({ error: "agent_failed" });
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("agent_failed"), dbError);
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("404s on an agentId that does not exist", async () => {
@@ -134,10 +159,19 @@ describe("POST /api/projects/chat", () => {
   });
 
   it("502s when the upstream call fails", async () => {
-    mockCreate.mockRejectedValue(new Error("anthropic down"));
-    const res = await post({ projectId: "p1", messages: [{ role: "user", content: "hi" }] });
-    expect(res.status).toBe(502);
-    await expect(res.json()).resolves.toMatchObject({ error: "agent_failed" });
+    // Same reasoning as the DB-failure test above: the cause must reach the
+    // logger, not just the status code.
+    const upstreamError = new Error("anthropic down");
+    mockCreate.mockRejectedValue(upstreamError);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await post({ projectId: "p1", messages: [{ role: "user", content: "hi" }] });
+      expect(res.status).toBe(502);
+      await expect(res.json()).resolves.toMatchObject({ error: "agent_failed" });
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("agent_failed"), upstreamError);
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("returns queued proposals as actions", async () => {
