@@ -40,6 +40,9 @@ describe("the project agent", () => {
     expect(body).toContain("{{businessName}}");
     expect(body).toMatch(/queued as proposals/i);
     expect(body).toMatch(/never claim it is already done/i);
+    expect(body).toMatch(/never invent/i);
+    expect(body).toMatch(/pass an id from the state/i);
+    expect(body).toMatch(/only the fields you intend to change/i);
   });
 
   it("uses only placeholders renderBody can substitute", async () => {
