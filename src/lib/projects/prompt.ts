@@ -75,7 +75,7 @@ export function buildProjectStateBlock(input: ProjectPromptInput): string {
   const { project: p } = input;
 
   const block =
-    `PROJECT: ${p.name}${p.company ? ` · ${p.company}` : ""} — a ${p.type} for ${dash(p.company)}\n` +
+    `PROJECT: ${p.name} — a ${p.type} for ${dash(p.company)}\n` +
     `  Stage: ${p.stage} · Priority: ${p.priority}\n` +
     `  Dates: ${p.startDate ?? "—"} → ${p.dueDate ?? "—"}\n` +
     `  Blocker: ${dash(p.currentBlocker)}\n` +
