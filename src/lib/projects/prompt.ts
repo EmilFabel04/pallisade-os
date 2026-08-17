@@ -1,7 +1,7 @@
 import type { Milestone, Project, Task } from "@/lib/types";
 import type { Commit, RepoStatus } from "@/lib/git/types";
 
-/** Hard ceiling on the rendered system prompt. */
+/** Hard ceiling on the rendered project state block. */
 export const PROMPT_BUDGET = 24000;
 
 export interface ProjectPromptInput {
@@ -62,16 +62,20 @@ function repoBlock(project: Project, repo: RepoStatus | null, commits: Commit[])
   return `${head}\nRecent commits (newest first):\n${lines}`;
 }
 
-export function buildProjectSystemPrompt(input: ProjectPromptInput): string {
-  const { project: p, businessName, founderName, today } = input;
+/**
+ * The factual state block for one project: state, milestones, open tasks and
+ * repo. Appended after the rendered persona body, the shape brain/route.ts
+ * uses for attachments.
+ *
+ * Renamed from buildProjectSystemPrompt: it no longer builds a system prompt,
+ * and a name that says it does would be the last thing in the codebase
+ * claiming the persona lives in TypeScript.
+ */
+export function buildProjectStateBlock(input: ProjectPromptInput): string {
+  const { project: p } = input;
 
-  const prompt =
-    `Today's date is ${today}. Resolve relative dates against it and pass concrete ISO ` +
-    `dates (YYYY-MM-DD) to tools.\n\n` +
-    `You are the project agent for "${p.name}" — a ${p.type} for ${dash(p.company)}, run by ` +
-    `${founderName} at ${businessName}. You know this one project deeply and help ${founderName} ` +
-    `plan it, unblock it and keep it honest.\n\n` +
-    `PROJECT STATE:\n` +
+  const block =
+    `PROJECT: ${p.name}${p.company ? ` · ${p.company}` : ""} — a ${p.type} for ${dash(p.company)}\n` +
     `  Stage: ${p.stage} · Priority: ${p.priority}\n` +
     `  Dates: ${p.startDate ?? "—"} → ${p.dueDate ?? "—"}\n` +
     `  Blocker: ${dash(p.currentBlocker)}\n` +
@@ -80,22 +84,9 @@ export function buildProjectSystemPrompt(input: ProjectPromptInput): string {
     `  Notes: ${dash(p.notes)}\n\n` +
     `MILESTONES:\n${milestoneLines(input.milestones)}\n\n` +
     `OPEN TASKS:\n${taskLines(input.tasks)}\n\n` +
-    `${repoBlock(p, input.repo, input.commits)}\n\n` +
-    `HOW YOU WORK:\n` +
-    `- Ground every answer in the state above and in the read tools. Never invent milestones, ` +
-    `commits, dates or history. If you don't have a fact, say so.\n` +
-    `- Use read_commits and read_repo_status when the founder asks what shipped or where the ` +
-    `work stands. Real commits beat recollection.\n` +
-    `- When the founder wants to change something, call the matching write tool ` +
-    `(create_milestone, update_milestone, create_project_task, update_project_task, update_project). Writes do ` +
-    `NOT execute immediately — they are queued as proposals ${founderName} must confirm in the ` +
-    `UI. After proposing, say briefly what you've queued and that it awaits confirmation; never ` +
-    `claim it is already done.\n` +
-    `- For update_* tools always pass an id from the state above, and only the fields you intend ` +
-    `to change.\n` +
-    `- Be direct, concrete and concise. Confident and brief beats verbose.`;
+    `${repoBlock(p, input.repo, input.commits)}`;
 
-  return prompt.length > PROMPT_BUDGET
-    ? `${prompt.slice(0, PROMPT_BUDGET - 13)}\n[truncated]`
-    : prompt;
+  return block.length > PROMPT_BUDGET
+    ? `${block.slice(0, PROMPT_BUDGET - 13)}\n[truncated]`
+    : block;
 }

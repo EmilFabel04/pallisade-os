@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import Anthropic from "@anthropic-ai/sdk";
 import type { ProposedAction } from "@/lib/types";
-import { buildProjectSystemPrompt } from "@/lib/projects/prompt";
+import { buildProjectStateBlock } from "@/lib/projects/prompt";
 import { PROJECT_TOOLS, resolveProjectTool, type ProjectSnapshot } from "@/lib/projects/tools";
 import { readCommits, readStatus } from "@/lib/git/repo";
 import { linkedRepoPathFor } from "@/lib/git/linkedRepos";
@@ -70,7 +70,7 @@ export async function POST(req: Request) {
     ]);
   }
 
-  const system = buildProjectSystemPrompt({
+  const system = buildProjectStateBlock({
     project: snapshot.project,
     milestones: snapshot.milestones ?? [],
     tasks: snapshot.tasks ?? [],
