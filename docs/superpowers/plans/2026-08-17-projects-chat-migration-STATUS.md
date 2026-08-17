@@ -277,29 +277,88 @@ None of the following blocks. Grouped by the task that surfaced them.
 in a real session. The plan's own Task 6 Step 8 lists four scenarios; `task-6-report.md`
 expands each into what has zero automated coverage because `.tsx` files are outside this
 repo's `vitest.config.ts` (`include: ["src/**/*.test.ts"]`, no DOM library). The ledger
-also references "a 14-step checklist" the Task 6 reviewer produced; that checklist is not
-preserved as a retrievable artifact in this branch's `.superpowers/sdd/` directory or its
-diffs, so what follows is the fullest version actually on file — the plan's 4 scenarios,
-each annotated with the specific coverage gap `task-6-report.md` names:
+Run `npm run dev` with a real `ANTHROPIC_API_KEY` in `.env.local` and a project that has
+at least one milestone and one task. Keep DevTools open on Network and Console. **Back up
+`data/pallisade.db` before step 8.**
 
-1. **Ask "what's the plan?"** on a project with at least one milestone — the agent
-   should answer with real milestone names. Exercises the whole route + agent + DB path,
-   not just Task 6's client changes.
-2. **Ask "add a task to chase the API key"** — a proposal card should appear;
-   confirming it should create the task. Also exercises `ActionCard.tsx`'s new
-   `create_project_task`/`update_project_task` icon entries actually rendering
-   `Plus`/`PencilLine` in a real card.
-3. **Immediately after confirming, ask "what's on this project now?"** — the new task
-   should appear in the answer. This is the core reason `flush()` exists: without it,
-   the agent would answer from a database up to 450ms stale. Nothing has verified
-   `store.flush()` is actually called before `sendProjectMessage` in the real React
-   lifecycle, nor that this end-to-end sequence actually closes the race it was built to
-   close.
-4. **Ask something with no `ANTHROPIC_API_KEY` set** — the message should read "No
-   ANTHROPIC_API_KEY set...", not the generic "That didn't go through." Also unverified:
-   `stopNotice(stopped)` actually rendering in the DOM when `stoppedBy` is
-   `"max_iterations"`/`"max_tokens"` and staying absent when `"end"`; and the
-   `configured === false` early-return branch, unchanged by this branch but still `.tsx`
-   and still untested.
+1. **Chat renders.** Open the project → Chat tab. Expect the empty-state prompt "Ask
+   about this project — milestones…" and an enabled input. (Covers `configured === true`
+   from `GET /api/projects/chat`.)
+2. **The request is the new contract.** Send "what's the plan?". Inspect the
+   `POST /api/projects/chat` payload: exactly `messages`, `projectId`, `context` — **no
+   `snapshot`, no `agentId`** — with `projectId` matching the page URL. Expect 200 and an
+   answer naming the project's real milestone titles.
+3. **Flush fires first, and in order.** In the same trace, expect a `PUT /api/data` that
+   starts *and completes* before the `POST` starts. If the POST starts first, the flush is
+   not being awaited.
+4. **The core flush scenario.** Ask "add a task to chase the API key" → proposal card
+   appears → Confirm → card turns green → immediately (well under a second) ask "what's on
+   this project now?". Expect the new task in the answer. This is the only end-to-end
+   proof `flush()` does its job.
+5. **Icons.** The create proposal should render a **plus**; ask for an edit ("change the
+   due date on <task>") and expect the update proposal to render a **pencil**. If you have
+   a thread from before the rename, reopen it and confirm those older cards still render.
+6. **Confirm actually writes.** After confirming, check the Tasks/Overview tab for the
+   task with the right title and project link, then reload and confirm it survived.
+7. **Transcript durability.** After a successful exchange, hard-reload and reopen the Chat
+   tab. Expect both the user message and the assistant reply still present. (This is what
+   would catch the flush-vs-debounce write-ordering hazard listed under deferred minors.)
+8. **The hydration guard — safety-critical.** Note the DB row counts. Set DevTools Network
+   to Offline, reload the app, then go back Online *without reloading*. Expect empty
+   collections and "Project not found". Interact for a minute, stop the dev server, and
+   confirm the row counts are **unchanged** and that no `PUT /api/data` carrying an empty
+   payload was sent. If one was, the server console should show
+   `[db] refused empty saveAll over a populated database` — seeing that line means a guard
+   layer leaked and the finding needs revisiting.
+9. **Truncation notice — positive.** Provoke a capped turn ("list every task, then every
+   milestone, then cross-reference the repo commits for each"). If `stoppedBy` comes back
+   `max_iterations`/`max_tokens`, expect a one-line notice under the last message beginning
+   "This answer was cut short". Lower the iteration cap temporarily if you can't provoke it.
+10. **Truncation notice — negative and clearing.** On a normal answer (`stoppedBy: "end"`)
+    expect **no** notice. After a truncated turn shows one, send any new message and expect
+    it to disappear as the new turn starts.
+11. **Missing-key copy.** Remove `ANTHROPIC_API_KEY`, restart, reload the Chat tab: expect
+    the "Project chat needs a Claude API key…" panel *instead of* the input. Then force a
+    503 on send and confirm the message reads "No ANTHROPIC_API_KEY set — add one to
+    .env.local and restart." — **not** "That didn't go through."
+12. **Generic error copy.** Kill the server mid-request (or block the route in DevTools)
+    and send. Expect "That didn't go through. Try again.", the spinner stopped, the input
+    re-enabled, and your message still in the transcript.
+13. **Multi-turn.** Send a follow-up that depends on the previous answer ("and which of
+    those is blocked?"). Expect the payload's `messages` array to carry the full history in
+    order.
+14. **Console.** No React warnings across any of the above — in particular no "Cannot
+    update a component while rendering" and no key warnings from the new notice element.
+
+## Final whole-branch review
+
+Run after Task 7, on the full `9f58ecb..36c3ee4` range. Verdict: findings must be fixed
+first — four Important, none breaking the shipped feature, all small. The reviewer
+independently re-verified every property the spec promises and found them holding, except
+the two below. Fixed in one wave (`236e20d`), re-reviewed scoped, all six closed.
+
+| # | Defect | Caught where | Why it mattered |
+| --- | --- | --- | --- |
+| 5 | The route hardcoded `emailEnabled: false, calendarEnabled: false, driveAccountId: null` instead of calling `resolveAvailability(spec)` / `resolveDriveAccountId(spec)` as both migrated routes do. | Plan — the brief's Step 3 route code | Re-armed failure mode #2 for the next persona: a project agent declaring `drive` would receive `DRIVE_TOOLS` unconditionally and every call would answer "not connected", which the model relays as fact. It also falsified the spec's own justification for accepting an `agentId` — that a second persona is "a roster change, not a route change". |
+| 6 | The rewrite dropped the pre-migration route's `proposals.length ? "I've queued the action(s)…"` fallback, keeping only "I couldn't produce a response — try rephrasing." | Plan — the brief's Step 3 route code | User-visible regression against this route's own predecessor, on the one migrated surface with five mutation tools. An empty-content turn carrying a proposal shows "couldn't produce a response" above a live Confirm card; rephrasing queues the action twice. `advisor/route.ts` kept both branches deliberately. |
+| 7 | `roster.test.ts`'s branch-wide "no mutation without `writes`" guard ran its assertion loop over an empty array for `project-agent`, because its `full` fixture carried `projectSnapshot: null` — added in Task 1 purely for compilation. | Plan — nobody revisited the fixture the type change forced | Failure mode (a) on the guard whose entire purpose is catching a mutation smuggled into a read group. `projectSnapshot` became one of the integration switches its own comment says must be "switched on", and it was off. |
+| 8 | `update_milestone` and `update_project_task` had no happy-path assertion anywhere: every test for both drove a rejection path, so the `queue(...)` calls that create the proposal were never executed by a passing test. | Plan — the spec promised "each of the nine tools is asserted to return a payload containing a known value" and the plan's tests didn't deliver it | Replacing either `queue(...)` with `return "Updated."` left the suite fully green. In the app the agent says it queued the edit, no card appears, and the founder's change silently never happens. Both tools were renamed on this branch, which is exactly when an untested happy path is at risk. |
+
+Two Minors were ruled into the same wave: the output ceiling had silently gone 2048 →
+4096 (the rewrite passed no `maxTokens` and `runAgent` defaults to 4096), against the
+spec's stated "behaviour should be identical" property — now pinned at 2048 explicitly,
+matching `advisor/route.ts`; and `services` fell back to `""` where both other routes use
+`DEFAULT_SERVICES`, which would silently blank a `{{services}}` token the moment anyone
+added one to the persona in Settings.
+
+**Revised ratio: 8 of 8 defects (100%) in the plan, 0 in the implementation.** The final
+review changes the count but not the conclusion — it strengthens it. Four more defects,
+all four in code or test code the plan specified verbatim, none in an implementer's
+departure from instructions.
+
+One residual, recorded not fixed: `src/app/api/projects/chat/route.test.ts` has no
+assertion that `max_tokens: 2048` actually reaches `messages.create`, where
+`advisor/route.test.ts:198-202` has exactly that test. The value is correct by code trace;
+the regression guard its sibling route has is absent here.
 
 Needs a dev server, a real `ANTHROPIC_API_KEY`, and a project with real milestones.
