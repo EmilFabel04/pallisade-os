@@ -208,6 +208,25 @@ describe("every delivery tool answers with data, not an error", () => {
     expect(c.proposals[0].args).toMatchObject({ id: "p1", stage: "handover" });
   });
 
+  // Every other test for update_milestone/update_project_task drives a
+  // rejection (a cycle, a foreign id) — the queue(...) call that actually
+  // creates the proposal on the happy path was never executed by a passing
+  // test. A mutant that replaces either queue(...) with a hardcoded
+  // "Updated." string previously left the suite green: the agent would say
+  // it queued the edit, no Confirm card would appear, and the founder's
+  // change would silently never happen.
+  it("queues a real milestone edit from update_milestone", async () => {
+    const c = withProject();
+    await dispatch("update_milestone", { id: "m1", status: "done" }, c);
+    expect(c.proposals[0]).toMatchObject({ tool: "update_milestone", args: { id: "m1", projectId: "p1" } });
+  });
+
+  it("queues a real task edit from update_project_task", async () => {
+    const c = withProject();
+    await dispatch("update_project_task", { id: "t1", status: "done" }, c);
+    expect(c.proposals[0]).toMatchObject({ tool: "update_project_task", args: { id: "t1" } });
+  });
+
   it("rejects an update_milestone for a milestone on another project", async () => {
     const out = await dispatch("update_milestone", { id: "not-mine" }, withProject());
     expect(out).toContain("No milestone with id");

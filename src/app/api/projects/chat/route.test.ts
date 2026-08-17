@@ -186,4 +186,23 @@ describe("POST /api/projects/chat", () => {
     expect(json.actions).toHaveLength(1);
     expect(json.actions[0]).toMatchObject({ tool: "create_milestone", status: "pending" });
   });
+
+  // The pre-migration route said "I've queued the action(s) below for your
+  // confirmation." when a turn ended with a proposal but no trailing text —
+  // e.g. the model calls a write tool and then hits the iteration cap before
+  // producing a summary. Without this fallback the founder sees "I couldn't
+  // produce a response — try rephrasing." with a live Confirm card underneath,
+  // and rephrasing queues the same write twice.
+  it("falls back to the queued-actions string when a write is queued but the model returns no text", async () => {
+    mockCreate
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu1", name: "create_milestone", input: { name: "Handover" } }],
+      })
+      .mockResolvedValueOnce({ content: [], stop_reason: "end_turn" });
+    const res = await post({ projectId: "p1", messages: [{ role: "user", content: "add handover" }] });
+    const json = await res.json();
+    expect(json.content).toBe("I've queued the action(s) below for your confirmation.");
+    expect(json.actions).toHaveLength(1);
+  });
 });

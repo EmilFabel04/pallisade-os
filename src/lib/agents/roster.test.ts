@@ -14,6 +14,7 @@ import { loadRegistry } from "@/lib/agents/registry";
 import { toolsFor } from "@/lib/agents/capabilities";
 import { renderBody } from "@/lib/agents/render";
 import { CAPABILITY_GROUPS, type AgentContext } from "@/lib/agents/types";
+import type { ProjectSnapshot } from "@/lib/projects/tools";
 
 vi.mock("@/lib/agents/overrides", () => ({
   loadOverrides: () => Promise.resolve(new Map<string, string>()),
@@ -23,6 +24,32 @@ const baseCtx = (): AgentContext => ({
   today: "2026-08-13", businessName: "P", founderName: "E", services: "S",
   snapshot: null, proposals: [], emailEnabled: false, calendarEnabled: false,
   driveAccountId: null, projectSnapshot: null,
+});
+
+// Lifted from src/lib/agents/capabilities.test.ts's projectSnapshot() helper
+// rather than invented fresh, so both files exercise `delivery` against the
+// same shape. Without a real projectSnapshot here, toolsFor(["delivery"], …)
+// resolves to [] for project-agent (capabilities.ts:51) and every assertion
+// below that loops over "granted" tools silently inspects nothing for it —
+// the exact "assertion that passes against the thing it is meant to detect"
+// failure mode the handover calls out.
+const fullProjectSnapshot = (): ProjectSnapshot => ({
+  project: {
+    id: "p1", createdAt: "", updatedAt: "", name: "Acme Dashboard", company: "Acme",
+    type: "paid project", stage: "building", priority: "high", startDate: "2026-07-01",
+    dueDate: "2026-08-15", currentMilestone: "", currentBlocker: "", nextAction: "",
+    deliverables: "", notes: "", repoPath: null, repoSlug: null,
+  },
+  milestones: [{
+    id: "m1", createdAt: "", updatedAt: "", projectId: "p1", name: "Ingest",
+    startDate: "2026-07-01", endDate: "2026-07-20", status: "in progress",
+    order: 0, dependsOn: [], commitScope: "", notes: "",
+  }],
+  tasks: [{
+    id: "t1", createdAt: "", updatedAt: "", title: "Auth handshake", linkKind: "project",
+    linkId: "p1", milestoneId: "m1", category: "delivery", priority: "high",
+    status: "in progress", dueDate: null, notes: "",
+  }],
 });
 
 describe("the shipped agent roster", () => {
@@ -47,7 +74,16 @@ describe("the shipped agent roster", () => {
     expect(reg.get("sales-advisor")!.surface).toBe("advisor");
   });
 
-  it("grants writes to the advisor only", async () => {
+  // `writes` is the CRM/calendar mutation group (create_task, create_lead,
+  // update_lead, update_task, log_interaction, create_project,
+  // create_calendar_event) — sales-advisor is its only grantee, and that part
+  // of the original claim still holds. It is NOT "the only agent that can
+  // mutate anything": project-agent mutates too, through `delivery`, which the
+  // 2026-08-17 projects-chat-migration spec deliberately keeps as one group
+  // covering both project reads and project writes. Renamed (not widened) so
+  // the test stops overclaiming what it checks; the CRM-mutation-name check it
+  // actually performs is unchanged.
+  it("declares the CRM/calendar 'writes' group on the advisor alone", async () => {
     const reg = await loadRegistry();
     for (const [id, spec] of reg) {
       expect(spec.tools.includes("writes")).toBe(id === "sales-advisor");
@@ -57,10 +93,16 @@ describe("the shipped agent roster", () => {
   it("resolves no mutation tool for any agent that did not declare writes", async () => {
     // Declaration alone is not the guarantee — a read group could smuggle a
     // mutation in (create_calendar_event used to live in CALENDAR_TOOLS).
-    // Assert on the RESOLVED tool set, with every integration switched on.
+    // Assert on the RESOLVED tool set, with every integration switched on —
+    // including a real projectSnapshot, so `delivery` (project-agent) is
+    // actually exercised rather than resolving to [] and passing blind. This
+    // does not check delivery's OWN mutation names (create_milestone,
+    // update_milestone, create_project_task, update_project_task,
+    // update_project) — the spec accepts those for a non-`writes` agent by
+    // design — only that no CRM/calendar mutation leaks into it.
     const MUTATIONS = ["create_task", "create_lead", "update_lead", "update_task",
                        "log_interaction", "create_project", "create_calendar_event"];
-    const full = { ...baseCtx(), emailEnabled: true, calendarEnabled: true };
+    const full = { ...baseCtx(), emailEnabled: true, calendarEnabled: true, projectSnapshot: fullProjectSnapshot() };
     for (const [id, spec] of await loadRegistry()) {
       if (spec.tools.includes("writes")) continue;
       const granted = toolsFor(spec.tools, full).map((t) => t.name);

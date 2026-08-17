@@ -4,6 +4,7 @@ import { apiError } from "@/lib/api/errors";
 import { getAgent, AgentNotFound } from "@/lib/agents/registry";
 import { runAgent, DEFAULT_MODEL } from "@/lib/agents/runtime";
 import { renderBody } from "@/lib/agents/render";
+import { resolveAvailability, resolveDriveAccountId } from "@/lib/brain/availability";
 import { buildProjectStateBlock } from "@/lib/projects/prompt";
 import { linkedRepoPathFor } from "@/lib/git/linkedRepos";
 import { loadAll } from "@/lib/db/sqlite";
@@ -15,6 +16,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_AGENT = "project-agent";
+
+const DEFAULT_SERVICES =
+  "bespoke AI systems, workflow automation, custom software, dashboards and reporting tools";
+
+// The pre-runtime route capped this surface at 2048 output tokens.
+// runAgent defaults to 4096 (Brain's budget) — passing this explicitly keeps
+// this surface's per-call cost and output ceiling unchanged; a truncated
+// turn is now surfaced by stoppedBy/stopNotice rather than silently cut.
+const MAX_TOKENS = 2048;
 
 export async function GET() {
   return NextResponse.json({ configured: !!process.env.ANTHROPIC_API_KEY, model: DEFAULT_MODEL });
@@ -70,6 +80,16 @@ export async function POST(req: Request) {
     return apiError("agent_failed", 502, err);
   }
 
+  // project-agent declares only `delivery` today, so this resolves to
+  // {false,false}/null without a DB read. Wired anyway so that granting
+  // `email`/`calendar`/`drive` in the agent file is all it takes — rather
+  // than reproducing the Brain's old defect, where the tools arrived and
+  // every call answered "not connected".
+  const [{ emailEnabled, calendarEnabled }, driveAccountId] = await Promise.all([
+    resolveAvailability(spec),
+    resolveDriveAccountId(spec),
+  ]);
+
   let snapshot: ProjectSnapshot | null;
   try {
     snapshot = await loadProjectSnapshot(body.projectId);
@@ -97,15 +117,15 @@ export async function POST(req: Request) {
     today: new Date().toISOString().slice(0, 10),
     businessName: body.context?.businessName || "Pallisade Data",
     founderName: body.context?.founderName || "the founder",
-    services: body.context?.services || "",
+    services: body.context?.services || DEFAULT_SERVICES,
     // Read-side CRM context is not granted on this surface: no project agent
     // declares `crm`, so nothing here resolves against an AdvisorSnapshot.
     snapshot: null,
     projectSnapshot: snapshot,
     proposals: [],
-    emailEnabled: false,
-    calendarEnabled: false,
-    driveAccountId: null,
+    emailEnabled,
+    calendarEnabled,
+    driveAccountId,
   };
 
   const stateBlock = buildProjectStateBlock({
@@ -125,12 +145,19 @@ export async function POST(req: Request) {
       messages: body.messages.map((m) => ({ role: m.role, content: m.content })),
       ctx,
       client: new Anthropic({ apiKey }),
+      maxTokens: MAX_TOKENS,
     });
-    return NextResponse.json({
-      content: result.content || "I couldn't produce a response — try rephrasing.",
-      actions: result.proposals,
-      stoppedBy: result.stoppedBy,
-    });
+
+    // Preserves the pre-runtime route's fallback: a turn that ends with a
+    // queued write but no trailing summary text should still tell the
+    // founder something was queued, not "I couldn't produce a response".
+    const content =
+      result.content ||
+      (result.proposals.length
+        ? "I've queued the action(s) below for your confirmation."
+        : "I couldn't produce a response — try rephrasing.");
+
+    return NextResponse.json({ content, actions: result.proposals, stoppedBy: result.stoppedBy });
   } catch (err) {
     return apiError("agent_failed", 502, err);
   }
