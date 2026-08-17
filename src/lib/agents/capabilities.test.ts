@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { toolsFor, dispatch, SERVER_TOOL_NAMES } from "@/lib/agents/capabilities";
 import type { AgentContext } from "@/lib/agents/types";
 import type { AdvisorSnapshot } from "@/lib/types";
+import type { ProjectSnapshot } from "@/lib/projects/tools";
 
 function snapshot(): AdvisorSnapshot {
   return {
@@ -16,11 +17,33 @@ function snapshot(): AdvisorSnapshot {
   };
 }
 
+function projectSnapshot(): ProjectSnapshot {
+  return {
+    project: {
+      id: "p1", createdAt: "", updatedAt: "", name: "Acme Dashboard", company: "Acme",
+      type: "paid project", stage: "building", priority: "high", startDate: "2026-07-01",
+      dueDate: "2026-08-15", currentMilestone: "", currentBlocker: "", nextAction: "",
+      deliverables: "", notes: "", repoPath: null, repoSlug: null,
+    },
+    milestones: [{
+      id: "m1", createdAt: "", updatedAt: "", projectId: "p1", name: "Ingest",
+      startDate: "2026-07-01", endDate: "2026-07-20", status: "in progress",
+      order: 0, dependsOn: [], commitScope: "", notes: "",
+    }],
+    tasks: [{
+      id: "t1", createdAt: "", updatedAt: "", title: "Auth handshake", linkKind: "project",
+      linkId: "p1", milestoneId: "m1", category: "delivery", priority: "high",
+      status: "in progress", dueDate: null, notes: "",
+    }],
+  };
+}
+
 function ctx(over: Partial<AgentContext> = {}): AgentContext {
   return {
     today: "2026-08-13", businessName: "Pallisade", founderName: "Emil",
     services: "AI systems", snapshot: snapshot(), proposals: [],
     emailEnabled: false, calendarEnabled: false, driveAccountId: null,
+    projectSnapshot: null,
     ...over,
   };
 }
@@ -128,5 +151,27 @@ describe("dispatch", () => {
     const out = await dispatch("create_task", { title: "Call Acme" }, c);
     expect(JSON.parse(out).queued).toBe(true);
     expect(c.proposals).toHaveLength(1);
+  });
+});
+
+describe("the delivery group", () => {
+  it("grants the project tool set when a project is in context", () => {
+    const granted = names(toolsFor(["delivery"], ctx({ projectSnapshot: projectSnapshot() })));
+    expect(granted).toHaveLength(9);
+    expect(granted).toContain("list_milestones");
+    expect(granted).toContain("update_project");
+  });
+
+  // The handover records "a capability granted but not wired" as a failure
+  // mode this codebase has produced twice: a tool appears in the list the
+  // model receives and then answers every call with an error. Gating the
+  // grant on the context that backs it is what closes that by construction.
+  it("grants nothing when no project is in context", () => {
+    expect(toolsFor(["delivery"], ctx())).toEqual([]);
+  });
+
+  it("does not leak project tools into the cross-project projects group", () => {
+    const granted = names(toolsFor(["projects"], ctx({ projectSnapshot: projectSnapshot() })));
+    expect(granted).toEqual(["get_project_context", "list_projects"]);
   });
 });

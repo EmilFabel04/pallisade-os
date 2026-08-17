@@ -21,6 +21,7 @@ import { DRIVE_TOOLS, DRIVE_TOOL_NAMES, resolveBrainTool } from "@/lib/brain/too
 import {
   PROJECT_CONTEXT_TOOLS, PROJECT_CONTEXT_TOOL_NAMES, resolveProjectContextTool,
 } from "@/lib/projects/projectContext";
+import { PROJECT_TOOLS } from "@/lib/projects/tools";
 import type { AgentContext, CapabilityGroup } from "./types";
 
 type Args = Record<string, unknown>;
@@ -43,6 +44,11 @@ function grantsFor(group: CapabilityGroup, ctx: AgentContext): AgentTool[] {
     case "writes":
       return ctx.calendarEnabled ? [...WRITE_TOOLS_DEFS, ...CALENDAR_WRITE_TOOLS] : WRITE_TOOLS_DEFS;
     case "projects": return PROJECT_CONTEXT_TOOLS;
+    // Scoped to the ONE project in ctx.projectSnapshot — the inverse of
+    // `projects`, which is cross-project and read-only. Granting nothing
+    // without a project in context is deliberate: nine tools that all answer
+    // with an error is the failure mode this gate exists to prevent.
+    case "delivery": return ctx.projectSnapshot ? PROJECT_TOOLS : [];
     case "drive": return DRIVE_TOOLS;
     case "web": return [WEB_SEARCH];
     case "email": return ctx.emailEnabled ? EMAIL_TOOLS : [];

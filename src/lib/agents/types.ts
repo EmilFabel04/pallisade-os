@@ -1,7 +1,8 @@
 import type { AdvisorSnapshot, ProposedAction } from "@/lib/types";
+import type { ProjectSnapshot } from "@/lib/projects/tools";
 
 export const CAPABILITY_GROUPS = [
-  "crm", "email", "calendar", "drive", "projects", "web", "writes", "repo", "fathom",
+  "crm", "email", "calendar", "drive", "projects", "delivery", "web", "writes", "repo", "fathom",
 ] as const;
 export type CapabilityGroup = (typeof CAPABILITY_GROUPS)[number];
 
@@ -56,4 +57,11 @@ export interface AgentContext {
   emailEnabled: boolean;
   calendarEnabled: boolean;
   driveAccountId: string | null;
+  /**
+   * The ONE project a thread is about, or null on cross-project surfaces.
+   * The `delivery` tools resolve against it. Assembled server-side from a
+   * projectId like every other field here — the browser names which project,
+   * never what is in it.
+   */
+  projectSnapshot: ProjectSnapshot | null;
 }
