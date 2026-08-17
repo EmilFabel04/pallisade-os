@@ -87,7 +87,7 @@ export function buildProjectSystemPrompt(input: ProjectPromptInput): string {
     `- Use read_commits and read_repo_status when the founder asks what shipped or where the ` +
     `work stands. Real commits beat recollection.\n` +
     `- When the founder wants to change something, call the matching write tool ` +
-    `(create_milestone, update_milestone, create_task, update_task, update_project). Writes do ` +
+    `(create_milestone, update_milestone, create_project_task, update_project_task, update_project). Writes do ` +
     `NOT execute immediately — they are queued as proposals ${founderName} must confirm in the ` +
     `UI. After proposing, say briefly what you've queued and that it awaits confirmation; never ` +
     `claim it is already done.\n` +

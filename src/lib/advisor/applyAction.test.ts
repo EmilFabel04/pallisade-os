@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { buildTask, buildTaskPatch, buildLead, buildLeadPatch, buildMilestone, buildMilestonePatch, buildProjectPatch, applyAction } from "@/lib/advisor/applyAction";
+import type { AdvisorStore } from "@/lib/advisor/applyAction";
 import type { ProposedAction } from "@/lib/types";
 
 describe("buildTask", () => {
@@ -226,5 +227,46 @@ describe("applyAction — milestones", () => {
     });
     expect(result).toBeNull();
     expect(store.calls).toEqual([]);
+  });
+});
+
+function recorder() {
+  const created: { key: string; value: unknown }[] = [];
+  const updated: { key: string; id: string; patch: unknown }[] = [];
+  const store: AdvisorStore = {
+    create: (key, value) => { created.push({ key, value }); return { id: "new-1" }; },
+    update: (key, id, patch) => { updated.push({ key, id, patch }); },
+  };
+  return { store, created, updated };
+}
+
+describe("applyAction accepts both task tool generations", () => {
+  it("applies a pre-rename create_task proposal from a project thread", () => {
+    const { store, created } = recorder();
+    const out = applyAction(store, {
+      id: "a1", tool: "create_task", description: "", status: "pending",
+      args: { title: "Ship it", linkKind: "project", linkId: "p1" },
+    });
+    expect(out).toEqual({ kind: "tasks", id: "new-1" });
+    expect(created[0].value).toMatchObject({ title: "Ship it", linkKind: "project", linkId: "p1" });
+  });
+
+  it("applies a post-rename create_project_task proposal identically", () => {
+    const { store, created } = recorder();
+    const out = applyAction(store, {
+      id: "a2", tool: "create_project_task", description: "", status: "pending",
+      args: { title: "Ship it", linkKind: "project", linkId: "p1" },
+    });
+    expect(out).toEqual({ kind: "tasks", id: "new-1" });
+    expect(created[0].value).toMatchObject({ title: "Ship it", linkKind: "project", linkId: "p1" });
+  });
+
+  it("applies update_project_task the same way as update_task", () => {
+    const { store, updated } = recorder();
+    applyAction(store, {
+      id: "a3", tool: "update_project_task", description: "", status: "pending",
+      args: { id: "t1", status: "done" },
+    });
+    expect(updated[0]).toMatchObject({ key: "tasks", id: "t1" });
   });
 });

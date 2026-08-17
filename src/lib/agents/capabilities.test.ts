@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { toolsFor, dispatch, SERVER_TOOL_NAMES } from "@/lib/agents/capabilities";
+import { CAPABILITY_GROUPS } from "@/lib/agents/types";
 import type { AgentContext } from "@/lib/agents/types";
 import type { AdvisorSnapshot } from "@/lib/types";
 import type { ProjectSnapshot } from "@/lib/projects/tools";
@@ -173,5 +174,42 @@ describe("the delivery group", () => {
   it("does not leak project tools into the cross-project projects group", () => {
     const granted = names(toolsFor(["projects"], ctx({ projectSnapshot: projectSnapshot() })));
     expect(granted).toEqual(["get_project_context", "list_projects"]);
+  });
+});
+
+describe("capability group disjointness", () => {
+  // Every integration connected AND a project in context. With any of them
+  // missing, `email`, `calendar` and `delivery` grant [] and both tests below
+  // pass by being blind — which is exactly the failure mode this repo produces
+  // (an assertion that passes against the thing it is meant to detect).
+  const full = () => ctx({
+    emailEnabled: true,
+    calendarEnabled: true,
+    driveAccountId: "acct-1",
+    projectSnapshot: projectSnapshot(),
+  });
+
+  // Guards the fixture itself. If a future change makes a group grant nothing
+  // under this context, the disjointness test below silently stops covering it
+  // — this test fails first and says which group went dark.
+  it("grants a non-empty tool set for every implemented group", () => {
+    const empty = CAPABILITY_GROUPS.filter((g) => toolsFor([g], full()).length === 0);
+    expect(empty).toEqual(["repo", "fathom"]);
+  });
+
+  // dispatch() routes a tool call by name-set membership in a fixed if-chain,
+  // so it can only be correct while no two groups grant the same name. That
+  // invariant was load-bearing and untested until this test.
+  it("never grants the same tool name from two different groups", () => {
+    const owner = new Map<string, string>();
+    const clashes: string[] = [];
+    for (const group of CAPABILITY_GROUPS) {
+      for (const tool of toolsFor([group], full())) {
+        const prev = owner.get(tool.name);
+        if (prev) clashes.push(`${tool.name} granted by both ${prev} and ${group}`);
+        else owner.set(tool.name, group);
+      }
+    }
+    expect(clashes).toEqual([]);
   });
 });

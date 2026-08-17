@@ -51,12 +51,12 @@ export const PROJECT_TOOLS: ToolDef[] = [
       status: enumStr(MILESTONE_STATUSES), order: n(),
       dependsOn: strArr(), commitScope: s(), notes: s(),
     }, ["id"]) },
-  { name: "create_task", description: "Propose a task on this project, optionally under a milestone.",
+  { name: "create_project_task", description: "Propose a task on THIS project, optionally under a milestone. Scoped to this project — it is not the CRM-wide create_task.",
     input_schema: obj({
       title: s(), milestoneId: s("id from list_milestones"), category: enumStr(TASK_CATEGORIES),
       priority: enumStr(["low", "medium", "high"]), dueDate: dateStr(), notes: s(),
     }, ["title"]) },
-  { name: "update_task", description: "Propose changes to a task. Use an id from list_tasks.",
+  { name: "update_project_task", description: "Propose changes to a task on this project. Use an id from list_tasks.",
     input_schema: obj({
       id: s(), title: s(), status: enumStr(TASK_STATUSES),
       priority: enumStr(["low", "medium", "high"]), dueDate: dateStr(),
@@ -142,12 +142,12 @@ export function resolveProjectTool(
       return queue(proposals, name, `Update milestone "${target.name}"`, { ...args, projectId });
     }
 
-    case "create_task":
+    case "create_project_task":
       return queue(proposals, name, `Add task "${String(args.title ?? "")}"`, {
         ...args, linkKind: "project", linkId: projectId,
       });
 
-    case "update_task": {
+    case "update_project_task": {
       const id = String(args.id ?? "");
       const target = snap.tasks.find((t) => t.id === id);
       if (!target) return `No task with id ${id} on this project.`;

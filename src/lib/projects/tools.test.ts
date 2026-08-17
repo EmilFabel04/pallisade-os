@@ -26,7 +26,7 @@ describe("PROJECT_TOOLS", () => {
     const names = PROJECT_TOOLS.map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining([
       "list_milestones", "list_tasks", "read_repo_status", "read_commits",
-      "create_milestone", "update_milestone", "create_task", "update_task", "update_project",
+      "create_milestone", "update_milestone", "create_project_task", "update_project_task", "update_project",
     ]));
   });
 
@@ -131,10 +131,10 @@ describe("resolveProjectTool — cross-project write guard", () => {
     expect(proposals).toHaveLength(0);
   });
 
-  it("rejects update_task for an id not in the snapshot and queues nothing", () => {
+  it("rejects update_project_task for an id not in the snapshot and queues nothing", () => {
     const proposals: ProposedAction[] = [];
     const out = resolveProjectTool(
-      "update_task", { id: "FOREIGN_TASK", title: "Hijacked" }, snapshot, proposals,
+      "update_project_task", { id: "FOREIGN_TASK", title: "Hijacked" }, snapshot, proposals,
     );
     expect(out).toMatch(/no task with id/i);
     expect(proposals).toHaveLength(0);
