@@ -177,6 +177,61 @@ describe("the delivery group", () => {
   });
 });
 
+describe("every delivery tool answers with data, not an error", () => {
+  const withProject = () => ctx({ projectSnapshot: projectSnapshot(), proposals: [] });
+
+  it("returns this project's milestones from list_milestones", async () => {
+    const out = await dispatch("list_milestones", {}, withProject());
+    expect(JSON.parse(out)[0]).toMatchObject({ id: "m1", name: "Ingest" });
+  });
+
+  it("returns this project's tasks from list_tasks", async () => {
+    const out = await dispatch("list_tasks", {}, withProject());
+    expect(JSON.parse(out)[0]).toMatchObject({ id: "t1", title: "Auth handshake" });
+  });
+
+  it("queues a proposal scoped to this project from create_milestone", async () => {
+    const c = withProject();
+    await dispatch("create_milestone", { name: "Handover" }, c);
+    expect(c.proposals[0]).toMatchObject({ tool: "create_milestone", args: { projectId: "p1" } });
+  });
+
+  it("queues a project-linked task from create_project_task", async () => {
+    const c = withProject();
+    await dispatch("create_project_task", { title: "Ship it" }, c);
+    expect(c.proposals[0].args).toMatchObject({ linkKind: "project", linkId: "p1" });
+  });
+
+  it("queues an update against this project's own id from update_project", async () => {
+    const c = withProject();
+    await dispatch("update_project", { stage: "handover" }, c);
+    expect(c.proposals[0].args).toMatchObject({ id: "p1", stage: "handover" });
+  });
+
+  it("rejects an update_milestone for a milestone on another project", async () => {
+    const out = await dispatch("update_milestone", { id: "not-mine" }, withProject());
+    expect(out).toContain("No milestone with id");
+  });
+
+  it("rejects an update_project_task for a task on another project", async () => {
+    const out = await dispatch("update_project_task", { id: "not-mine" }, withProject());
+    expect(out).toContain("No task with id");
+  });
+
+  // The CRM create_task must still reach the CRM resolver — the rename in
+  // Task 2 is only correct if both names still route to their own owner.
+  it("routes the CRM create_task to the CRM resolver, not the project one", async () => {
+    const c = ctx({ projectSnapshot: projectSnapshot(), proposals: [] });
+    await dispatch("create_task", { title: "Call Sam", linkKind: "lead", linkId: "l1" }, c);
+    expect(c.proposals[0].args).toMatchObject({ linkKind: "lead", linkId: "l1" });
+  });
+
+  it("reports a missing project rather than throwing", async () => {
+    const out = await dispatch("list_milestones", {}, ctx());
+    expect(JSON.parse(out).error).toContain("no project");
+  });
+});
+
 describe("capability group disjointness", () => {
   // Every integration connected AND a project in context. With any of them
   // missing, `email`, `calendar` and `delivery` grant [] and both tests below

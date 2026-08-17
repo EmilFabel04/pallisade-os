@@ -3,7 +3,7 @@ import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import Anthropic from "@anthropic-ai/sdk";
 import type { ProposedAction } from "@/lib/types";
 import { buildProjectSystemPrompt } from "@/lib/projects/prompt";
-import { PROJECT_TOOLS, SERVER_TOOL_NAMES, resolveProjectTool, type ProjectSnapshot } from "@/lib/projects/tools";
+import { PROJECT_TOOLS, resolveProjectTool, type ProjectSnapshot } from "@/lib/projects/tools";
 import { readCommits, readStatus } from "@/lib/git/repo";
 import { linkedRepoPathFor } from "@/lib/git/linkedRepos";
 import { loadAll } from "@/lib/db/sqlite";
@@ -87,19 +87,6 @@ export async function POST(req: Request) {
     role: m.role, content: m.content,
   }));
 
-  /** Git tools read the filesystem, so they resolve here rather than in tools.ts. */
-  async function resolveServerTool(name: string, args: Record<string, unknown>): Promise<string> {
-    if (!repoPath) return "No repo is linked to this project.";
-    try {
-      if (name === "read_repo_status") return JSON.stringify(await readStatus(repoPath));
-      const limit = Number(args.limit) || 30;
-      const since = args.since ? String(args.since) : undefined;
-      return JSON.stringify(await readCommits(repoPath, { limit, since }));
-    } catch {
-      return `The repo at ${repoPath} could not be read right now.`;
-    }
-  }
-
   try {
     let finalText = "";
     for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -123,13 +110,13 @@ export async function POST(req: Request) {
 
       messages.push({ role: "assistant", content: response.content });
       const results: Anthropic.ToolResultBlockParam[] = await Promise.all(
-        toolUses.map(async (tu) => {
-          const input = (tu.input ?? {}) as Record<string, unknown>;
-          const content = SERVER_TOOL_NAMES.has(tu.name)
-            ? await resolveServerTool(tu.name, input)
-            : resolveProjectTool(tu.name, input, snapshot, proposals);
-          return { type: "tool_result" as const, tool_use_id: tu.id, content };
-        }),
+        toolUses.map(async (tu) => ({
+          type: "tool_result" as const,
+          tool_use_id: tu.id,
+          content: await resolveProjectTool(
+            tu.name, (tu.input ?? {}) as Record<string, unknown>, snapshot, proposals,
+          ),
+        })),
       );
       messages.push({ role: "user", content: results });
     }

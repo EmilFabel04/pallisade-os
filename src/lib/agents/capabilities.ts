@@ -21,7 +21,7 @@ import { DRIVE_TOOLS, DRIVE_TOOL_NAMES, resolveBrainTool } from "@/lib/brain/too
 import {
   PROJECT_CONTEXT_TOOLS, PROJECT_CONTEXT_TOOL_NAMES, resolveProjectContextTool,
 } from "@/lib/projects/projectContext";
-import { PROJECT_TOOLS } from "@/lib/projects/tools";
+import { PROJECT_TOOLS, PROJECT_TOOL_NAMES, resolveProjectTool } from "@/lib/projects/tools";
 import type { AgentContext, CapabilityGroup } from "./types";
 
 type Args = Record<string, unknown>;
@@ -79,6 +79,13 @@ export async function dispatch(name: string, args: Args, ctx: AgentContext): Pro
     if (EMAIL_TOOL_NAMES.has(name)) return await resolveEmailTool(name, args);
     if (CALENDAR_READ_TOOL_NAMES.has(name)) return await resolveCalendarTool(name, args);
     if (PROJECT_CONTEXT_TOOL_NAMES.has(name)) return await resolveProjectContextTool(name, args);
+    if (PROJECT_TOOL_NAMES.has(name)) {
+      // Unreachable while toolsFor gates the grant on the same field, but a
+      // resolver that dereferences null on a path it "cannot" reach is how the
+      // next surface to grant `delivery` finds out the hard way.
+      if (!ctx.projectSnapshot) throw new Error("no project in context for this tool");
+      return await resolveProjectTool(name, args, ctx.projectSnapshot, ctx.proposals);
+    }
     if (DRIVE_TOOL_NAMES.has(name)) return await resolveBrainTool(name, args, ctx.driveAccountId);
 
     // Writes are checked FIRST and deliberately skip the snapshot guard.

@@ -23,9 +23,6 @@ const dateStr = (description = "") =>
 const strArr = (description = "") =>
   ({ type: "array", items: { type: "string" }, description });
 
-/** Resolved server-side by the route (they touch the filesystem), not here. */
-export const SERVER_TOOL_NAMES = new Set(["read_repo_status", "read_commits"]);
-
 export const PROJECT_TOOLS: ToolDef[] = [
   // ---- read ----
   { name: "list_milestones", description: "This project's milestones with ids, dates, status and dependencies.",
@@ -70,6 +67,8 @@ export const PROJECT_TOOLS: ToolDef[] = [
     }) },
 ];
 
+export const PROJECT_TOOL_NAMES = new Set(PROJECT_TOOLS.map((t) => t.name));
+
 const compactMilestone = (m: Milestone) => ({
   id: m.id, name: m.name, status: m.status, start: m.startDate, end: m.endDate,
   order: m.order, dependsOn: m.dependsOn, commitScope: m.commitScope,
@@ -90,20 +89,42 @@ function queue(
 }
 
 /**
- * Resolves the snapshot-backed tools. Git tools are handled by the route.
+ * Resolves every project tool, including the two git reads.
+ *
+ * The git tools used to be resolved by the route through a set this module
+ * exported as SERVER_TOOL_NAMES — a name capabilities.ts uses for the exact
+ * inverse meaning (Anthropic-executed, never given a tool_result). Owning them
+ * here deletes that collision instead of renaming it.
  *
  * Every write injects the snapshot's own projectId, so the agent can only ever
  * propose changes to the project whose thread it is in.
  */
-export function resolveProjectTool(
+export async function resolveProjectTool(
   name: string,
   args: Args,
   snap: ProjectSnapshot,
   proposals: ProposedAction[],
-): string {
+): Promise<string> {
   const projectId = snap.project.id;
+  const repoPath = snap.project.repoPath;
 
   switch (name) {
+    case "read_repo_status":
+    case "read_commits": {
+      // Not an error: a project with no repo is normal, and git is never
+      // load-bearing. The model is told in prose so it can say so.
+      if (!repoPath) return "No repo is linked to this project.";
+      const { readStatus, readCommits } = await import("@/lib/git/repo");
+      try {
+        if (name === "read_repo_status") return JSON.stringify(await readStatus(repoPath));
+        const limit = Number(args.limit) || 30;
+        const since = args.since ? String(args.since) : undefined;
+        return JSON.stringify(await readCommits(repoPath, { limit, since }));
+      } catch {
+        return `The repo at ${repoPath} could not be read right now.`;
+      }
+    }
+
     case "list_milestones":
       return JSON.stringify(
         [...snap.milestones].sort((a, b) => a.order - b.order).map(compactMilestone),
