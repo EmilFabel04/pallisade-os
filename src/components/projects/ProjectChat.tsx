@@ -16,6 +16,8 @@ import { projectChatConfigured, sendProjectMessage } from "@/lib/projects/projec
 import { applyAction, type AdvisorStore } from "@/lib/advisor/applyAction";
 import { MessageBubble } from "@/components/advisor/MessageBubble";
 import { nowISO, uid } from "@/lib/utils";
+import { stopNotice } from "@/lib/agents/stopNotice";
+import type { AgentStopReason } from "@/lib/agents/types";
 
 /**
  * Per-project chat, mirroring the Sales Advisor's thread handling
@@ -50,6 +52,7 @@ export function ProjectChat({
   const [error, setError] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [stopped, setStopped] = useState<AgentStopReason | null>(null);
 
   // Same "not configured" posture as the other agents.
   useEffect(() => {
@@ -75,6 +78,7 @@ export function ProjectChat({
 
     setInput("");
     setError(null);
+    setStopped(null);
     setBusy(true);
 
     const userMsg: ChatMessage = { id: uid("msg"), role: "user", content: text, createdAt: nowISO() };
@@ -96,9 +100,12 @@ export function ProjectChat({
     }
 
     try {
+      // The route reads milestones and tasks from the DB. Flush first, or a
+      // change made in the last 450ms is invisible to the agent.
+      await store.flush();
       const reply = await sendProjectMessage({
         messages: history.map((m) => ({ role: m.role, content: m.content })),
-        snapshot: { project, milestones, tasks },
+        projectId: project.id,
         context: {
           businessName: settings.businessName,
           founderName: settings.founderName,
@@ -116,9 +123,10 @@ export function ProjectChat({
           },
         ],
       });
+      setStopped(reply.stoppedBy ?? null);
     } catch (err) {
       setError(
-        (err as Error).message === "no_key"
+        (err as Error).message === "agent_unconfigured"
           ? "No ANTHROPIC_API_KEY set — add one to .env.local and restart."
           : "That didn't go through. Try again.",
       );
@@ -176,6 +184,9 @@ export function ProjectChat({
           </p>
         )}
         {error && <p className="text-[0.78rem] text-[var(--color-accent-soft)]">{error}</p>}
+        {stopNotice(stopped) && (
+          <p className="text-[0.78rem] text-[var(--color-dim)]">{stopNotice(stopped)}</p>
+        )}
       </div>
 
       <div className="flex gap-2">
