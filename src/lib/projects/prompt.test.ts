@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildProjectSystemPrompt, PROMPT_BUDGET } from "./prompt";
+import { buildProjectStateBlock, PROMPT_BUDGET } from "./prompt";
 import type { Milestone, Project, Task } from "@/lib/types";
 
 const project: Project = {
@@ -32,36 +32,34 @@ const base = {
   businessName: "Pallisade Data", founderName: "Emil", today: "2026-07-29",
 };
 
-describe("buildProjectSystemPrompt", () => {
-  it("names the project, business and today's date", () => {
-    const p = buildProjectSystemPrompt(base);
+describe("buildProjectStateBlock", () => {
+  it("names the project", () => {
+    const p = buildProjectStateBlock(base);
     expect(p).toContain("Acme Dashboard");
-    expect(p).toContain("Pallisade Data");
-    expect(p).toContain("2026-07-29");
   });
 
   it("includes milestones with status and dates", () => {
-    const p = buildProjectSystemPrompt(base);
+    const p = buildProjectStateBlock(base);
     expect(p).toContain("Ingest pipeline");
     expect(p).toContain("in progress");
     expect(p).toContain("2026-07-20");
   });
 
   it("includes the blocker, next action and open tasks", () => {
-    const p = buildProjectSystemPrompt(base);
+    const p = buildProjectStateBlock(base);
     expect(p).toContain("Waiting on their API credentials");
     expect(p).toContain("Chase Sam for the key");
     expect(p).toContain("Wire the auth handshake");
   });
 
   it("includes repo state and recent commits", () => {
-    const p = buildProjectSystemPrompt(base);
+    const p = buildProjectStateBlock(base);
     expect(p).toContain("main");
     expect(p).toContain("feat(ingest): batch loader");
   });
 
   it("says so plainly when no repo is linked", () => {
-    const p = buildProjectSystemPrompt({
+    const p = buildProjectStateBlock({
       ...base,
       project: { ...project, repoPath: null },
       repo: null,
@@ -74,37 +72,13 @@ describe("buildProjectSystemPrompt", () => {
     const many: Milestone[] = Array.from({ length: 400 }, (_, i) => ({
       ...milestone, id: `m${i}`, name: `Milestone number ${i} with a deliberately long name`,
     }));
-    const p = buildProjectSystemPrompt({ ...base, milestones: many });
+    const p = buildProjectStateBlock({ ...base, milestones: many });
     expect(p.length).toBeLessThanOrEqual(PROMPT_BUDGET);
     expect(p).toContain("[truncated]");
   });
 
-  it("forbids inventing project facts", () => {
-    expect(buildProjectSystemPrompt(base)).toMatch(/never invent/i);
-  });
-
-  it("states writes are queued as proposals awaiting confirmation", () => {
-    const p = buildProjectSystemPrompt(base);
-    expect(p).toMatch(/proposals?.*(awaiting|await|must confirm)/is);
-  });
-
-  it("instructs the agent not to claim a proposed write is already done", () => {
-    const p = buildProjectSystemPrompt(base);
-    expect(p).toMatch(/never claim it is already done/i);
-  });
-
-  it("instructs passing an id from the state block for updates", () => {
-    const p = buildProjectSystemPrompt(base);
-    expect(p).toMatch(/pass an id from the state/i);
-  });
-
-  it("instructs changing only the fields intended", () => {
-    const p = buildProjectSystemPrompt(base);
-    expect(p).toMatch(/only the fields you intend to change/i);
-  });
-
   it("says the repo could not be read when linked but unreadable, distinct from no commits or no repo", () => {
-    const p = buildProjectSystemPrompt({
+    const p = buildProjectStateBlock({
       ...base,
       project: { ...project, repoPath: "/Users/e/code/acme" },
       repo: null,
@@ -116,7 +90,7 @@ describe("buildProjectSystemPrompt", () => {
   });
 
   it("reports no commits when linked and read but the log is empty, distinct from unreadable", () => {
-    const p = buildProjectSystemPrompt({
+    const p = buildProjectStateBlock({
       ...base,
       project: { ...project, repoPath: "/Users/e/code/acme" },
       repo: { branch: "main", ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0, source: "local" as const },
@@ -124,5 +98,15 @@ describe("buildProjectSystemPrompt", () => {
     });
     expect(p).toMatch(/recent commits:\s*\(none\)/i);
     expect(p).not.toMatch(/could not be read/i);
+  });
+
+  // The persona now lives in src/agents/project-agent.md and is editable in
+  // Settings. A copy left here would silently win or silently conflict.
+  it("carries the project's facts and none of the persona", () => {
+    const out = buildProjectStateBlock(base);
+    expect(out).toContain("Ingest pipeline");
+    expect(out).toContain("Wire the auth handshake");
+    expect(out).not.toContain("HOW YOU WORK");
+    expect(out).not.toContain("You are the project agent");
   });
 });

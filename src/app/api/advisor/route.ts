@@ -111,6 +111,7 @@ export async function POST(req: Request) {
     services: body.context?.services || DEFAULT_SERVICES,
     snapshot,
     proposals: [],
+    projectSnapshot: null,
     emailEnabled,
     calendarEnabled,
     driveAccountId,

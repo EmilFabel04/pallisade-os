@@ -1,147 +1,164 @@
 import { NextResponse } from "next/server";
-import { apiError, UPSTREAM_FAILED } from "@/lib/api/errors";
 import Anthropic from "@anthropic-ai/sdk";
-import type { ProposedAction } from "@/lib/types";
-import { buildProjectSystemPrompt } from "@/lib/projects/prompt";
-import { PROJECT_TOOLS, SERVER_TOOL_NAMES, resolveProjectTool, type ProjectSnapshot } from "@/lib/projects/tools";
-import { readCommits, readStatus } from "@/lib/git/repo";
+import { apiError } from "@/lib/api/errors";
+import { getAgent, AgentNotFound } from "@/lib/agents/registry";
+import { runAgent, DEFAULT_MODEL } from "@/lib/agents/runtime";
+import { renderBody } from "@/lib/agents/render";
+import { resolveAvailability, resolveDriveAccountId } from "@/lib/brain/availability";
+import { buildProjectStateBlock } from "@/lib/projects/prompt";
 import { linkedRepoPathFor } from "@/lib/git/linkedRepos";
 import { loadAll } from "@/lib/db/sqlite";
+import type { ProjectSnapshot } from "@/lib/projects/tools";
+import type { AgentContext, AgentSpec } from "@/lib/agents/types";
 import type { Commit, RepoStatus } from "@/lib/git/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MODEL = "claude-sonnet-4-6";
-const MAX_ITERATIONS = 8;
+const DEFAULT_AGENT = "project-agent";
+
+const DEFAULT_SERVICES =
+  "bespoke AI systems, workflow automation, custom software, dashboards and reporting tools";
+
+// The pre-runtime route capped this surface at 2048 output tokens.
+// runAgent defaults to 4096 (Brain's budget) — passing this explicitly keeps
+// this surface's per-call cost and output ceiling unchanged; a truncated
+// turn is now surfaced by stoppedBy/stopNotice rather than silently cut.
+const MAX_TOKENS = 2048;
 
 export async function GET() {
-  return NextResponse.json({ configured: !!process.env.ANTHROPIC_API_KEY, model: MODEL });
+  return NextResponse.json({ configured: !!process.env.ANTHROPIC_API_KEY, model: DEFAULT_MODEL });
 }
 
 interface ChatRequest {
   messages?: { role: "user" | "assistant"; content: string }[];
-  snapshot?: ProjectSnapshot;
-  context?: { businessName?: string; founderName?: string };
+  projectId?: string;
+  agentId?: string;
+  context?: { businessName?: string; founderName?: string; services?: string };
 }
 
-/** The repo actually on record for this project, or null. Never trusts the request. */
-async function storedRepoPath(projectId: string): Promise<string | null> {
-  try {
-    const { projects } = await loadAll();
-    return linkedRepoPathFor(projectId, projects);
-  } catch {
-    return null; // fail closed
-  }
+/**
+ * The project, its milestones and its tasks, read from the database on the
+ * project id alone. The client used to send this whole object; it now names
+ * only which project, so a crafted body can neither invent milestones nor aim
+ * the git reads at an arbitrary repo on this Mac.
+ */
+async function loadProjectSnapshot(projectId: string): Promise<ProjectSnapshot | null> {
+  const data = await loadAll();
+  const project = data.projects.find((p) => p.id === projectId);
+  if (!project) return null;
+  return {
+    project: { ...project, repoPath: linkedRepoPathFor(projectId, data.projects) },
+    milestones: data.milestones.filter((m) => m.projectId === projectId),
+    tasks: data.tasks.filter((t) => t.linkKind === "project" && t.linkId === projectId),
+  };
 }
 
 export async function POST(req: Request) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "no_key" }, { status: 503 });
+  if (!apiKey) return apiError("agent_unconfigured", 503);
 
   let body: ChatRequest;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    return apiError("bad_request", 400);
   }
 
-  if (!body.snapshot?.project) return NextResponse.json({ error: "missing_snapshot" }, { status: 400 });
-  if (!body.messages?.length) return NextResponse.json({ error: "missing_messages" }, { status: 400 });
+  if (!body.projectId) return apiError("missing_project", 400);
+  if (!body.messages?.length) return apiError("missing_messages", 400);
 
-  // The snapshot is client-supplied, so its repoPath is a claim, not a fact.
-  // Take the path from the database keyed on the project id instead: a crafted
-  // snapshot then can't aim these git reads at an arbitrary repo on this Mac,
-  // and the model can't relay a repo it was never linked to back in prose.
-  // A db failure just means no repo context — git is never load-bearing.
-  const repoPath = await storedRepoPath(body.snapshot.project.id);
-  const snapshot: ProjectSnapshot = {
-    ...body.snapshot,
-    project: { ...body.snapshot.project, repoPath },
-  };
+  let spec: AgentSpec;
+  try {
+    spec = await getAgent(body.agentId ?? DEFAULT_AGENT);
+  } catch (err) {
+    // AgentNotFound means the id genuinely doesn't exist. Anything else — a
+    // readdir failure, a malformed .md, a loadOverrides DB error — is a real
+    // server failure and must not be relabeled "not found" with an empty
+    // console. apiError only logs when passed a cause.
+    if (err instanceof AgentNotFound) return apiError("agent_not_found", 404);
+    return apiError("agent_failed", 502, err);
+  }
 
-  // Repo reads are best-effort — a missing repo must never fail the request.
+  // project-agent declares only `delivery` today, so this resolves to
+  // {false,false}/null without a DB read. Wired anyway so that granting
+  // `email`/`calendar`/`drive` in the agent file is all it takes — rather
+  // than reproducing the Brain's old defect, where the tools arrived and
+  // every call answered "not connected".
+  const [{ emailEnabled, calendarEnabled }, driveAccountId] = await Promise.all([
+    resolveAvailability(spec),
+    resolveDriveAccountId(spec),
+  ]);
+
+  let snapshot: ProjectSnapshot | null;
+  try {
+    snapshot = await loadProjectSnapshot(body.projectId);
+  } catch (err) {
+    // A whole-DB read failing is a server failure, not a tool failure: every
+    // answer this turn would be about a project we cannot see.
+    return apiError("agent_failed", 502, err);
+  }
+  if (!snapshot) return apiError("project_not_found", 404);
+
+  // Best-effort, for the state block only. A missing or unreadable repo must
+  // never fail the request — git is never load-bearing.
   let repo: RepoStatus | null = null;
   let commits: Commit[] = [];
+  const { repoPath } = snapshot.project;
   if (repoPath) {
+    const { readStatus, readCommits } = await import("@/lib/git/repo");
     [repo, commits] = await Promise.all([
       readStatus(repoPath).catch(() => null),
       readCommits(repoPath, { limit: 30 }).catch(() => [] as Commit[]),
     ]);
   }
 
-  const system = buildProjectSystemPrompt({
-    project: snapshot.project,
-    milestones: snapshot.milestones ?? [],
-    tasks: snapshot.tasks ?? [],
-    repo,
-    commits,
+  const ctx: AgentContext = {
+    today: new Date().toISOString().slice(0, 10),
     businessName: body.context?.businessName || "Pallisade Data",
     founderName: body.context?.founderName || "the founder",
-    today: new Date().toISOString().slice(0, 10),
+    services: body.context?.services || DEFAULT_SERVICES,
+    // Read-side CRM context is not granted on this surface: no project agent
+    // declares `crm`, so nothing here resolves against an AdvisorSnapshot.
+    snapshot: null,
+    projectSnapshot: snapshot,
+    proposals: [],
+    emailEnabled,
+    calendarEnabled,
+    driveAccountId,
+  };
+
+  const stateBlock = buildProjectStateBlock({
+    project: snapshot.project,
+    milestones: snapshot.milestones,
+    tasks: snapshot.tasks,
+    repo,
+    commits,
+    businessName: ctx.businessName,
+    founderName: ctx.founderName,
+    today: ctx.today,
   });
 
-  const client = new Anthropic({ apiKey });
-  const proposals: ProposedAction[] = [];
-  const messages: Anthropic.MessageParam[] = body.messages.map((m) => ({
-    role: m.role, content: m.content,
-  }));
-
-  /** Git tools read the filesystem, so they resolve here rather than in tools.ts. */
-  async function resolveServerTool(name: string, args: Record<string, unknown>): Promise<string> {
-    if (!repoPath) return "No repo is linked to this project.";
-    try {
-      if (name === "read_repo_status") return JSON.stringify(await readStatus(repoPath));
-      const limit = Number(args.limit) || 30;
-      const since = args.since ? String(args.since) : undefined;
-      return JSON.stringify(await readCommits(repoPath, { limit, since }));
-    } catch {
-      return `The repo at ${repoPath} could not be read right now.`;
-    }
-  }
-
   try {
-    let finalText = "";
-    for (let i = 0; i < MAX_ITERATIONS; i++) {
-      const response = await client.messages.create({
-        model: MODEL,
-        max_tokens: 2048,
-        system,
-        tools: PROJECT_TOOLS as unknown as Anthropic.Tool[],
-        messages,
-      });
+    const result = await runAgent({
+      spec: { ...spec, body: `${renderBody(spec.body, ctx)}\n\n${stateBlock}` },
+      messages: body.messages.map((m) => ({ role: m.role, content: m.content })),
+      ctx,
+      client: new Anthropic({ apiKey }),
+      maxTokens: MAX_TOKENS,
+    });
 
-      const textParts = response.content
-        .filter((blk): blk is Anthropic.TextBlock => blk.type === "text")
-        .map((blk) => blk.text);
-      if (textParts.length) finalText = textParts.join("\n").trim();
-
-      const toolUses = response.content.filter(
-        (blk): blk is Anthropic.ToolUseBlock => blk.type === "tool_use",
-      );
-      if (response.stop_reason !== "tool_use" || toolUses.length === 0) break;
-
-      messages.push({ role: "assistant", content: response.content });
-      const results: Anthropic.ToolResultBlockParam[] = await Promise.all(
-        toolUses.map(async (tu) => {
-          const input = (tu.input ?? {}) as Record<string, unknown>;
-          const content = SERVER_TOOL_NAMES.has(tu.name)
-            ? await resolveServerTool(tu.name, input)
-            : resolveProjectTool(tu.name, input, snapshot, proposals);
-          return { type: "tool_result" as const, tool_use_id: tu.id, content };
-        }),
-      );
-      messages.push({ role: "user", content: results });
-    }
-
-    if (!finalText) {
-      finalText = proposals.length
+    // Preserves the pre-runtime route's fallback: a turn that ends with a
+    // queued write but no trailing summary text should still tell the
+    // founder something was queued, not "I couldn't produce a response".
+    const content =
+      result.content ||
+      (result.proposals.length
         ? "I've queued the action(s) below for your confirmation."
-        : "I couldn't produce a response — try rephrasing.";
-    }
+        : "I couldn't produce a response — try rephrasing.");
 
-    return NextResponse.json({ content: finalText, actions: proposals });
+    return NextResponse.json({ content, actions: result.proposals, stoppedBy: result.stoppedBy });
   } catch (err) {
-    return apiError(UPSTREAM_FAILED, 502, err);
+    return apiError("agent_failed", 502, err);
   }
 }

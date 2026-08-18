@@ -191,7 +191,12 @@ export function applyAction(
 ): { kind: CollectionKey; id: string } | null {
   const a = action.args ?? {};
   switch (action.tool) {
+    // `create_task` is the CRM-wide tool; `create_project_task` is the
+    // project-scoped one, renamed so the tool bus can route by name. Both are
+    // kept: proposals already persisted in projectThreads carry the old string,
+    // and dropping it would make a still-pending confirm button do nothing.
     case "create_task":
+    case "create_project_task":
       return { kind: "tasks", id: idOf(store.create("tasks", buildTask(a))) };
     case "create_lead":
       return { kind: "leads", id: idOf(store.create("leads", buildLead(a))) };
@@ -205,7 +210,8 @@ export function applyAction(
       store.update("leads", id, buildLeadPatch(a));
       return { kind: "leads", id };
     }
-    case "update_task": {
+    case "update_task":
+    case "update_project_task": {
       const id = str(a.id);
       if (!id) return null;
       store.update("tasks", id, buildTaskPatch(a));

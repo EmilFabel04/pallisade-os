@@ -6,11 +6,13 @@ import type { CollectionKey, ProposedAction } from "@/lib/types";
 
 const ICON: Record<string, typeof Plus> = {
   create_task: Plus,
+  create_project_task: Plus,
   create_lead: Plus,
   create_project: FolderPlus,
   log_interaction: PhoneCall,
   update_lead: PencilLine,
   update_task: PencilLine,
+  update_project_task: PencilLine,
   create_calendar_event: CalendarPlus,
 };
 

@@ -128,6 +128,7 @@ export async function POST(req: Request) {
     // `writes`, so nothing here can queue a mutation.
     snapshot,
     proposals: [],
+    projectSnapshot: null,
     emailEnabled,
     calendarEnabled,
     driveAccountId,

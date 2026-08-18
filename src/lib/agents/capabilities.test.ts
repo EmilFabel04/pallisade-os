@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { toolsFor, dispatch, SERVER_TOOL_NAMES } from "@/lib/agents/capabilities";
+import { CAPABILITY_GROUPS } from "@/lib/agents/types";
 import type { AgentContext } from "@/lib/agents/types";
 import type { AdvisorSnapshot } from "@/lib/types";
+import type { ProjectSnapshot } from "@/lib/projects/tools";
 
 function snapshot(): AdvisorSnapshot {
   return {
@@ -16,11 +18,33 @@ function snapshot(): AdvisorSnapshot {
   };
 }
 
+function projectSnapshot(): ProjectSnapshot {
+  return {
+    project: {
+      id: "p1", createdAt: "", updatedAt: "", name: "Acme Dashboard", company: "Acme",
+      type: "paid project", stage: "building", priority: "high", startDate: "2026-07-01",
+      dueDate: "2026-08-15", currentMilestone: "", currentBlocker: "", nextAction: "",
+      deliverables: "", notes: "", repoPath: null, repoSlug: null,
+    },
+    milestones: [{
+      id: "m1", createdAt: "", updatedAt: "", projectId: "p1", name: "Ingest",
+      startDate: "2026-07-01", endDate: "2026-07-20", status: "in progress",
+      order: 0, dependsOn: [], commitScope: "", notes: "",
+    }],
+    tasks: [{
+      id: "t1", createdAt: "", updatedAt: "", title: "Auth handshake", linkKind: "project",
+      linkId: "p1", milestoneId: "m1", category: "delivery", priority: "high",
+      status: "in progress", dueDate: null, notes: "",
+    }],
+  };
+}
+
 function ctx(over: Partial<AgentContext> = {}): AgentContext {
   return {
     today: "2026-08-13", businessName: "Pallisade", founderName: "Emil",
     services: "AI systems", snapshot: snapshot(), proposals: [],
     emailEnabled: false, calendarEnabled: false, driveAccountId: null,
+    projectSnapshot: null,
     ...over,
   };
 }
@@ -128,5 +152,138 @@ describe("dispatch", () => {
     const out = await dispatch("create_task", { title: "Call Acme" }, c);
     expect(JSON.parse(out).queued).toBe(true);
     expect(c.proposals).toHaveLength(1);
+  });
+});
+
+describe("the delivery group", () => {
+  it("grants the project tool set when a project is in context", () => {
+    const granted = names(toolsFor(["delivery"], ctx({ projectSnapshot: projectSnapshot() })));
+    expect(granted).toHaveLength(9);
+    expect(granted).toContain("list_milestones");
+    expect(granted).toContain("update_project");
+  });
+
+  // The handover records "a capability granted but not wired" as a failure
+  // mode this codebase has produced twice: a tool appears in the list the
+  // model receives and then answers every call with an error. Gating the
+  // grant on the context that backs it is what closes that by construction.
+  it("grants nothing when no project is in context", () => {
+    expect(toolsFor(["delivery"], ctx())).toEqual([]);
+  });
+
+  it("does not leak project tools into the cross-project projects group", () => {
+    const granted = names(toolsFor(["projects"], ctx({ projectSnapshot: projectSnapshot() })));
+    expect(granted).toEqual(["get_project_context", "list_projects"]);
+  });
+});
+
+describe("every delivery tool answers with data, not an error", () => {
+  const withProject = () => ctx({ projectSnapshot: projectSnapshot(), proposals: [] });
+
+  it("returns this project's milestones from list_milestones", async () => {
+    const out = await dispatch("list_milestones", {}, withProject());
+    expect(JSON.parse(out)[0]).toMatchObject({ id: "m1", name: "Ingest" });
+  });
+
+  it("returns this project's tasks from list_tasks", async () => {
+    const out = await dispatch("list_tasks", {}, withProject());
+    expect(JSON.parse(out)[0]).toMatchObject({ id: "t1", title: "Auth handshake" });
+  });
+
+  it("queues a proposal scoped to this project from create_milestone", async () => {
+    const c = withProject();
+    await dispatch("create_milestone", { name: "Handover" }, c);
+    expect(c.proposals[0]).toMatchObject({ tool: "create_milestone", args: { projectId: "p1" } });
+  });
+
+  it("queues a project-linked task from create_project_task", async () => {
+    const c = withProject();
+    await dispatch("create_project_task", { title: "Ship it" }, c);
+    expect(c.proposals[0].args).toMatchObject({ linkKind: "project", linkId: "p1" });
+  });
+
+  it("queues an update against this project's own id from update_project", async () => {
+    const c = withProject();
+    await dispatch("update_project", { stage: "handover" }, c);
+    expect(c.proposals[0].args).toMatchObject({ id: "p1", stage: "handover" });
+  });
+
+  // Every other test for update_milestone/update_project_task drives a
+  // rejection (a cycle, a foreign id) — the queue(...) call that actually
+  // creates the proposal on the happy path was never executed by a passing
+  // test. A mutant that replaces either queue(...) with a hardcoded
+  // "Updated." string previously left the suite green: the agent would say
+  // it queued the edit, no Confirm card would appear, and the founder's
+  // change would silently never happen.
+  it("queues a real milestone edit from update_milestone", async () => {
+    const c = withProject();
+    await dispatch("update_milestone", { id: "m1", status: "done" }, c);
+    expect(c.proposals[0]).toMatchObject({ tool: "update_milestone", args: { id: "m1", projectId: "p1" } });
+  });
+
+  it("queues a real task edit from update_project_task", async () => {
+    const c = withProject();
+    await dispatch("update_project_task", { id: "t1", status: "done" }, c);
+    expect(c.proposals[0]).toMatchObject({ tool: "update_project_task", args: { id: "t1" } });
+  });
+
+  it("rejects an update_milestone for a milestone on another project", async () => {
+    const out = await dispatch("update_milestone", { id: "not-mine" }, withProject());
+    expect(out).toContain("No milestone with id");
+  });
+
+  it("rejects an update_project_task for a task on another project", async () => {
+    const out = await dispatch("update_project_task", { id: "not-mine" }, withProject());
+    expect(out).toContain("No task with id");
+  });
+
+  // The CRM create_task must still reach the CRM resolver — the rename in
+  // Task 2 is only correct if both names still route to their own owner.
+  it("routes the CRM create_task to the CRM resolver, not the project one", async () => {
+    const c = ctx({ projectSnapshot: projectSnapshot(), proposals: [] });
+    await dispatch("create_task", { title: "Call Sam", linkKind: "lead", linkId: "l1" }, c);
+    expect(c.proposals[0].args).toMatchObject({ linkKind: "lead", linkId: "l1" });
+  });
+
+  it("reports a missing project rather than throwing", async () => {
+    const out = await dispatch("list_milestones", {}, ctx());
+    expect(JSON.parse(out).error).toContain("no project");
+  });
+});
+
+describe("capability group disjointness", () => {
+  // Every integration connected AND a project in context. With any of them
+  // missing, `email`, `calendar` and `delivery` grant [] and both tests below
+  // pass by being blind — which is exactly the failure mode this repo produces
+  // (an assertion that passes against the thing it is meant to detect).
+  const full = () => ctx({
+    emailEnabled: true,
+    calendarEnabled: true,
+    driveAccountId: "acct-1",
+    projectSnapshot: projectSnapshot(),
+  });
+
+  // Guards the fixture itself. If a future change makes a group grant nothing
+  // under this context, the disjointness test below silently stops covering it
+  // — this test fails first and says which group went dark.
+  it("grants a non-empty tool set for every implemented group", () => {
+    const empty = CAPABILITY_GROUPS.filter((g) => toolsFor([g], full()).length === 0);
+    expect(empty).toEqual(["repo", "fathom"]);
+  });
+
+  // dispatch() routes a tool call by name-set membership in a fixed if-chain,
+  // so it can only be correct while no two groups grant the same name. That
+  // invariant was load-bearing and untested until this test.
+  it("never grants the same tool name from two different groups", () => {
+    const owner = new Map<string, string>();
+    const clashes: string[] = [];
+    for (const group of CAPABILITY_GROUPS) {
+      for (const tool of toolsFor([group], full())) {
+        const prev = owner.get(tool.name);
+        if (prev) clashes.push(`${tool.name} granted by both ${prev} and ${group}`);
+        else owner.set(tool.name, group);
+      }
+    }
+    expect(clashes).toEqual([]);
   });
 });

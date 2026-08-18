@@ -74,6 +74,8 @@ interface StoreValue extends DataShape {
   resetDemo: () => void;
   clearAll: () => void;
   search: (query: string) => SearchHit[];
+  /** Persist immediately instead of waiting out the debounce. See the flush() definition below. */
+  flush: () => Promise<void>;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -169,6 +171,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener("beforeunload", flush);
     return () => window.removeEventListener("beforeunload", flush);
   }, [data, ready]);
+
+  /**
+   * Persist immediately instead of waiting out the 450ms debounce above.
+   * A surface that asks the server to read the DB (project chat) must flush
+   * first, or the agent answers from a database that is up to a second stale —
+   * the sequence that bites is confirm-a-proposal then ask-what's-next.
+   *
+   * Carries the same guard as the beforeunload flush: never persist an
+   * unhydrated (empty) state, which would wipe a populated remote DB.
+   */
+  const flush = useCallback(async () => {
+    if (!hydratedOk.current || !adapterRef.current) return;
+    await adapterRef.current.save(data);
+  }, [data]);
 
   const create = useCallback(
     <K extends CollectionKey>(key: K, value: NewRecord<K>): ElementOf<K> => {
@@ -316,8 +332,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       resetDemo,
       clearAll,
       search,
+      flush,
     }),
-    [data, ready, create, update, remove, updateSettings, resetDemo, clearAll, search],
+    [data, ready, create, update, remove, updateSettings, resetDemo, clearAll, search, flush],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

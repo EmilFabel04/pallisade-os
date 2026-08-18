@@ -6,6 +6,7 @@ const ctx: AgentContext = {
   today: "2026-08-13", businessName: "Pallisade Data", founderName: "Emil",
   services: "AI systems", snapshot: null, proposals: [],
   emailEnabled: false, calendarEnabled: false, driveAccountId: null,
+  projectSnapshot: null,
 };
 
 describe("renderBody", () => {
