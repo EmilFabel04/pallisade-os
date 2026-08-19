@@ -122,16 +122,54 @@ case.
 
 | Arg | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `recordingId` | string | **required** | id from `fathom_search_meetings` |
+| `recordingId` | string | **required** | `recording_id` from `fathom_search_meetings` |
+| `sinceDays` | number | 90 | window to locate the meeting in |
 | `includeTranscript` | boolean | false | fetch the full transcript |
 
 Returns `{ title, date, attendees, summary, actionItems, transcript? }`. The transcript is
 clipped to `MAX_TRANSCRIPT_CHARS = 40000` with a trailing `[truncated]`, matching how
 `brain/tools.ts` clips a Drive file.
 
+**There is no single-meeting endpoint.** `GET /meetings` is the only source of meeting
+metadata and summaries; the API exposes nothing of the form `GET /meetings/{id}`. So this
+tool re-lists the window and locates the meeting by `recording_id`, under the same 5-page
+cap as search. `sinceDays` exists so a meeting outside the default window is still
+reachable without the model guessing why it vanished.
+
+When the id is not found within the cap, the payload is
+`{"error":"No meeting with that id in the last N days. Try a larger sinceDays."}` — actionable
+prose, not a bare not-found, because the likeliest cause is a window that is too narrow
+rather than a bad id.
+
 Transcript defaults to off because a summary answers most questions at a fraction of the
 tokens, and an 8-iteration loop that pulls three full transcripts will hit the turn's
 output ceiling before it answers.
+
+## Wire field names
+
+Taken from the API reference, not inferred. Guessing these is the likeliest way this work
+compiles, passes its own fixtures, and returns nothing against the real API.
+
+- **List response:** `items`, `limit`, `next_cursor`.
+- **Meeting:** `recording_id` (**not** `id` — and it is what the transcript path takes),
+  `title`, `meeting_title`, `url`, `share_url`, `meeting_url`, `created_at`,
+  `scheduled_start_time`, `scheduled_end_time`, `recording_start_time`,
+  `recording_end_time`, `calendar_invitees[]` (`name`, `email`, `email_domain`,
+  `is_external`), `recorded_by` (`name`, `email`, `email_domain`, `team`).
+- **Summary:** `default_summary` → `template_name`, `markdown_formatted` (**not**
+  `markdown`).
+- **Action items:** `action_items[]` → `description`, `user_generated`, `completed`,
+  `recording_timestamp`, `recording_playback_url`, `assignee`.
+- **CRM:** `crm_matches` → `contacts`, `companies`, `deals`, `error`.
+- **Transcript:** `GET /recordings/{recording_id}/transcript` returns
+  `{ transcript: [{ speaker: { display_name, matched_calendar_invitee_email }, text, timestamp }] }`.
+  `speaker` is an **object**, not a string.
+- **Never send `destination_url`** on the transcript request: with it, the endpoint switches
+  to an asynchronous callback and returns no transcript.
+
+Every field is treated as optional in the TypeScript types. The API may add fields; it may
+omit ones this code does not require. Only what the tools read is typed, and each is
+narrowed at the point of use.
 
 ## Data flow
 
@@ -139,7 +177,7 @@ output ceiling before it answers.
 2. `toolsFor` grants `FATHOM_TOOLS` only when that flag is true.
 3. The model calls `fathom_search_meetings`. `dispatch` routes on `FATHOM_TOOL_NAMES` to `resolveFathomTool`.
 4. The resolver pages `listMeetings` from `now - sinceDays`, stopping at 5 pages or when `nextCursor` is null, filters in memory, and returns at most `limit` compact rows plus `scanned`/`truncated`.
-5. The model calls `fathom_read_meeting` with an id from step 4, optionally with `includeTranscript: true`, which adds one `getTranscript` call.
+5. The model calls `fathom_read_meeting` with a `recording_id` from step 4. That re-pages the window to find the meeting, and with `includeTranscript: true` adds one `getTranscript` call.
 
 ## Error handling
 
@@ -173,6 +211,8 @@ asserts a group resolves to tool *definitions* and never that a resolved tool re
 **Truncation is surfaced.** A stub returning a `nextCursor` forever produces `truncated: true` and a `scanned` count equal to the meetings across 5 pages, not a silent partial result. A stub whose window fits in two pages produces `truncated: false`.
 
 **Transcript is opt-in and clipped.** `includeTranscript` omitted makes no `getTranscript` call at all (asserted on the stub's call count); set true, an over-budget transcript comes back ending `[truncated]`.
+
+**A meeting outside the window is actionable.** `fathom_read_meeting` with an id the window does not contain returns the "try a larger sinceDays" prose, and widening `sinceDays` in a second call finds it.
 
 **Errors become prose.** A stubbed 401, 429 and 500 each produce their table row above, and none throws.
 
