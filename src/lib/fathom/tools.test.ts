@@ -203,6 +203,7 @@ describe("fathom_read_meeting", () => {
     mockList.mockResolvedValue(onePage([globex]));
     const out = parse(await resolveFathomTool("fathom_read_meeting", { recordingId: "rec-acme" }));
     expect(String(out.error)).toMatch(/sinceDays/);
+    expect(String(out.error)).not.toMatch(/narrow/i);
   });
 
   // The opposite of the "widen" case above: when the scan itself was capped
