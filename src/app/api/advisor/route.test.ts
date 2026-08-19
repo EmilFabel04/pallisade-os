@@ -367,4 +367,25 @@ describe("POST /api/advisor — no unsubstituted placeholder ever reaches the mo
     expect(system).not.toMatch(/\{\{/);
     expect(system).toContain("the founder");
   });
+
+  it("grants the fathom tools when the API key is set", async () => {
+    process.env.FATHOM_API_KEY = "test-key";
+    try {
+      await call({ messages: msgs, snapshot: emptySnapshot });
+      const tools = (mockCreate.mock.calls[0][0].tools as { name: string }[]).map((t) => t.name);
+      expect(tools).toContain("fathom_search_meetings");
+      expect(tools).toContain("fathom_read_meeting");
+    } finally {
+      delete process.env.FATHOM_API_KEY;
+    }
+  });
+
+  // The gate, from the route's side. Without it the advisor receives two tools
+  // that answer every call "not connected" and relays that to the founder.
+  it("grants no fathom tools when the API key is absent", async () => {
+    delete process.env.FATHOM_API_KEY;
+    await call({ messages: msgs, snapshot: emptySnapshot });
+    const tools = (mockCreate.mock.calls[0][0].tools as { name: string }[]).map((t) => t.name);
+    expect(tools.filter((n) => n.startsWith("fathom_"))).toEqual([]);
+  });
 });
