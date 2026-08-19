@@ -75,8 +75,12 @@ describe("fathom_search_meetings", () => {
 
   it("filters by company via crm_matches", async () => {
     mockList.mockResolvedValue(onePage([acme, globex, initech]));
-    const out = parse(await resolveFathomTool("fathom_search_meetings", { company: "Acme" }));
+    // "Acme Ltd" lives only in crm_matches.companies[0].name — it appears in no
+    // title and no invitee field, so this can only pass via the CRM branch.
+    const out = parse(await resolveFathomTool("fathom_search_meetings", { company: "Acme Ltd" }));
     expect((out.meetings as { id: string }[]).map((m) => m.id)).toEqual(["rec-acme"]);
+    expect(out.matched).toBe(1);
+    expect(out.scanned).toBe(3);
   });
 
   it("filters by company via the invitee email when crm_matches is absent", async () => {
@@ -120,6 +124,9 @@ describe("fathom_search_meetings", () => {
     mockList.mockResolvedValue(onePage([acme, globex, initech]));
     const out = parse(await resolveFathomTool("fathom_search_meetings", { limit: 2 }));
     expect(out.meetings).toHaveLength(2);
+    // matched (3) exceeds the rows actually returned (2) — the model needs this
+    // to know there is more than the two rows it was shown.
+    expect(out.matched).toBe(3);
     expect(out.scanned).toBe(3);
   });
 
@@ -197,6 +204,25 @@ describe("fathom_read_meeting", () => {
     const out = parse(await resolveFathomTool("fathom_read_meeting", { recordingId: "rec-acme" }));
     expect(String(out.error)).toMatch(/sinceDays/);
   });
+
+  // The opposite of the "widen" case above: when the scan itself was capped
+  // before it could reach the id, a miss is not proof of absence, and the fix
+  // is to narrow the window (bring more of it inside the 5-page cap), not widen it.
+  it("tells the model to narrow, not widen, the window when the scan itself was capped", async () => {
+    mockList.mockResolvedValue({ items: [globex], nextCursor: "more" });
+    const out = parse(await resolveFathomTool("fathom_read_meeting", { recordingId: "rec-acme" }));
+    expect(String(out.error)).toMatch(/narrow/i);
+    expect(String(out.error)).not.toMatch(/larger/i);
+  });
+
+  it("asks the API for the requested window", async () => {
+    mockList.mockResolvedValue(onePage([]));
+    await resolveFathomTool("fathom_read_meeting", { recordingId: "rec-acme", sinceDays: 7 });
+    const since = new Date(String(mockList.mock.calls[0][0].createdAfter)).getTime();
+    const days = (Date.now() - since) / 86_400_000;
+    expect(days).toBeGreaterThan(6.5);
+    expect(days).toBeLessThan(7.5);
+  });
 });
 
 describe("failures become prose the model can relay", () => {
@@ -213,9 +239,17 @@ describe("failures become prose the model can relay", () => {
   });
 
   it("reports an unreachable API without relaying the status text", async () => {
-    mockList.mockRejectedValue(new FathomError(503));
-    const out = parse(await resolveFathomTool("fathom_search_meetings", {}));
-    expect(String(out.error)).toMatch(/could not be reached/i);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      mockList.mockRejectedValue(new FathomError(503));
+      const out = parse(await resolveFathomTool("fathom_search_meetings", {}));
+      expect(String(out.error)).toMatch(/could not be reached/i);
+      expect(String(out.error)).not.toContain("503");
+      // The status still gets logged server-side — just not into the model-visible string.
+      expect(errSpy).toHaveBeenCalledWith("[fathom] request failed:", 503);
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("reports a missing key rather than throwing", async () => {

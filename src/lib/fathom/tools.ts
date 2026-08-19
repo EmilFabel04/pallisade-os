@@ -32,8 +32,11 @@ export const FATHOM_TOOLS: ToolDef[] = [
       "Search the founder's recorded meetings by company and/or keyword and return compact " +
       "rows: id, title, date, attendees, companies and a summary excerpt. Omit both filters " +
       "for the most recent meetings. Returns `truncated: true` when the scan hit its page " +
-      "limit — say so rather than implying you saw everything. Use fathom_read_meeting for " +
-      "the full summary or the transcript.",
+      "limit — say so rather than implying you saw everything. Also returns `matched`, the " +
+      "total number of meetings that satisfied the filters before `limit` cut the rows down " +
+      "— if `matched` exceeds the number of rows returned, say there are more than shown " +
+      "rather than implying the returned rows are the whole result. Use fathom_read_meeting " +
+      "for the full summary or the transcript.",
     input_schema: {
       type: "object",
       properties: {
@@ -147,6 +150,7 @@ async function search(args: Args): Promise<string> {
       companies: companiesOf(m),
       summaryExcerpt: excerpt(summaryOf(m)),
     })),
+    matched: matched.length,
     scanned: meetings.length,
     truncated,
   });
@@ -157,12 +161,14 @@ async function readMeeting(args: Args): Promise<string> {
   if (!id) return JSON.stringify({ error: "recordingId is required." });
 
   const sinceDays = num(args.sinceDays, DEFAULT_SINCE_DAYS);
-  const { meetings } = await scanWindow(sinceDays);
+  const { meetings, truncated } = await scanWindow(sinceDays);
   const meeting = meetings.find((m) => m.recording_id === id);
 
   if (!meeting) {
     return JSON.stringify({
-      error: `No meeting with that id in the last ${sinceDays} days. Try a larger sinceDays.`,
+      error: truncated
+        ? `Not found in the first ${meetings.length} meetings of the last ${sinceDays} days — the scan hit its page limit before reaching the end, so this is not proof the meeting is absent. Narrow sinceDays to bring it inside the scan.`
+        : `No meeting with that id in the last ${sinceDays} days. Try a larger sinceDays.`,
     });
   }
 
