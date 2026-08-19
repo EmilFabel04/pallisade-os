@@ -162,7 +162,9 @@ instruction; no defect here originated in a departure from the plan.
 | 6 (minor, ruled in) | Task 2 | The unreachable-API test leaked a `console.error` line into the suite's stderr and never asserted that the raw HTTP status stayed out of the model-visible error string — only the positive "matches /could not be reached/i" was checked, so a mutant that appended the status code to the message would have passed. | Plan — test code | `7f35f59` |
 | 7 | Task 4 | `discovery-coach.md`'s Fathom paragraph, copied verbatim from the brief, omitted the sentence both other personas carry: that a `truncated` search result means absence of a question is not evidence it was never asked. A capped scan would coach the founder off a partial call history presented as the whole one. | Plan — prose (persona paragraph, Step 7) | `9cd7249` |
 
-**Ratio: 7 of 7 defects (100%) were in the plan; 0 of 7 (0%) were in the implementation.**
+**Ratio after the whole-branch review: 13 of 13 defects (100%) were in the plan; 0 in the
+implementation.** (This section was written before that review ran; it found six more. See
+"Final whole-branch review" below.)
 The two prior branches ran 11-of-14 (79%) and 8-of-8 (100%) in the plan. This branch
 continues the second branch's pattern exactly: every reviewer who traced the actual
 resolver, route, or dispatch logic against the plan's instructions found it correct — the
@@ -308,3 +310,80 @@ FATHOM_API_KEY=
 ```
 
 `.env.local` was not touched.
+
+
+## Final whole-branch review
+
+Run on `4d6d093..e09ad36` after Task 5. Verdict: findings must be fixed first — one Critical,
+four Important, four Minor. Fixed in one wave (`3161cf1`), scoped re-review confirmed all six
+closed, no new breakage. Suite 1096 → 1107.
+
+### The Critical, and why it is the most instructive defect on this branch
+
+**`listMeetings` never asked Fathom for the summary, the CRM matches or the action items.**
+
+`GET /meetings` gates `default_summary`, `crm_matches` and `action_items` behind
+`include_summary`, `include_crm_matches` and `include_action_items` — **all three default to
+`false`**, and all three fields are `nullable: true` in the Meeting schema. The string
+`include_` appeared nowhere in the spec, the plan, the implementation or this document.
+
+Shipped as written, against the real API:
+
+- `summaryOf()` returns `""` for every meeting, so `summaryExcerpt` is empty on every search
+  row and `summary` is empty on every `fathom_read_meeting` result.
+- `queryHaystack` degrades to title-only, silently breaking the spec's explicit requirement
+  that `query` match summary text.
+- `companiesOf()` is always `[]`, so the entire `crm_matches` branch of `companyHaystack` is
+  dead code and company matching survives only on title and invitee email.
+- `actionItems` is always `[]`.
+- `fathom_read_meeting` without `includeTranscript` — which defaults to false — returns a
+  title, a date, attendees and two empty fields. Nothing about what was said.
+
+Every one of the 1096 tests passed, because `tools.test.ts` mocks the client and hands back
+fixtures that already carry all three fields, and `client.test.ts` stubs `fetch` and only
+asserted the URL carried `created_after`.
+
+This is the exact risk the spec's own "Wire field names" section was written to prevent —
+"the likeliest way this work compiles, passes its own fixtures, and returns nothing against
+the real API". Four field-name audits were run across the branch and all four passed. **The
+names were right. Nothing asked what makes the named fields appear.**
+
+It is also the **fourth** violation of this feature's governing doctrine, and the worst of
+the four. The first three misreported a partial scan. This one hands the model structurally
+empty fields presented as data: `summaryExcerpt: ""` is indistinguishable from a meeting that
+genuinely had no summary, while all three personas tell the founder that the meeting is the
+source of truth and the typed interaction note is not.
+
+### The remaining five
+
+| # | Defect | Caught where | Why it mattered |
+| --- | --- | --- | --- |
+| 9 | The two tools embedded opposite, undocumented ordering assumptions. `search` promised "the most recent meetings" while slicing an unsorted prefix (true only newest-first); `readMeeting`'s capped-scan branch advised narrowing `sinceDays` (helps only oldest-first). Fathom documents no sort parameter and no default ordering. | Plan | At most one could be right and neither was backed. Under newest-first the "narrow" advice is a no-op the model loops on. Fixed by sorting before slicing, and by making the capped-scan advice direction-neutral. |
+| 10 | `query` matched the full summary while the model only ever saw the first 400 characters. | Plan | A row matches on text at character 3000 and comes back with an excerpt that never mentions it — the model has a result it cannot justify. |
+| 11 | A transcript failure discarded a meeting that had already been found and reported it as Fathom being unreachable. | Plan | Fathom *was* reached and the meeting *was* found; its summary was thrown away and the model relayed "Fathom is unreachable" to the founder as a fact about their integration. |
+| 12 | No end-to-end fathom grant test on the brain surface, though two of the three grantee personas are brain-surface agents. | Plan | The branch's own defence against "a capability granted but not wired" was asserted on one of the two surfaces that grant it. |
+| 13 | `num()` neither coerced nor clamped: `sinceDays: "30"` silently became 90, and `limit` was unbounded. | Plan | Harmless only while summaries were empty. Fixing the Critical would have made `limit: 500` mean 500 × 400 characters of real summary in one tool result, so both had to land together. |
+
+### Residual, recorded not fixed
+
+The `sinceDays` and `limit` schema descriptions still name only their defaults and do not
+mention the new `MAX_SINCE_DAYS = 365` / `MAX_LIMIT = 50` caps, so the model is not told a
+large value it supplies will be clamped. Non-blocking: `matched` and `scanned` still report
+true totals, so a clamped result is never misrepresented as complete.
+
+### What this branch says about where review effort belongs
+
+Three branches now: 11-of-14, 8-of-8, 13-of-13. Every defect in the plan; none in an
+implementer departing from it.
+
+This branch sharpens the lesson. Four of its thirteen defects are the *same* defect — the
+spec states a doctrine in its opening argument and then violates it in four separate places
+further down. A spec's stated invariants need checking against the spec's own later sections
+the way a typechecker checks a type against its uses, and re-reading one's own document does
+not do it: every one of the four was found by a reviewer reading code, never by the author
+reading prose.
+
+The Critical adds a second, narrower lesson with a general shape: **auditing that field names
+are correct is not the same as auditing that the request will return those fields.** The
+branch ran four name audits and passed all four while the request was structurally incapable
+of returning the data.
