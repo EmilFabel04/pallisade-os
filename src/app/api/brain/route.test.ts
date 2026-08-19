@@ -668,6 +668,48 @@ describe("POST /api/brain — a spec that declares 'email' actually receives the
   });
 });
 
+/* fathomEnabled is resolved synchronously off process.env.FATHOM_API_KEY
+   (resolveFathomEnabled), not mocked like email/calendar above — so these
+   toggle the real env var directly, mirroring the pair already covering this
+   in src/app/api/advisor/route.test.ts ("grants the fathom tools when the API
+   key is set" / "grants no fathom tools when the API key is absent"). Brain
+   never got that pair even though two of the three grantee personas —
+   discovery-coach and pipeline-analyst — live on this surface, not advisor's.
+   The key is deleted in a finally so a failure mid-test can't leak it into a
+   sibling test. */
+describe("POST /api/brain — fathom grant, keyed on FATHOM_API_KEY", () => {
+  it.each(["discovery-coach", "pipeline-analyst"])(
+    "%s: grants the fathom tools when the API key is set",
+    async (agentId) => {
+      process.env.FATHOM_API_KEY = "test-key";
+      try {
+        mockCreate.mockResolvedValue(textResponse("hi"));
+        await call({ agentId, messages: msgs });
+        const toolNames = mockCreate.mock.calls[0][0].tools.map((t: { name: string }) => t.name);
+        expect(toolNames).toContain("fathom_search_meetings");
+        expect(toolNames).toContain("fathom_read_meeting");
+      } finally {
+        delete process.env.FATHOM_API_KEY;
+      }
+    },
+  );
+
+  it.each(["discovery-coach", "pipeline-analyst"])(
+    "%s: grants no fathom tools when the API key is absent",
+    async (agentId) => {
+      delete process.env.FATHOM_API_KEY;
+      try {
+        mockCreate.mockResolvedValue(textResponse("hi"));
+        await call({ agentId, messages: msgs });
+        const toolNames = mockCreate.mock.calls[0][0].tools.map((t: { name: string }) => t.name);
+        expect(toolNames.filter((n: string) => n.startsWith("fathom_"))).toEqual([]);
+      } finally {
+        delete process.env.FATHOM_API_KEY;
+      }
+    },
+  );
+});
+
 describe("AgentNotFound export", () => {
   it("is a real Error subclass, as the route's catch relies on", () => {
     expect(new AgentNotFound("x")).toBeInstanceOf(Error);

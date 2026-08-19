@@ -39,6 +39,21 @@ describe("listMeetings", () => {
     expect(init.headers["X-Api-Key"]).toBe("test-key");
   });
 
+  // include_summary, include_crm_matches and include_action_items all default
+  // to false on Fathom's side. Without them the response carries no
+  // default_summary, no crm_matches and no action_items at all — every field
+  // the tools read would be structurally empty against the real API, not just
+  // absent for meetings that genuinely have none.
+  it("asks for summary, CRM matches and action items — they default to false otherwise", async () => {
+    fetchMock.mockResolvedValue(ok({ items: [], next_cursor: null }));
+    await listMeetings({});
+
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("include_summary=true");
+    expect(url).toContain("include_crm_matches=true");
+    expect(url).toContain("include_action_items=true");
+  });
+
   it("passes a cursor through and returns the next one", async () => {
     fetchMock.mockResolvedValue(ok({ items: [], next_cursor: "cur-2" }));
     const page = await listMeetings({ cursor: "cur-1" });

@@ -24,6 +24,8 @@ const MAX_TRANSCRIPT_CHARS = 40000;
 const SUMMARY_EXCERPT_CHARS = 400;
 const DEFAULT_SINCE_DAYS = 90;
 const DEFAULT_LIMIT = 20;
+const MAX_SINCE_DAYS = 365;
+const MAX_LIMIT = 50;
 
 export const FATHOM_TOOLS: ToolDef[] = [
   {
@@ -35,8 +37,9 @@ export const FATHOM_TOOLS: ToolDef[] = [
       "limit — say so rather than implying you saw everything. Also returns `matched`, the " +
       "total number of meetings that satisfied the filters before `limit` cut the rows down " +
       "— if `matched` exceeds the number of rows returned, say there are more than shown " +
-      "rather than implying the returned rows are the whole result. Use fathom_read_meeting " +
-      "for the full summary or the transcript.",
+      "rather than implying the returned rows are the whole result. `summaryExcerpt` is only " +
+      "the opening of each summary, so the text that matched `query` may not appear in it; " +
+      "call fathom_read_meeting for the full summary before quoting.",
     input_schema: {
       type: "object",
       properties: {
@@ -67,7 +70,15 @@ export const FATHOM_TOOLS: ToolDef[] = [
 
 export const FATHOM_TOOL_NAMES = new Set(FATHOM_TOOLS.map((t) => t.name));
 
-const num = (v: unknown, fallback: number) => (typeof v === "number" && v > 0 ? v : fallback);
+// Coerce, default, clamp — the shape established at gmail/advisorEmail.ts:34.
+// Number() coerces a string argument like sinceDays: "30" instead of silently
+// falling back to the default; 0 and negatives still fall back, matching the
+// old typeof-guarded behaviour; the clamp caps a model-supplied limit from
+// turning into hundreds of full summaries in one tool result.
+const num = (v: unknown, fallback: number, max: number) => {
+  const n = Number(v);
+  return Math.min(Number.isFinite(n) && n > 0 ? n : fallback, max);
+};
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
 const titleOf = (m: FathomMeeting) => m.title || m.meeting_title || "(untitled)";
@@ -133,7 +144,7 @@ async function scanWindow(sinceDays: number): Promise<{
 async function search(args: Args): Promise<string> {
   const company = text(args.company).toLowerCase();
   const query = text(args.query).toLowerCase();
-  const { meetings, truncated } = await scanWindow(num(args.sinceDays, DEFAULT_SINCE_DAYS));
+  const { meetings, truncated } = await scanWindow(num(args.sinceDays, DEFAULT_SINCE_DAYS, MAX_SINCE_DAYS));
 
   const matched = meetings.filter(
     (m) =>
@@ -141,8 +152,13 @@ async function search(args: Args): Promise<string> {
       (!query || queryHaystack(m).includes(query)),
   );
 
+  // Fathom documents no sort parameter and no default ordering for GET
+  // /meetings. "Omit both filters for the most recent meetings" (below) is
+  // only true if we sort ourselves rather than trusting page order.
+  const ordered = [...matched].sort((a, b) => dateOf(b).localeCompare(dateOf(a)));
+
   return JSON.stringify({
-    meetings: matched.slice(0, num(args.limit, DEFAULT_LIMIT)).map((m) => ({
+    meetings: ordered.slice(0, num(args.limit, DEFAULT_LIMIT, MAX_LIMIT)).map((m) => ({
       id: m.recording_id,
       title: titleOf(m),
       date: dateOf(m),
@@ -160,14 +176,14 @@ async function readMeeting(args: Args): Promise<string> {
   const id = text(args.recordingId);
   if (!id) return JSON.stringify({ error: "recordingId is required." });
 
-  const sinceDays = num(args.sinceDays, DEFAULT_SINCE_DAYS);
+  const sinceDays = num(args.sinceDays, DEFAULT_SINCE_DAYS, MAX_SINCE_DAYS);
   const { meetings, truncated } = await scanWindow(sinceDays);
   const meeting = meetings.find((m) => m.recording_id === id);
 
   if (!meeting) {
     return JSON.stringify({
       error: truncated
-        ? `Not found in the first ${meetings.length} meetings of the last ${sinceDays} days — the scan hit its page limit before reaching the end, so this is not proof the meeting is absent. Narrow sinceDays to bring it inside the scan.`
+        ? `Not found in the first ${meetings.length} meetings of the last ${sinceDays} days — the scan hit its page limit before reaching the end, so this is not proof the meeting is absent. Use fathom_search_meetings with a company or query filter to locate it instead.`
         : `No meeting with that id in the last ${sinceDays} days. Try a larger sinceDays.`,
     });
   }
@@ -185,7 +201,17 @@ async function readMeeting(args: Args): Promise<string> {
   };
 
   if (args.includeTranscript === true) {
-    body.transcript = renderTranscript(await getTranscript(id));
+    // A failure here must not discard a meeting that was already found — the
+    // summary and action items above are real and complete on their own. Left
+    // uncaught, this throws out of readMeeting entirely and the model relays
+    // "Fathom is unreachable", which is false: Fathom was reached, the meeting
+    // was found, only the transcript call failed.
+    try {
+      body.transcript = renderTranscript(await getTranscript(id));
+    } catch {
+      body.transcript = null;
+      body.transcriptError = "The transcript could not be fetched. The summary above is still complete.";
+    }
   }
   return JSON.stringify(body);
 }

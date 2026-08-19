@@ -120,6 +120,18 @@ describe("fathom_search_meetings", () => {
     expect(days).toBeLessThan(7.5);
   });
 
+  // Fathom documents no sort parameter and no default ordering for GET
+  // /meetings, but the description promises "most recent" for the
+  // no-filter case. Feed the fixtures out of chronological order — if the
+  // tool trusted page order instead of sorting itself, this comes back
+  // oldest-first.
+  it("returns the most recent meetings first regardless of the order the API returned them in", async () => {
+    mockList.mockResolvedValue(onePage([globex, acme, initech]));
+    const out = parse(await resolveFathomTool("fathom_search_meetings", {}));
+    expect((out.meetings as { id: string }[]).map((m) => m.id))
+      .toEqual(["rec-initech", "rec-globex", "rec-acme"]);
+  });
+
   it("honours limit after filtering", async () => {
     mockList.mockResolvedValue(onePage([acme, globex, initech]));
     const out = parse(await resolveFathomTool("fathom_search_meetings", { limit: 2 }));
@@ -128,6 +140,52 @@ describe("fathom_search_meetings", () => {
     // to know there is more than the two rows it was shown.
     expect(out.matched).toBe(3);
     expect(out.scanned).toBe(3);
+  });
+
+  // A string arg from the model — "30" rather than 30 — used to fail the
+  // typeof-number guard and silently fall back to the 90-day default, so a
+  // 30-day question got answered from 90 days of calls.
+  it("coerces a string sinceDays instead of silently falling back to the default", async () => {
+    mockList.mockResolvedValue(onePage([]));
+    await resolveFathomTool("fathom_search_meetings", { sinceDays: "30" });
+    const since = new Date(String(mockList.mock.calls[0][0].createdAfter)).getTime();
+    const days = (Date.now() - since) / 86_400_000;
+    expect(days).toBeGreaterThan(29.5);
+    expect(days).toBeLessThan(30.5);
+  });
+
+  // Harmless while summaries are empty; once Critical 1 lands, an unclamped
+  // limit means hundreds of full-length summary excerpts in one tool result.
+  it("clamps limit to 50 even when a larger value is requested", async () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      recording_id: `rec-${i}`,
+      title: `Meeting ${i}`,
+      created_at: `2026-08-${String((i % 27) + 1).padStart(2, "0")}T09:00:00Z`,
+    }));
+    mockList.mockResolvedValue(onePage(many));
+    const out = parse(await resolveFathomTool("fathom_search_meetings", { limit: 500 }));
+    expect(out.meetings).toHaveLength(50);
+    expect(out.matched).toBe(60);
+  });
+
+  it("clamps sinceDays to 365 even when a larger value is requested", async () => {
+    mockList.mockResolvedValue(onePage([]));
+    await resolveFathomTool("fathom_search_meetings", { sinceDays: 5000 });
+    const since = new Date(String(mockList.mock.calls[0][0].createdAfter)).getTime();
+    const days = (Date.now() - since) / 86_400_000;
+    expect(days).toBeGreaterThan(364.5);
+    expect(days).toBeLessThan(365.5);
+  });
+
+  // 0 and negative values fall back to the default rather than clamping to
+  // some minimum — existing behaviour, preserved through the coerce/clamp rewrite.
+  it("falls back to the default sinceDays for zero or negative values", async () => {
+    mockList.mockResolvedValue(onePage([]));
+    await resolveFathomTool("fathom_search_meetings", { sinceDays: -5 });
+    const since = new Date(String(mockList.mock.calls[0][0].createdAfter)).getTime();
+    const days = (Date.now() - since) / 86_400_000;
+    expect(days).toBeGreaterThan(89.5);
+    expect(days).toBeLessThan(90.5);
   });
 
   // Silent truncation is the failure this repo keeps producing: a partial scan
@@ -186,6 +244,23 @@ describe("fathom_read_meeting", () => {
     expect(String(out.transcript)).toContain("The setup fee is the problem");
   });
 
+  // A transcript failure must not discard a meeting that was already found.
+  // Pre-fix, this threw out of readMeeting and the caller's catch turned it
+  // into {"error":"Fathom could not be reached right now."} — losing the
+  // summary and reporting Fathom as unreachable when it wasn't.
+  it("reports a transcript failure without losing the summary that was already found", async () => {
+    mockList.mockResolvedValue(onePage([acme]));
+    mockTranscript.mockRejectedValue(new FathomError(503));
+    const out = parse(await resolveFathomTool("fathom_read_meeting", {
+      recordingId: "rec-acme", includeTranscript: true,
+    }));
+    expect(out.error).toBeUndefined();
+    expect(out.title).toBe("Acme discovery call");
+    expect(String(out.summary)).toContain("pushed back on the setup fee");
+    expect(out.transcript).toBeNull();
+    expect(String(out.transcriptError)).toMatch(/could not be fetched/i);
+  });
+
   it("clips an over-budget transcript rather than blowing the turn's budget", async () => {
     mockList.mockResolvedValue(onePage([acme]));
     mockTranscript.mockResolvedValue(
@@ -207,12 +282,16 @@ describe("fathom_read_meeting", () => {
   });
 
   // The opposite of the "widen" case above: when the scan itself was capped
-  // before it could reach the id, a miss is not proof of absence, and the fix
-  // is to narrow the window (bring more of it inside the 5-page cap), not widen it.
-  it("tells the model to narrow, not widen, the window when the scan itself was capped", async () => {
+  // before it could reach the id, a miss is not proof of absence — no
+  // sinceDays adjustment (wider OR narrower) is guaranteed to help, since
+  // Fathom documents no ordering for GET /meetings. The message instead
+  // points at a targeted filter, which is the one thing guaranteed to
+  // shrink what has to be scanned.
+  it("tells the model the scan was capped and to use a filtered search, not that a sinceDays change fixes it", async () => {
     mockList.mockResolvedValue({ items: [globex], nextCursor: "more" });
     const out = parse(await resolveFathomTool("fathom_read_meeting", { recordingId: "rec-acme" }));
-    expect(String(out.error)).toMatch(/narrow/i);
+    expect(String(out.error)).toMatch(/page limit/i);
+    expect(String(out.error)).toMatch(/fathom_search_meetings/);
     expect(String(out.error)).not.toMatch(/larger/i);
   });
 

@@ -103,6 +103,13 @@ export async function listMeetings(params: {
     created_after: params.createdAfter,
     created_before: params.createdBefore,
     cursor: params.cursor,
+    // These three default to FALSE on Fathom's side. Without them the response
+    // carries no default_summary, no crm_matches and no action_items — the
+    // tools would return structurally empty fields indistinguishable from a
+    // meeting that genuinely had none.
+    include_summary: "true",
+    include_crm_matches: "true",
+    include_action_items: "true",
   });
   return { items: body.items ?? [], nextCursor: body.next_cursor ?? null };
 }
