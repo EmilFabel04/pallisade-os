@@ -2,6 +2,7 @@ import { emailToolsAvailable } from "@/lib/gmail/advisorEmail";
 import { calendarToolsAvailable } from "@/lib/calendar/advisorCalendar";
 import { isConfigured, hasDriveScope } from "@/lib/gmail/config";
 import { listAccounts } from "@/lib/gmail/accounts";
+import { isConfigured as fathomConfigured } from "@/lib/fathom/config";
 import type { AgentSpec } from "@/lib/agents/types";
 
 /** Resolves email/calendar availability only for the capability groups the
@@ -52,4 +53,14 @@ export async function resolveDriveAccountId(
 ): Promise<string | null> {
   if (!spec.tools.includes("drive")) return null;
   return connectedDriveAccountId();
+}
+
+/** Whether an agent's ctx should carry Fathom access.
+ *
+ *  Synchronous, unlike the email/calendar/Drive resolvers above: this is an env
+ *  read, not a DB read, so there is no cost to gate against and nothing to join
+ *  in a Promise.all. Still spec-gated for the same reason they are — an agent
+ *  that never asks for Fathom should not carry a flag implying it did. */
+export function resolveFathomEnabled(spec: Pick<AgentSpec, "tools">): boolean {
+  return spec.tools.includes("fathom") && fathomConfigured();
 }

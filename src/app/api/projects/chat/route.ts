@@ -4,7 +4,7 @@ import { apiError } from "@/lib/api/errors";
 import { getAgent, AgentNotFound } from "@/lib/agents/registry";
 import { runAgent, DEFAULT_MODEL } from "@/lib/agents/runtime";
 import { renderBody } from "@/lib/agents/render";
-import { resolveAvailability, resolveDriveAccountId } from "@/lib/brain/availability";
+import { resolveAvailability, resolveDriveAccountId, resolveFathomEnabled } from "@/lib/brain/availability";
 import { buildProjectStateBlock } from "@/lib/projects/prompt";
 import { linkedRepoPathFor } from "@/lib/git/linkedRepos";
 import { loadAll } from "@/lib/db/sqlite";
@@ -126,6 +126,7 @@ export async function POST(req: Request) {
     emailEnabled,
     calendarEnabled,
     driveAccountId,
+    fathomEnabled: resolveFathomEnabled(spec),
   };
 
   const stateBlock = buildProjectStateBlock({

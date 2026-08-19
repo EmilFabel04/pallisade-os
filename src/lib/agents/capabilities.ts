@@ -22,6 +22,7 @@ import {
   PROJECT_CONTEXT_TOOLS, PROJECT_CONTEXT_TOOL_NAMES, resolveProjectContextTool,
 } from "@/lib/projects/projectContext";
 import { PROJECT_TOOLS, PROJECT_TOOL_NAMES, resolveProjectTool } from "@/lib/projects/tools";
+import { FATHOM_TOOLS, FATHOM_TOOL_NAMES, resolveFathomTool } from "@/lib/fathom/tools";
 import type { AgentContext, CapabilityGroup } from "./types";
 
 type Args = Record<string, unknown>;
@@ -55,9 +56,13 @@ function grantsFor(group: CapabilityGroup, ctx: AgentContext): AgentTool[] {
     // READ tools only. create_calendar_event is a mutation and belongs to `writes`.
     case "calendar": return ctx.calendarEnabled ? CALENDAR_READ_TOOLS : [];
     // Specified in the design, implemented in follow-up specs. An agent may
-    // declare them today and simply receive nothing.
+    // declare it today and simply receive nothing.
     case "repo": return [];
-    case "fathom": return [];
+    // Same gate as `delivery`: without it an agent receives two tools that
+    // answer every call "not connected" and relays that to the founder as a
+    // fact about their own integrations. That has happened twice in this
+    // codebase — the CRM snapshot and Drive.
+    case "fathom": return ctx.fathomEnabled ? FATHOM_TOOLS : [];
   }
 }
 
@@ -87,6 +92,7 @@ export async function dispatch(name: string, args: Args, ctx: AgentContext): Pro
       return await resolveProjectTool(name, args, ctx.projectSnapshot, ctx.proposals);
     }
     if (DRIVE_TOOL_NAMES.has(name)) return await resolveBrainTool(name, args, ctx.driveAccountId);
+    if (FATHOM_TOOL_NAMES.has(name)) return await resolveFathomTool(name, args);
 
     // Writes are checked FIRST and deliberately skip the snapshot guard.
     // resolveTool's write branch pushes the ProposedAction and returns before

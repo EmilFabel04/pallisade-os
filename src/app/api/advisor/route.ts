@@ -4,7 +4,7 @@ import { apiError } from "@/lib/api/errors";
 import { getAgent, AgentNotFound } from "@/lib/agents/registry";
 import { runAgent, DEFAULT_MODEL } from "@/lib/agents/runtime";
 import { renderBody } from "@/lib/agents/render";
-import { resolveAvailability, resolveDriveAccountId } from "@/lib/brain/availability";
+import { resolveAvailability, resolveDriveAccountId, resolveFathomEnabled } from "@/lib/brain/availability";
 import { connectedEmails } from "@/lib/gmail/advisorEmail";
 import type { AdvisorSnapshot } from "@/lib/types";
 import type { AgentContext, AgentSpec } from "@/lib/agents/types";
@@ -115,6 +115,7 @@ export async function POST(req: Request) {
     emailEnabled,
     calendarEnabled,
     driveAccountId,
+    fathomEnabled: resolveFathomEnabled(spec),
   };
 
   let rendered = renderBody(spec.body, ctx);
