@@ -185,3 +185,77 @@ export function heuristicJudgement(verdict: InclusionResult): ThreadJudgement {
     nudgeProb: null,
   };
 }
+
+/* ---------------- fan-out (the only IO in this file) ---------------- */
+
+import { evaluate as jevEvaluate, USD_PER_INPUT_TOKEN } from "@/lib/jev/client";
+import type { JevResponse } from "@/lib/jev/types";
+
+/** Jev allows 1,200 req/min (20/s). Twelve in flight stays clear of it while
+ *  keeping a 400-thread scan bounded by Gmail rather than by us. */
+export const JUDGE_CONCURRENCY = 12;
+
+export interface JudgeRun {
+  /** One entry per input state, positionally aligned. null = this thread failed. */
+  judgements: (ThreadJudgement | null)[];
+  inputTokens: number;
+  costUSD: number;
+  failures: number;
+  calls: number;
+}
+
+type Evaluator = (
+  state: unknown,
+  questions: Record<string, JevQuestion>,
+) => Promise<JevResponse>;
+
+/** Judge one state. Any failure — transport, status, or a malformed body —
+ *  surfaces as a thrown JevError for the caller to turn into a fallback. */
+export async function judgeOne(state: JudgeState, evaluate: Evaluator): Promise<{
+  judgement: ThreadJudgement;
+  inputTokens: number;
+}> {
+  const res = await evaluate(state, JUDGE_QUESTIONS);
+  return {
+    judgement: interpretJudgement(res.answers),
+    inputTokens: res.usage?.input_tokens ?? 0,
+  };
+}
+
+/**
+ * Judge many states with bounded concurrency.
+ *
+ * Never rejects: a thread that fails comes back null and is counted, so one
+ * bad thread costs its own ranking and nothing else.
+ */
+export async function runJudge(
+  states: JudgeState[],
+  deps: { evaluate?: Evaluator } = {},
+): Promise<JudgeRun> {
+  const evaluate = deps.evaluate ?? jevEvaluate;
+  const judgements: (ThreadJudgement | null)[] = new Array(states.length).fill(null);
+
+  let inputTokens = 0;
+  let failures = 0;
+  let calls = 0;
+  let next = 0;
+
+  const workers = Array.from({ length: Math.min(JUDGE_CONCURRENCY, states.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= states.length) return;
+      calls++;
+      try {
+        const { judgement, inputTokens: used } = await judgeOne(states[i], evaluate);
+        judgements[i] = judgement;
+        inputTokens += used;
+      } catch {
+        failures++;
+      }
+    }
+  });
+
+  await Promise.all(workers);
+
+  return { judgements, inputTokens, costUSD: inputTokens * USD_PER_INPUT_TOKEN, failures, calls };
+}

@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
-  buildJudgeState, interpretJudgement, heuristicJudgement,
+  buildJudgeState, interpretJudgement, heuristicJudgement, runJudge, JUDGE_CONCURRENCY,
   JUDGE_QUESTIONS, STATE_CHAR_BUDGET, URGENCY_LEVELS,
 } from "@/lib/gmail/sentJudge";
 import { JevError, type JevAnswer } from "@/lib/jev/types";
@@ -195,5 +195,60 @@ describe("heuristicJudgement", () => {
 
   it("never nudges a thread it excluded", () => {
     expect(heuristicJudgement({ included: false, reason: "warming_label" }).needsNudge).toBe(false);
+  });
+});
+
+describe("runJudge", () => {
+  const state = {
+    subject: "s", daysSinceLastSent: 9, messageCount: 1,
+    messages: [{ author: "founder" as const, date: "2026-09-10T09:00:00.000Z", text: "hi" }],
+  };
+
+  const reply = {
+    model: "jev-1.13.0",
+    answers: answers(),
+    usage: { input_tokens: 300, output_tokens: 10 },
+  };
+
+  it("returns one judgement per state, in order", async () => {
+    const evaluate = vi.fn().mockResolvedValue(reply);
+    const run = await runJudge([state, state], { evaluate });
+
+    expect(run.judgements).toHaveLength(2);
+    expect(run.judgements[0]?.source).toBe("jev");
+    expect(run.judgements[1]?.urgency).toBe("warm");
+  });
+
+  it("totals input tokens and prices them", async () => {
+    const evaluate = vi.fn().mockResolvedValue(reply);
+    const run = await runJudge([state, state], { evaluate });
+
+    expect(run.inputTokens).toBe(600);
+    expect(run.costUSD).toBeCloseTo(600 * (0.042 / 1_000_000), 12);
+  });
+
+  it("yields null for a thread whose call failed, without failing the run", async () => {
+    const evaluate = vi
+      .fn()
+      .mockResolvedValueOnce(reply)
+      .mockRejectedValueOnce(new JevError("jev 529"));
+
+    const run = await runJudge([state, state], { evaluate });
+
+    expect(run.judgements[0]?.source).toBe("jev");
+    expect(run.judgements[1]).toBeNull();
+    expect(run.failures).toBe(1);
+  });
+
+  it("yields null when the response parses but the answers are wrong", async () => {
+    const evaluate = vi.fn().mockResolvedValue({ ...reply, answers: {} });
+    const run = await runJudge([state], { evaluate });
+
+    expect(run.judgements[0]).toBeNull();
+    expect(run.failures).toBe(1);
+  });
+
+  it("stays under Jev's rate ceiling", () => {
+    expect(JUDGE_CONCURRENCY).toBeLessThanOrEqual(20);
   });
 });
