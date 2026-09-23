@@ -34,7 +34,7 @@ describe("buildJudgeState", () => {
       todayIso: "2026-09-20T09:00:00.000Z",
     });
 
-    expect(state.messages.map((m) => m.author)).toEqual(["them", "founder"]);
+    expect(state.messages.map((m) => m.author)).toEqual(["founder", "them"]);
   });
 
   it("orders newest first so truncation drops the oldest", () => {
@@ -86,6 +86,39 @@ describe("buildJudgeState", () => {
     });
 
     expect(state.daysSinceLastSent).toBe(10);
+  });
+
+  it("has deterministic order for messages with identical dates", () => {
+    const sharedDate = "2026-09-10T09:00:00.000Z";
+    const state = buildJudgeState({
+      subject: "s",
+      messages: [
+        msg({ date: sharedDate, text: "first in input" }),
+        msg({ date: sharedDate, text: "second in input" }),
+      ],
+      ownEmails: own,
+      todayIso: "2026-09-20T09:00:00.000Z",
+    });
+
+    // Deterministic: preserves input order when dates tie
+    expect(state.messages[0].text).toBe("first in input");
+    expect(state.messages[1].text).toBe("second in input");
+  });
+
+  it("always includes the first message, truncating if it exceeds the budget", () => {
+    const longText = "x".repeat(20_000);
+    const state = buildJudgeState({
+      subject: "s",
+      messages: [
+        msg({ text: longText }),
+        msg({ text: "second message" }),
+      ],
+      ownEmails: own,
+      todayIso: "2026-09-20T09:00:00.000Z",
+    });
+
+    expect(state.messages.length).toBe(1);
+    expect(state.messages[0].text.length).toBe(STATE_CHAR_BUDGET);
   });
 });
 

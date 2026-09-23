@@ -9,7 +9,7 @@
    ============================================================ */
 
 import { JevError, type JevAnswer, type JevQuestion } from "@/lib/jev/types";
-import { unquotedBody, isOwn, type InclusionResult, type ScanMessage } from "./sentScan";
+import { daysBetween, unquotedBody, isOwn, type InclusionResult, type ScanMessage } from "./sentScan";
 
 /** Total thread text handed to Jev. Its limit is 32k tokens per question;
  *  6,000 characters is roughly 1.5k tokens, which leaves the questions and
@@ -17,10 +17,15 @@ import { unquotedBody, isOwn, type InclusionResult, type ScanMessage } from "./s
  *  model starts missing context that lives early in long threads. */
 export const STATE_CHAR_BUDGET = 6_000;
 
-/** Probability at or above which a thread counts as the founder's outreach. */
+/** Probability at or above which a thread counts as the founder's outreach.
+ *  Lower it if genuine outreach is being excluded from the queue; raise it if
+ *  newsletters, receipts, and automated notifications start slipping through. */
 export const INCLUDE_NOUL_MIN = 0.5;
 
-/** Probability at or above which a follow-up is owed. */
+/** Probability at or above which a follow-up is owed.
+ *  Lower it if threads that deserve a chase are being dropped from the nudge queue;
+ *  raise it if concluded conversations (deals closed, declined, or meeting booked)
+ *  keep resurfacing for follow-up. */
 export const NUDGE_NOUL_MIN = 0.5;
 
 /** Ordered low → high; the array index is the Jev score legend index. */
@@ -72,20 +77,14 @@ export const JUDGE_QUESTIONS: Record<string, JevQuestion> & {
   },
 };
 
-/** Whole days between two ISO dates, floored at 0. Mirrors sentScan's daysBetween. */
-function daysBetween(fromIso: string, toIso: string): number {
-  const from = Date.parse(fromIso);
-  const to = Date.parse(toIso);
-  if (!Number.isFinite(from) || !Number.isFinite(to)) return 0;
-  return Math.max(0, Math.round((to - from) / 86_400_000));
-}
-
 /**
  * Flatten one thread into the state Jev reads.
  *
  * Newest first, de-quoted with the same unquotedBody() the sign-off test uses,
- * and truncated by dropping whole messages from the tail — a half-sentence from
- * three months ago helps nobody, and whole messages keep the state honest.
+ * and truncated by dropping whole messages from the tail — the first message
+ * is always included (truncated if needed), and subsequent messages are dropped
+ * whole if they exceed the budget. This ensures the model always sees at least
+ * the full context of the most recent message.
  */
 export function buildJudgeState(input: {
   subject: string;
@@ -93,12 +92,35 @@ export function buildJudgeState(input: {
   ownEmails: Set<string>;
   todayIso: string;
 }): JudgeState {
-  const ordered = [...input.messages].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const ordered = [...input.messages]
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => {
+      if (a.m.date > b.m.date) return -1;
+      if (a.m.date < b.m.date) return 1;
+      return a.i - b.i; // Equal dates: preserve input order
+    })
+    .map((x) => x.m);
 
   const messages: JudgeState["messages"] = [];
   let used = 0;
-  for (const m of ordered) {
+  for (let i = 0; i < ordered.length; i++) {
+    const m = ordered[i];
     const text = unquotedBody(m.text).trim();
+    const isFirst = i === 0;
+
+    // First message is always included, truncated if needed
+    if (isFirst) {
+      const truncated = text.length > STATE_CHAR_BUDGET ? text.slice(0, STATE_CHAR_BUDGET) : text;
+      messages.push({
+        author: isOwn(m.from, input.ownEmails) ? "founder" : "them",
+        date: m.date,
+        text: truncated,
+      });
+      used = truncated.length;
+      continue;
+    }
+
+    // Subsequent messages: admit whole or not at all
     if (used + text.length > STATE_CHAR_BUDGET) break;
     used += text.length;
     messages.push({

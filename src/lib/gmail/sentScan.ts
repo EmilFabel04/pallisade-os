@@ -222,7 +222,7 @@ export interface FollowUp {
 }
 
 /** Whole days between two ISO dates, floored at 0. */
-function daysBetween(fromIso: string, toIso: string): number {
+export function daysBetween(fromIso: string, toIso: string): number {
   const from = Date.parse(fromIso);
   const to = Date.parse(toIso);
   if (!Number.isFinite(from) || !Number.isFinite(to)) return 0;
