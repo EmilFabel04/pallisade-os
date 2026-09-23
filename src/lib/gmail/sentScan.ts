@@ -5,7 +5,7 @@
 
 import type { MailAddress } from "./parse";
 import { companyFromEmail } from "./parse";
-import type { ThreadJudgement } from "./sentJudge";
+import type { ThreadJudgement, Urgency } from "./sentJudge";
 
 /** Gmail label whose threads are Apollo mailwarming traffic, never real outreach. */
 export const WARMING_LABEL = "Apollo Mailwarming";
@@ -239,8 +239,11 @@ export function daysBetween(fromIso: string, toIso: string): number {
 /** awaiting_you is the costlier miss, so it sorts first. */
 const BUCKET_RANK: Record<ThreadBucket, number> = { awaiting_you: 0, no_reply: 1, stalled: 2 };
 
-/** Highest urgency first; an unranked (heuristic) row sorts below every ranked one. */
-const URGENCY_RANK: Record<string, number> = { hot: 0, warm: 1, low: 2, dead: 3 };
+/** Highest urgency first; an unranked (heuristic) row sorts below every ranked one.
+ *  Typed `Record<Urgency, number>` rather than `Record<string, number>` so that
+ *  renaming or adding an urgency level is a compile error here, not a silent
+ *  `undefined` → `NaN` → arbitrary sort order at runtime. */
+const URGENCY_RANK: Record<Urgency, number> = { hot: 0, warm: 1, low: 2, dead: 3 };
 const urgencyRank = (f: FollowUp) =>
   f.judgement.urgency ? URGENCY_RANK[f.judgement.urgency] : 4;
 
