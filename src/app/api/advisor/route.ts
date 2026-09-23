@@ -33,16 +33,25 @@ const EMAIL_APPENDIX =
   `asks about their inbox, a sender, or recent messages — never invent email content.\n\n` +
   `To find people who have gone quiet, use audit_sent_followups — it reads real SENT mail, ` +
   `excludes Apollo mailwarming, and buckets each recipient as 'awaiting_you' (they replied and are ` +
-  `waiting on the founder — lead with these) or 'no_reply' (never came back). Report the names and ` +
-  `days since contact it returns; the company is derived from the email domain, so treat it as a ` +
-  `hint rather than a verified name. Then propose a create_task follow-up for each person worth ` +
-  `chasing, so the founder can confirm them. Cross-reference query_leads to say whether each person ` +
-  `is already in the pipeline. If followUps is empty but excludedSignoffOnly is large, say that ` +
-  `too: it means the strict "signed off as Emil" rule filtered almost everything out, which is a ` +
-  `tuning problem, not an empty pipeline. And say plainly, in your own words, whenever any of these ` +
-  `are set — coverage may be incomplete and the founder should know why: cappedReasons "cap" or ` +
-  `"per_inbox" means the thread ceiling (cite the cap value) was reached and older mail wasn't read; ` +
-  `"listing_failure" means an inbox couldn't be read at all — a failure, not a coverage limit; ` +
+  `waiting on the founder — lead with these), 'no_reply' (never came back), or 'stalled' (they ` +
+  `replied but he answered last and a nudge is still judged owed). Report the names and days since ` +
+  `contact it returns; the company is derived from the email domain, so treat it as a hint rather ` +
+  `than a verified name. Then propose a create_task follow-up for each person worth chasing, so the ` +
+  `founder can confirm them. Cross-reference query_leads to say whether each person is already in ` +
+  `the pipeline. Whether a thread was included and how urgently it needs a nudge is judged per ` +
+  `thread by Jev when a TypeSafe key is configured; without one, or wherever Jev failed on a given ` +
+  `thread, judging degrades to a keyword heuristic with no urgency ranking — judgeStats.mode says ` +
+  `which ran, and degraded (with judgeStats.failures) says whether any thread fell back mid-run. ` +
+  `If followUps looks thin, explain why from the counts rather than guessing: excludedByJudge is ` +
+  `how many threads Jev decided weren't the founder's own outreach; notNudgeworthy is how many were ` +
+  `judged concluded (deal closed, declined, meeting booked) and so need no follow-up; ` +
+  `excludedSignoffOnly is how many the keyword heuristic dropped for failing both the subject-` +
+  `mentions-Pallisade and signed-off-as-Emil rules — this one only fires in heuristic mode, or for ` +
+  `an individual thread where Jev failed and the fallback also excluded it, so it stays nonzero even ` +
+  `when Jev is configured and mostly working. And say plainly, in your own words, whenever any of ` +
+  `these are set — coverage may be incomplete and the founder should know why: cappedReasons "cap" ` +
+  `or "per_inbox" means the thread ceiling (cite the cap value) was reached and older mail wasn't ` +
+  `read; "listing_failure" means an inbox couldn't be read at all — a failure, not a coverage limit; ` +
   `"empty_page_bail" means paging stopped early on a narrow query and there may be more behind it; ` +
   `listingFailures > 0 means that many inboxes couldn't be read; fetchFailures > 0 means that many ` +
   `threads were skipped; labelLookupFailed means the mailwarming safety net was inactive for an ` +
