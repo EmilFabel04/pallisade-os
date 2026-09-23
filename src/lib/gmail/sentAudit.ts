@@ -18,6 +18,27 @@ import {
   judgeThread, classifyThread, groupByRecipient, WARMING_LABEL,
   type FollowUp, type ScanMessage, type ScannedThread,
 } from "./sentScan";
+import { isConfigured as jevConfigured } from "@/lib/jev/client";
+import {
+  buildJudgeState, heuristicJudgement, runJudge,
+  type JudgeState, type ThreadJudgement,
+} from "./sentJudge";
+
+export type JudgeMode = "jev" | "heuristic" | "both";
+
+export interface JudgeStats {
+  mode: JudgeMode;
+  /** Threads actually sent to Jev. */
+  calls: number;
+  /** Threads that fell back after a Jev failure. */
+  failures: number;
+  inputTokens: number;
+  costUSD: number;
+  ms: number;
+  /** Compare mode only. */
+  agreements: number;
+  disagreements: number;
+}
 
 /** Newest-first thread ceiling for one audit. */
 export const SCAN_CAP = 400;
@@ -66,6 +87,9 @@ export interface SentAuditResult {
   /** Threads where they replied but the founder answered last: counted, not listed. */
   stalledNotShown: number;
   followUps: FollowUp[];
+  judgeStats: JudgeStats;
+  /** True when any thread fell back to the heuristic after a Jev failure. */
+  degraded: boolean;
 }
 
 interface RawMessage {
@@ -78,6 +102,17 @@ interface RawMessage {
 interface RawThread {
   id: string;
   messages?: RawMessage[];
+}
+
+/** A thread that survived fetching and has at least one message from the
+ *  founder, captured for judging after the per-account scan finishes. */
+interface Candidate {
+  raw: RawThread;
+  messages: ScanMessage[];
+  ourMessages: ScanMessage[];
+  subject: string;
+  labelNames: string[];
+  accountOwnEmails: Set<string>;
 }
 
 /**
@@ -164,7 +199,13 @@ function toScanMessages(messages: RawMessage[]): ScanMessage[] {
  * query. `opts.limit` caps the newest-first scan, clamped to [1, SCAN_CAP].
  */
 export async function auditSentFollowUps(
-  opts: { query?: string; limit?: number } = {},
+  opts: {
+    query?: string;
+    limit?: number;
+    judge?: JudgeMode;
+    /** Injected for tests; production uses the real fan-out. */
+    deps?: { runJudge?: typeof runJudge };
+  } = {},
 ): Promise<SentAuditResult> {
   const accounts = await listAccountInfo();
   const ownEmails = new Set(accounts.map((a) => a.email.trim().toLowerCase()));
@@ -189,6 +230,7 @@ export async function auditSentFollowUps(
   let excludedNoOwnMessage = 0;
   let stalledNotShown = 0;
   const kept: ScannedThread[] = [];
+  const candidates: Candidate[] = [];
 
   for (const account of accounts) {
     const [listed, labelResult] = await Promise.all([
@@ -252,35 +294,102 @@ export async function auditSentFollowUps(
       ];
       const subject = header(raw.messages[0].payload?.headers, "Subject");
 
-      const verdict = judgeThread({
+      candidates.push({
+        raw,
+        messages,
+        ourMessages,
         subject,
         labelNames: names,
-        ownMessageBodies: ourMessages.map((m) => m.text),
-      });
-      if (!verdict.included) {
-        if (verdict.reason === "warming_label") excludedWarming++;
-        else if (verdict.reason === "no_subject_no_signoff") excludedSignoffOnly++;
-        continue;
-      }
-
-      const bucket = classifyThread(messages, ownEmails);
-      if (bucket === "stalled") {
-        stalledNotShown++;
-        continue;
-      }
-
-      const lastOurs = ourMessages.map((m) => m.date).sort().pop() ?? "";
-      kept.push({
-        threadId: raw.id,
-        subject: subject || "(no subject)",
-        bucket,
-        lastSent: lastOurs,
-        recipients: ourMessages.flatMap((m) => m.to),
+        accountOwnEmails: new Set(ownEmails),
       });
     }
   }
 
-  const followUps = groupByRecipient(kept, ownEmails, new Date().toISOString());
+  const mode: JudgeMode = opts.judge ?? (jevConfigured() ? "jev" : "heuristic");
+  const todayIso = new Date().toISOString();
+  const startedAt = Date.now();
+
+  // The heuristic verdict is always computed: it is the fallback, and in
+  // compare mode it is the thing being compared against.
+  const heuristicRaw = candidates.map((c) =>
+    judgeThread({
+      subject: c.subject,
+      labelNames: c.labelNames,
+      ownMessageBodies: c.ourMessages.map((m) => m.text),
+    }),
+  );
+  const heuristicVerdicts = heuristicRaw.map(heuristicJudgement);
+
+  let jevRun: Awaited<ReturnType<typeof runJudge>> | null = null;
+  if (mode !== "heuristic" && candidates.length > 0) {
+    const states: JudgeState[] = candidates.map((c) =>
+      buildJudgeState({
+        subject: c.subject,
+        messages: c.messages,
+        ownEmails: c.accountOwnEmails,
+        todayIso,
+      }),
+    );
+    jevRun = await (opts.deps?.runJudge ?? runJudge)(states);
+  }
+
+  let degraded = false;
+  let agreements = 0;
+  let disagreements = 0;
+
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    const heuristic = heuristicVerdicts[i];
+    const jev = jevRun?.judgements[i] ?? null;
+
+    if (mode !== "heuristic" && !jev) degraded = true;
+
+    const judgement: ThreadJudgement = jev ?? heuristic;
+
+    let agrees: boolean | null = null;
+    if (mode === "both" && jev) {
+      agrees = jev.included === heuristic.included;
+      if (agrees) agreements++;
+      else disagreements++;
+    }
+
+    if (!judgement.included) {
+      const { reason } = heuristicRaw[i];
+      if (reason === "warming_label") excludedWarming++;
+      else if (reason === "no_subject_no_signoff") excludedSignoffOnly++;
+      continue;
+    }
+
+    const bucket = classifyThread(c.messages, c.accountOwnEmails);
+
+    // Stalled threads were dropped unseen before there was anything able to
+    // judge them. A Jev verdict is such a thing; the heuristic is not, so its
+    // behaviour is unchanged.
+    const dropStalled =
+      bucket === "stalled" && (judgement.source === "heuristic" || !judgement.needsNudge);
+    if (dropStalled) {
+      stalledNotShown++;
+      continue;
+    }
+
+    if (!judgement.needsNudge) {
+      stalledNotShown++;
+      continue;
+    }
+
+    const lastOurs = c.ourMessages.map((m) => m.date).sort().pop() ?? "";
+    kept.push({
+      threadId: c.raw.id,
+      subject: c.subject || "(no subject)",
+      bucket,
+      lastSent: lastOurs,
+      recipients: c.ourMessages.flatMap((m) => m.to),
+      judgement,
+      agrees,
+    });
+  }
+
+  const followUps = groupByRecipient(kept, ownEmails, todayIso);
 
   if (scanned >= cap) cappedReasons.add("cap");
 
@@ -298,5 +407,16 @@ export async function auditSentFollowUps(
     excludedNoOwnMessage,
     stalledNotShown,
     followUps,
+    judgeStats: {
+      mode,
+      calls: jevRun?.calls ?? 0,
+      failures: jevRun?.failures ?? 0,
+      inputTokens: jevRun?.inputTokens ?? 0,
+      costUSD: jevRun?.costUSD ?? 0,
+      ms: Date.now() - startedAt,
+      agreements,
+      disagreements,
+    },
+    degraded,
   };
 }

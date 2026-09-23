@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { unquotedBody, signedByFounder, judgeThread, classifyThread, groupByRecipient, type ScanMessage, type ScannedThread } from "@/lib/gmail/sentScan";
+import { heuristicJudgement } from "@/lib/gmail/sentJudge";
+import type { ThreadJudgement } from "@/lib/gmail/sentJudge";
 
 describe("unquotedBody", () => {
   it("cuts at a leading > quote marker", () => {
@@ -230,6 +232,8 @@ const thread = (over: Partial<ScannedThread> = {}): ScannedThread => ({
   bucket: "no_reply",
   lastSent: "2026-07-20T09:00:00Z",
   recipients: [{ name: "Jane Roe", email: "jane@acme.com" }],
+  judgement: heuristicJudgement({ included: true, reason: "subject" }),
+  agrees: null,
   ...over,
 });
 
@@ -245,6 +249,8 @@ describe("groupByRecipient", () => {
       subject: "Pallisade intro",
       threadId: "t1",
       bucket: "no_reply",
+      judgement: heuristicJudgement({ included: true, reason: "subject" }),
+      agrees: null,
     });
   });
 
@@ -299,5 +305,48 @@ describe("groupByRecipient", () => {
 
   it("returns [] for no threads", () => {
     expect(groupByRecipient([], ownSet, TODAY)).toEqual([]);
+  });
+});
+
+const judged = (urgency: ThreadJudgement["urgency"]): ThreadJudgement => ({
+  source: "jev", included: true, needsNudge: true, urgency, outreachProb: 0.9, nudgeProb: 0.9,
+});
+
+describe("groupByRecipient ranking", () => {
+  const rankedThread = (email: string, urgency: ThreadJudgement["urgency"], lastSent: string): ScannedThread => ({
+    threadId: `t-${email}`,
+    subject: "s",
+    bucket: "no_reply",
+    lastSent,
+    recipients: [{ name: email, email }],
+    judgement: judged(urgency),
+    agrees: null,
+  });
+
+  it("puts hot above warm regardless of age", () => {
+    const rows = groupByRecipient(
+      [
+        rankedThread("old@acme.co", "warm", "2026-08-01T09:00:00.000Z"),
+        rankedThread("new@acme.co", "hot", "2026-09-19T09:00:00.000Z"),
+      ],
+      new Set(["emil@pallisade.io"]),
+      "2026-09-20T09:00:00.000Z",
+    );
+
+    expect(rows.map((r) => r.email)).toEqual(["new@acme.co", "old@acme.co"]);
+  });
+
+  it("sorts unranked heuristic rows below every ranked one", () => {
+    const unranked: ScannedThread = {
+      ...rankedThread("plain@acme.co", null, "2026-09-19T09:00:00.000Z"),
+      judgement: heuristicJudgement({ included: true, reason: "subject" }),
+    };
+    const rows = groupByRecipient(
+      [unranked, rankedThread("dead@acme.co", "dead", "2026-08-01T09:00:00.000Z")],
+      new Set(["emil@pallisade.io"]),
+      "2026-09-20T09:00:00.000Z",
+    );
+
+    expect(rows.map((r) => r.email)).toEqual(["dead@acme.co", "plain@acme.co"]);
   });
 });

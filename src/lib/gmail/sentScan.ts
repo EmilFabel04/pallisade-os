@@ -5,6 +5,7 @@
 
 import type { MailAddress } from "./parse";
 import { companyFromEmail } from "./parse";
+import type { ThreadJudgement } from "./sentJudge";
 
 /** Gmail label whose threads are Apollo mailwarming traffic, never real outreach. */
 export const WARMING_LABEL = "Apollo Mailwarming";
@@ -208,6 +209,10 @@ export interface ScannedThread {
   /** ISO date of the founder's most recent message in the thread. */
   lastSent: string;
   recipients: MailAddress[];
+  /** How this thread was judged. */
+  judgement: ThreadJudgement;
+  /** Compare mode only: did the two judges agree on inclusion? null otherwise. */
+  agrees: boolean | null;
 }
 
 export interface FollowUp {
@@ -219,6 +224,8 @@ export interface FollowUp {
   subject: string;
   threadId: string;
   bucket: ThreadBucket;
+  judgement: ThreadJudgement;
+  agrees: boolean | null;
 }
 
 /** Whole days between two ISO dates, floored at 0. */
@@ -231,6 +238,11 @@ export function daysBetween(fromIso: string, toIso: string): number {
 
 /** awaiting_you is the costlier miss, so it sorts first. */
 const BUCKET_RANK: Record<ThreadBucket, number> = { awaiting_you: 0, no_reply: 1, stalled: 2 };
+
+/** Highest urgency first; an unranked (heuristic) row sorts below every ranked one. */
+const URGENCY_RANK: Record<string, number> = { hot: 0, warm: 1, low: 2, dead: 3 };
+const urgencyRank = (f: FollowUp) =>
+  f.judgement.urgency ? URGENCY_RANK[f.judgement.urgency] : 4;
 
 /**
  * One row per recipient, carrying their most recent thread. `todayIso` is passed
@@ -260,11 +272,16 @@ export function groupByRecipient(
         subject: t.subject,
         threadId: t.threadId,
         bucket: t.bucket,
+        judgement: t.judgement,
+        agrees: t.agrees,
       });
     }
   }
 
   return [...latest.values()].sort(
-    (a, b) => BUCKET_RANK[a.bucket] - BUCKET_RANK[b.bucket] || b.daysSince - a.daysSince,
+    (a, b) =>
+      urgencyRank(a) - urgencyRank(b) ||
+      BUCKET_RANK[a.bucket] - BUCKET_RANK[b.bucket] ||
+      b.daysSince - a.daysSince,
   );
 }
