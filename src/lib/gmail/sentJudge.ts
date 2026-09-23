@@ -102,7 +102,9 @@ export function buildJudgeState(input: {
     .map((x) => x.m);
 
   const messages: JudgeState["messages"] = [];
-  let used = 0;
+  // No initial value: the i === 0 branch below always runs first and assigns
+  // this before any later branch reads it.
+  let used!: number;
   for (let i = 0; i < ordered.length; i++) {
     const m = ordered[i];
     const text = unquotedBody(m.text).trim();

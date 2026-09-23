@@ -118,9 +118,14 @@ interface RawThread {
 }
 
 /** A thread that survived fetching and has at least one message from the
- *  founder, captured for judging after the per-account scan finishes. */
+ *  founder, captured for judging after the per-account scan finishes.
+ *
+ *  Holds only `threadId`, not the whole `RawThread` — at `SCAN_CAP` that raw
+ *  payload (every message, base64 bodies included) held for every candidate
+ *  across the whole scan is plausibly 100MB+ resident. `threadId` is the only
+ *  field ever read back off it afterwards. */
 interface Candidate {
-  raw: RawThread;
+  threadId: string;
   messages: ScanMessage[];
   ourMessages: ScanMessage[];
   subject: string;
@@ -310,7 +315,7 @@ export async function auditSentFollowUps(
       const subject = header(raw.messages[0].payload?.headers, "Subject");
 
       candidates.push({
-        raw,
+        threadId: raw.id,
         messages,
         ourMessages,
         subject,
@@ -411,7 +416,7 @@ export async function auditSentFollowUps(
 
     const lastOurs = c.ourMessages.map((m) => m.date).sort().pop() ?? "";
     kept.push({
-      threadId: c.raw.id,
+      threadId: c.threadId,
       subject: c.subject || "(no subject)",
       bucket,
       lastSent: lastOurs,
