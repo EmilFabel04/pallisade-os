@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { JudgeRun } from "@/lib/gmail/sentJudge";
 import { gmailGet } from "@/lib/gmail/client";
+import { listThreadIds } from "@/lib/gmail/gmailApi";
 import { WARMING_LABEL } from "@/lib/gmail/sentScan";
 
 vi.mock("@/lib/gmail/accounts", () => ({
@@ -188,12 +189,19 @@ describe("auditSentFollowUps in jev mode", () => {
 import { resolveEmailTool } from "@/lib/gmail/advisorEmail";
 
 describe("the advisor's audit tool", () => {
+  // This is the only place the real buildJudgeState → runJudge → judgeOne →
+  // interpretJudgement chain runs inside the audit; every other test injects
+  // deps.runJudge. Asserting mode === "jev" and the presence of a `judgement`
+  // property stays true even if interpretJudgement threw on every thread and
+  // every row fell back to the heuristic — this must assert a value that
+  // could only be resolved by the judge actually running.
   it("returns Jev-judged follow-ups, not the bare heuristic", async () => {
-    vi.stubEnv("TYPESAFE_API_KEY", "sk-test");
     const payload = JSON.parse(await resolveEmailTool("audit_sent_followups", { limit: 10 }));
 
-    expect(payload.judgeStats.mode).toBe("jev");
-    expect(payload.followUps[0]).toHaveProperty("judgement");
+    expect(payload.followUps[0].judgement.source).toBe("jev");
+    // The mocked evaluate() answers `urgency` with score: 3, which maps to "hot".
+    expect(payload.followUps[0].judgement.urgency).toBe("hot");
+    expect(payload.judgeStats.failures).toBe(0);
   });
 });
 
@@ -291,5 +299,91 @@ describe("auditSentFollowUps with a warming-labelled thread", () => {
 
     expect(res.followUps).toHaveLength(0);
     expect(res.excludedWarming).toBe(1);
+  });
+});
+
+// The judging pass rests on four positionally-aligned arrays (candidates,
+// heuristicRaw, heuristicVerdicts, jevRun.judgements), and every fixture
+// elsewhere in this file returns exactly one thread — index > 0 is never
+// exercised there. This is the test that proves alignment: three threads,
+// a *mixture* of stubbed runJudge results (a jev verdict, a null forcing
+// fallback, and a jev verdict with a different urgency), each asserted by
+// matching on the recipient's email rather than trusting array position.
+describe("auditSentFollowUps with multiple candidate threads", () => {
+  const messageTo = (recipient: string, text: string, date: string) => ({
+    labelIds: ["SENT"],
+    payload: {
+      headers: [
+        { name: "From", value: "emil@pallisade.io" },
+        { name: "To", value: recipient },
+        { name: "Subject", value: "Quick question" },
+        { name: "Date", value: date },
+      ],
+      body: { data: Buffer.from(text).toString("base64url") },
+    },
+    internalDate: String(Date.parse(date)),
+  });
+
+  const threadsById: Record<string, unknown> = {
+    t1: {
+      id: "t1",
+      messages: [messageTo("jane@acme.co", "Worth a chat?\n\nEmil", "Wed, 10 Sep 2026 09:00:00 +0000")],
+    },
+    t2: {
+      id: "t2",
+      messages: [messageTo("bob@example.com", "Worth a chat?\n\nEmil", "Wed, 10 Sep 2026 09:00:00 +0000")],
+    },
+    t3: {
+      id: "t3",
+      messages: [messageTo("carol@example.io", "Worth a chat?\n\nEmil", "Wed, 10 Sep 2026 09:00:00 +0000")],
+    },
+  };
+
+  beforeEach(() => {
+    vi.mocked(gmailGet).mockImplementation(async (_id: string, path: string) => {
+      if (path === "labels") return { labels: [{ id: "INBOX", name: "INBOX" }] };
+      const id = path.replace("threads/", "");
+      return threadsById[id];
+    });
+    vi.mocked(listThreadIds).mockResolvedValue({ ids: ["t1", "t2", "t3"], truncated: false });
+  });
+
+  afterEach(() => {
+    restoreDefaultGmailMock();
+    vi.mocked(listThreadIds).mockResolvedValue({ ids: ["t1"], truncated: false });
+  });
+
+  it("matches each thread's own judgement to its own recipient, not to its array position", async () => {
+    const res = await auditSentFollowUps({
+      judge: "jev",
+      deps: {
+        runJudge: vi.fn().mockResolvedValue(
+          jevRun({
+            judgements: [
+              // t1 → jane: a Jev verdict.
+              { source: "jev", included: true, needsNudge: true, urgency: "hot", outreachProb: 0.93, nudgeProb: 0.88 },
+              // t2 → bob: null, forcing a fallback to the heuristic (which
+              // includes it — the body is signed "Emil").
+              null,
+              // t3 → carol: a Jev verdict with a different urgency than t1's,
+              // so a desynchronised index would show up as a mismatch here.
+              { source: "jev", included: true, needsNudge: true, urgency: "warm", outreachProb: 0.8, nudgeProb: 0.75 },
+            ],
+            failures: 1,
+            calls: 3,
+          }),
+        ),
+      },
+    });
+
+    expect(res.followUps).toHaveLength(3);
+    const byEmail = new Map(res.followUps.map((f) => [f.email, f]));
+
+    expect(byEmail.get("jane@acme.co")?.judgement).toMatchObject({ source: "jev", urgency: "hot" });
+    expect(byEmail.get("bob@example.com")?.judgement).toMatchObject({ source: "heuristic", urgency: null });
+    expect(byEmail.get("carol@example.io")?.judgement).toMatchObject({ source: "jev", urgency: "warm" });
+
+    expect(res.degraded).toBe(true);
+    expect(res.judgeStats.failures).toBe(1);
   });
 });
