@@ -65,4 +65,21 @@ describe("POST /api/followups/run", () => {
     const res = await post({ limit: 50 });
     expect(res.status).toBe(502);
   });
+
+  // A multi-minute Gmail scan that finished successfully must not be thrown
+  // away because the store hiccuped on the write — persistence is best-effort.
+  it("still returns the completed run as a 200 when saveRun throws", async () => {
+    saveRun.mockRejectedValue(new Error("database hiccup"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await post({ limit: 50 });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.result.followUps).toHaveLength(1);
+    expect(saveRun).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+  });
 });

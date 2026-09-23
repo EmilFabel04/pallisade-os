@@ -7,6 +7,10 @@ import { uid, nowISO } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Up to 400 Gmail threads fetched at concurrency 8, then up to 400 Jev calls
+// at concurrency 12 (see SCAN_CAP, FETCH_CONCURRENCY, JUDGE_CONCURRENCY in
+// sentAudit.ts / sentJudge.ts). The same precedent as content/daily/route.ts:16.
+export const maxDuration = 300;
 
 const MODES: JudgeMode[] = ["jev", "heuristic", "both"];
 
@@ -28,15 +32,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "bad_judge_mode" }, { status: 400 });
   }
 
+  let run: { id: string; at: string; result: Awaited<ReturnType<typeof auditSentFollowUps>> };
   try {
     const result = await auditSentFollowUps({
       limit: body.limit,
       judge: body.judge as JudgeMode | undefined,
     });
-    const run = { id: uid(), at: nowISO(), result };
-    await saveRun(run);
-    return NextResponse.json(run);
+    run = { id: uid(), at: nowISO(), result };
   } catch (e) {
     return apiError(UPSTREAM_FAILED, 502, e);
   }
+
+  // Persistence is best-effort: a multi-minute Gmail scan that finished
+  // successfully must not be thrown away because the store hiccuped on the
+  // write. The branch's whole thesis is that one dependency failing costs a
+  // degradation, not the run — this route is where that applies to itself.
+  try {
+    await saveRun(run);
+  } catch (e) {
+    console.error("[followups] saveRun failed:", e instanceof Error ? e.message : e);
+  }
+
+  return NextResponse.json(run);
 }
