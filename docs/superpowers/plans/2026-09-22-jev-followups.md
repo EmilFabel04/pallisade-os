@@ -297,7 +297,7 @@ export async function evaluate(
 - [ ] **Step 5: Run the tests**
 
 Run: `npx vitest run src/lib/jev/client.test.ts`
-Expected: PASS, 8 tests.
+Expected: PASS, 9 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -1375,7 +1375,7 @@ vi.mock("@/lib/jev/client", () => ({
 ```
 
 Run: `npx vitest run src/lib/gmail/sentAudit.test.ts`
-Expected: PASS, 8 tests.
+Expected: PASS, 9 tests.
 
 - [ ] **Step 11: Run the whole suite**
 
