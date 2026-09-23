@@ -47,8 +47,8 @@ const EMAIL_APPENDIX =
   `judged concluded (deal closed, declined, meeting booked) and so need no follow-up; ` +
   `excludedSignoffOnly is how many the keyword heuristic dropped for failing both the subject-` +
   `mentions-Pallisade and signed-off-as-Emil rules — this one only fires in heuristic mode, or for ` +
-  `an individual thread where Jev failed and the fallback also excluded it, so it stays nonzero even ` +
-  `when Jev is configured and mostly working. And say plainly, in your own words, whenever any of ` +
+  `an individual thread where Jev failed and the fallback also excluded it. It is nonzero only ` +
+  `in heuristic mode or where individual threads fell back. And say plainly, in your own words, whenever any of ` +
   `these are set — coverage may be incomplete and the founder should know why: cappedReasons "cap" ` +
   `or "per_inbox" means the thread ceiling (cite the cap value) was reached and older mail wasn't ` +
   `read; "listing_failure" means an inbox couldn't be read at all — a failure, not a coverage limit; ` +

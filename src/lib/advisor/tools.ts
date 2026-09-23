@@ -117,7 +117,7 @@ export const EMAIL_TOOLS: ToolDef[] = [
       "'awaiting_you' (they replied last — most urgent), 'no_reply' (they never replied), or " +
       "'stalled' (they replied but he answered last and Jev judged a nudge still owed — heuristic " +
       "mode never surfaces this bucket). Also returns scan diagnostics, including judgeStats.mode " +
-      "and degraded (true if any thread fell back to the heuristic). Never invent recipients.",
+      "and degraded (true if Jev was expected to judge and failed for at least one thread). Never invent recipients.",
     input_schema: obj({
       query: s("extra Gmail search terms to narrow the scan, e.g. 'subject:Pallisade' or 'newer_than:90d'. Optional."),
       limit: n("max threads to scan, default and maximum 400"),

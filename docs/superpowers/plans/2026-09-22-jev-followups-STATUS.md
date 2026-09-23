@@ -497,10 +497,16 @@ None of the following blocks a merge. Two are worth reading before the rest:
   there was no test exercising more than one candidate at a time (see Task 4's deferred
   minors, above, before this wave resolved it). That gap is now closed — `9465d62`, the
   multi-candidate alignment test, matches each result to its recipient by email rather
-  than trusting array position — so this fix is unblocked: whoever picks it up next has
-  a test that will fail loudly if the reindexing is wrong, where before it would have
-  shipped green. It was still deliberately left for a follow-up rather than folded into
-  the final wave, to keep that wave's scope to what its brief named.
+  than trusting array position, guarding the `candidates ↔ jevRun.judgements` axis —
+  so this fix is unblocked, with one caveat: the test's fixture threads all produce
+  identical heuristic verdicts (same subject, same Emil sign-off, all reason `signoff`),
+  so permuting the `heuristicRaw`/`heuristicVerdicts` array remains unobservable to it.
+  The heuristic-verdict axis is NOT covered. Before this fix ships, give the fixture
+  one thread the heuristic excludes, so that axis is actually pinned before the
+  reindexing changes. Where before it would have shipped green, this test now catches
+  breakage on the Jev-judgement axis — but the next person to touch this code should
+  close the heuristic gap first. It was still deliberately left for a follow-up rather
+  than folded into the final wave, to keep that wave's scope to what its brief named.
 - **The `followUpRuns` test mock does not interpret `ORDER BY`.** Task 5's hand-written
   libsql mock returns rows in whatever order the test inserted them, not in the order
   the real `ORDER BY at DESC` clause would produce. A reversed sort direction in that SQL
