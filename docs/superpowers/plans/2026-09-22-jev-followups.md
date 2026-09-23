@@ -1375,7 +1375,7 @@ vi.mock("@/lib/jev/client", () => ({
 ```
 
 Run: `npx vitest run src/lib/gmail/sentAudit.test.ts`
-Expected: PASS, 9 tests.
+Expected: PASS, 8 tests.
 
 - [ ] **Step 11: Run the whole suite**
 
