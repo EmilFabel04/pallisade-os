@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { JudgeRun } from "@/lib/gmail/sentJudge";
+import { gmailGet } from "@/lib/gmail/client";
 
 vi.mock("@/lib/gmail/accounts", () => ({
   listAccountInfo: vi.fn().mockResolvedValue([{ id: "a1", email: "emil@pallisade.io" }]),
@@ -169,5 +170,65 @@ describe("the advisor's audit tool", () => {
 
     expect(payload.judgeStats.mode).toBe("jev");
     expect(payload.followUps[0]).toHaveProperty("judgement");
+  });
+});
+
+// A thread where the founder wrote first, they replied, and the founder answered
+// last — classifyThread's "stalled" bucket. Before this task every such thread
+// was discarded unconditionally; this pins the behaviour change that makes
+// Jev's needs_nudge the one that decides instead, while the heuristic (having
+// no opinion on stalled threads) keeps dropping them exactly as before.
+describe("auditSentFollowUps with a stalled thread", () => {
+  const stalledThreadRaw = {
+    id: "t-stalled",
+    messages: [
+      message("jane@acme.co", "Sounds good, let's talk.", "Mon, 08 Sep 2026 09:00:00 +0000"),
+      message("emil@pallisade.io", "Great, following up.\n\nEmil", "Wed, 10 Sep 2026 09:00:00 +0000"),
+    ],
+  };
+
+  beforeEach(() => {
+    vi.mocked(gmailGet).mockImplementation(async (_id: string, path: string) => {
+      if (path === "labels") return { labels: [{ id: "INBOX", name: "INBOX" }] };
+      return stalledThreadRaw;
+    });
+  });
+
+  afterEach(() => {
+    // Restore the single-message default so this fixture never leaks into a
+    // test defined elsewhere in the file.
+    vi.mocked(gmailGet).mockImplementation(async (_id: string, path: string) => {
+      if (path === "labels") return { labels: [{ id: "INBOX", name: "INBOX" }] };
+      return {
+        id: "t1",
+        messages: [message("emil@pallisade.io", "Worth a chat?\n\nEmil", "Wed, 10 Sep 2026 09:00:00 +0000")],
+      };
+    });
+  });
+
+  it("keeps a stalled thread when Jev says it needs a nudge", async () => {
+    const res = await auditSentFollowUps({
+      judge: "jev",
+      deps: {
+        runJudge: vi.fn().mockResolvedValue(
+          jevRun({
+            judgements: [{
+              source: "jev", included: true, needsNudge: true,
+              urgency: "warm", outreachProb: 0.9, nudgeProb: 0.7,
+            }],
+          }),
+        ),
+      },
+    });
+
+    expect(res.followUps).toHaveLength(1);
+    expect(res.followUps[0].bucket).toBe("stalled");
+  });
+
+  it("still drops the same stalled thread in heuristic mode", async () => {
+    const res = await auditSentFollowUps({ judge: "heuristic" });
+
+    expect(res.followUps).toHaveLength(0);
+    expect(res.stalledNotShown).toBe(1);
   });
 });
