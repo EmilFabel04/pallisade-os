@@ -673,7 +673,7 @@ export function heuristicJudgement(verdict: InclusionResult): ThreadJudgement {
 - [ ] **Step 4: Run the tests**
 
 Run: `npx vitest run src/lib/gmail/sentJudge.test.ts`
-Expected: PASS, 17 tests.
+Expected: PASS, 16 tests.
 
 - [ ] **Step 5: Mutate the threshold and confirm a test dies**
 
@@ -850,7 +850,7 @@ export async function runJudge(
 - [ ] **Step 4: Run the tests**
 
 Run: `npx vitest run src/lib/gmail/sentJudge.test.ts`
-Expected: PASS, 22 tests.
+Expected: PASS, 21 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1065,15 +1065,14 @@ Then after the account loop, before `groupByRecipient`, judge them:
 
   // The heuristic verdict is always computed: it is the fallback, and in
   // compare mode it is the thing being compared against.
-  const heuristicVerdicts = candidates.map((c) =>
-    heuristicJudgement(
-      judgeThread({
-        subject: c.subject,
-        labelNames: c.labelNames,
-        ownMessageBodies: c.ourMessages.map((m) => m.text),
-      }),
-    ),
+  const heuristicRaw = candidates.map((c) =>
+    judgeThread({
+      subject: c.subject,
+      labelNames: c.labelNames,
+      ownMessageBodies: c.ourMessages.map((m) => m.text),
+    }),
   );
+  const heuristicVerdicts = heuristicRaw.map(heuristicJudgement);
 
   let jevRun: Awaited<ReturnType<typeof runJudge>> | null = null;
   if (mode !== "heuristic" && candidates.length > 0) {
@@ -1109,11 +1108,7 @@ Then after the account loop, before `groupByRecipient`, judge them:
     }
 
     if (!judgement.included) {
-      const reason = judgeThread({
-        subject: c.subject,
-        labelNames: c.labelNames,
-        ownMessageBodies: c.ourMessages.map((m) => m.text),
-      }).reason;
+      const { reason } = heuristicRaw[i];
       if (reason === "warming_label") excludedWarming++;
       else if (reason === "no_subject_no_signoff") excludedSignoffOnly++;
       continue;
