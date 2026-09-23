@@ -76,16 +76,29 @@ export interface SentAuditResult {
    *  Apollo mailwarming. */
   labelLookupFailed: boolean;
   /** Threads that failed both the subject and sign-off rules. A looser sign-off
-   *  rule would start admitting these — the number to watch if results look thin. */
+   *  rule would start admitting these — the number to watch if results look thin.
+   *  Heuristic-sourced exclusions only; a Jev exclusion counts in `excludedByJudge`
+   *  instead, since is_my_outreach has no equivalent reason taxonomy. */
   excludedSignoffOnly: number;
   excludedWarming: number;
+  /** Threads Jev judged not to be the founder's outreach. Counted separately from
+   *  `excludedSignoffOnly` because is_my_outreach fully replaces judgeThread's
+   *  inclusion decision in jev mode — without this counter a Jev exclusion left
+   *  every exclusion counter at zero, an unexplained gap between `scanned` and
+   *  `matched`. */
+  excludedByJudge: number;
   /** Threads where no message could be attributed to the founder, so they were skipped
    *  rather than emitting a row that can never render. This is a residual guard against
    *  malformed From headers, not an alias diagnostic: the query is in:sent, so every
    *  listed thread has a SENT-labelled message whose From is harvested into the own set. */
   excludedNoOwnMessage: number;
-  /** Threads where they replied but the founder answered last: counted, not listed. */
+  /** Threads where they replied but the founder answered last (bucket `stalled`),
+   *  dropped because the heuristic has no opinion on stalled threads or because
+   *  the judge said none is owed: counted, not listed. */
   stalledNotShown: number;
+  /** Threads the judge said need no follow-up now, whatever their bucket: counted,
+   *  not listed. Distinct from `stalledNotShown`, which is the stalled bucket only. */
+  notNudgeworthy: number;
   followUps: FollowUp[];
   judgeStats: JudgeStats;
   /** True when any thread fell back to the heuristic after a Jev failure. */
@@ -227,8 +240,10 @@ export async function auditSentFollowUps(
   let listingFailures = 0;
   let excludedSignoffOnly = 0;
   let excludedWarming = 0;
+  let excludedByJudge = 0;
   let excludedNoOwnMessage = 0;
   let stalledNotShown = 0;
+  let notNudgeworthy = 0;
   const kept: ScannedThread[] = [];
   const candidates: Candidate[] = [];
 
@@ -339,6 +354,17 @@ export async function auditSentFollowUps(
 
   for (let i = 0; i < candidates.length; i++) {
     const c = candidates[i];
+
+    // A label is a fact, not a judgement — the same principle that keeps
+    // classifyThread out of the judge's hands. is_my_outreach fully replaces
+    // judgeThread's inclusion decision in jev mode, and Jev has no notion of
+    // Apollo mailwarming, so this check runs unconditionally, in every mode,
+    // before the judge's verdict is consulted at all.
+    if (c.labelNames.some((n) => n.toLowerCase() === WARMING_LABEL.toLowerCase())) {
+      excludedWarming++;
+      continue;
+    }
+
     const heuristic = heuristicVerdicts[i];
     const jev = jevRun?.judgements[i] ?? null;
 
@@ -354,9 +380,15 @@ export async function auditSentFollowUps(
     }
 
     if (!judgement.included) {
-      const { reason } = heuristicRaw[i];
-      if (reason === "warming_label") excludedWarming++;
-      else if (reason === "no_subject_no_signoff") excludedSignoffOnly++;
+      // Attribute the exclusion to whichever judge actually made it.
+      // judgeThread's reasons (now that warming is filtered above) only ever
+      // explain a heuristic-sourced exclusion; is_my_outreach has no such
+      // taxonomy, so a Jev exclusion gets its own counter.
+      if (judgement.source === "jev") {
+        excludedByJudge++;
+      } else if (heuristicRaw[i].reason === "no_subject_no_signoff") {
+        excludedSignoffOnly++;
+      }
       continue;
     }
 
@@ -373,7 +405,7 @@ export async function auditSentFollowUps(
     }
 
     if (!judgement.needsNudge) {
-      stalledNotShown++;
+      notNudgeworthy++;
       continue;
     }
 
@@ -404,8 +436,10 @@ export async function auditSentFollowUps(
     labelLookupFailed,
     excludedSignoffOnly,
     excludedWarming,
+    excludedByJudge,
     excludedNoOwnMessage,
     stalledNotShown,
+    notNudgeworthy,
     followUps,
     judgeStats: {
       mode,

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { JudgeRun } from "@/lib/gmail/sentJudge";
 import { gmailGet } from "@/lib/gmail/client";
+import { WARMING_LABEL } from "@/lib/gmail/sentScan";
 
 vi.mock("@/lib/gmail/accounts", () => ({
   listAccountInfo: vi.fn().mockResolvedValue([{ id: "a1", email: "emil@pallisade.io" }]),
@@ -64,6 +65,25 @@ const jevRun = (over: Partial<JudgeRun> = {}): JudgeRun => ({
   ...over,
 });
 
+const defaultThreadRaw = {
+  id: "t1",
+  messages: [message("emil@pallisade.io", "Worth a chat?\n\nEmil", "Wed, 10 Sep 2026 09:00:00 +0000")],
+};
+
+/** Point the shared gmailGet mock at a specific label set + thread. Used by
+ *  describe blocks below that need a fixture other than the module-level
+ *  default, scoped with their own beforeEach/afterEach so it can't leak. */
+function mockGmailThread(labels: { id: string; name: string }[], thread: unknown) {
+  vi.mocked(gmailGet).mockImplementation(async (_id: string, path: string) => {
+    if (path === "labels") return { labels };
+    return thread;
+  });
+}
+
+function restoreDefaultGmailMock() {
+  mockGmailThread([{ id: "INBOX", name: "INBOX" }], defaultThreadRaw);
+}
+
 beforeEach(() => vi.clearAllMocks());
 
 describe("auditSentFollowUps in jev mode", () => {
@@ -119,6 +139,8 @@ describe("auditSentFollowUps in jev mode", () => {
     });
 
     expect(res.followUps).toHaveLength(0);
+    expect(res.notNudgeworthy).toBe(1);
+    expect(res.stalledNotShown).toBe(0);
   });
 
   it("never calls Jev in heuristic mode", async () => {
@@ -158,6 +180,8 @@ describe("auditSentFollowUps in jev mode", () => {
 
     expect(res.judgeStats.disagreements).toBe(1);
     expect(res.followUps).toHaveLength(0);
+    expect(res.excludedByJudge).toBe(1);
+    expect(res.excludedSignoffOnly).toBe(0);
   });
 });
 
@@ -188,22 +212,13 @@ describe("auditSentFollowUps with a stalled thread", () => {
   };
 
   beforeEach(() => {
-    vi.mocked(gmailGet).mockImplementation(async (_id: string, path: string) => {
-      if (path === "labels") return { labels: [{ id: "INBOX", name: "INBOX" }] };
-      return stalledThreadRaw;
-    });
+    mockGmailThread([{ id: "INBOX", name: "INBOX" }], stalledThreadRaw);
   });
 
   afterEach(() => {
     // Restore the single-message default so this fixture never leaks into a
     // test defined elsewhere in the file.
-    vi.mocked(gmailGet).mockImplementation(async (_id: string, path: string) => {
-      if (path === "labels") return { labels: [{ id: "INBOX", name: "INBOX" }] };
-      return {
-        id: "t1",
-        messages: [message("emil@pallisade.io", "Worth a chat?\n\nEmil", "Wed, 10 Sep 2026 09:00:00 +0000")],
-      };
-    });
+    restoreDefaultGmailMock();
   });
 
   it("keeps a stalled thread when Jev says it needs a nudge", async () => {
@@ -230,5 +245,51 @@ describe("auditSentFollowUps with a stalled thread", () => {
 
     expect(res.followUps).toHaveLength(0);
     expect(res.stalledNotShown).toBe(1);
+  });
+});
+
+// A label is a fact, not a judgement: the Apollo mailwarming safety net must
+// hold even when is_my_outreach would have included the thread on its content
+// alone — the model has no notion of Apollo mailwarming. This is the test
+// that fails if that net is ever removed again.
+describe("auditSentFollowUps with a warming-labelled thread", () => {
+  const warmingThreadRaw = {
+    id: "t-warming",
+    messages: [
+      {
+        ...message("emil@pallisade.io", "Hi there,\n\nEmil", "Wed, 10 Sep 2026 09:00:00 +0000"),
+        labelIds: ["SENT", "WARM_ID"],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    mockGmailThread(
+      [{ id: "INBOX", name: "INBOX" }, { id: "WARM_ID", name: WARMING_LABEL }],
+      warmingThreadRaw,
+    );
+  });
+
+  afterEach(() => {
+    restoreDefaultGmailMock();
+  });
+
+  it("excludes a warming-labelled thread even when Jev would include it", async () => {
+    const res = await auditSentFollowUps({
+      judge: "jev",
+      deps: {
+        runJudge: vi.fn().mockResolvedValue(
+          jevRun({
+            judgements: [{
+              source: "jev", included: true, needsNudge: true,
+              urgency: "hot", outreachProb: 0.95, nudgeProb: 0.9,
+            }],
+          }),
+        ),
+      },
+    });
+
+    expect(res.followUps).toHaveLength(0);
+    expect(res.excludedWarming).toBe(1);
   });
 });
