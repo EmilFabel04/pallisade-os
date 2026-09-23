@@ -9,7 +9,7 @@ import { Panel } from "@/components/ui/Panel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FollowUpRow } from "@/components/followups/FollowUpRow";
 import { ComparePanel } from "@/components/followups/ComparePanel";
-import { visibleFollowUps } from "@/lib/gmail/followUpFilter";
+import { isDismissed, visibleFollowUps } from "@/lib/gmail/followUpFilter";
 import { addDaysISO, todayISO } from "@/lib/utils";
 import { buildInteraction } from "@/lib/advisor/applyAction";
 import type { FollowUp } from "@/lib/gmail/sentScan";
@@ -22,17 +22,23 @@ export default function FollowUpsPage() {
   const router = useRouter();
 
   const [configured, setConfigured] = useState<{ gmail: boolean; jev: boolean } | null>(null);
+  const [accountCount, setAccountCount] = useState<number | null>(null);
   const [run, setRun] = useState<FollowUpRun | null>(null);
   const [limit, setLimit] = useState(150);
   const [compare, setCompare] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
 
   useEffect(() => {
     fetch("/api/followups")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
       .then((d) => {
         setConfigured(d.configured);
+        setAccountCount(typeof d.accountCount === "number" ? d.accountCount : null);
         setRun(d.run ?? null);
       })
       .catch(() => setError("Could not read the follow-up status."));
@@ -58,9 +64,21 @@ export default function FollowUpsPage() {
   // Hide anyone the founder already marked handled, or actively snoozed —
   // the predicate (and its future/past/no-state boundaries) is pinned by
   // unit tests in lib/gmail/followUpFilter.test.ts.
+  const allFollowUps = run?.result.followUps ?? [];
   const rows = useMemo(
-    () => visibleFollowUps(run?.result.followUps ?? [], store.followUpState, todayISO()),
-    [run, store.followUpState],
+    () => visibleFollowUps(allFollowUps, store.followUpState, todayISO()),
+    [allFollowUps, store.followUpState],
+  );
+  // The recipients that filter hid — mainly "handled", which (unlike a
+  // snooze) never expires on its own. Without some way back, a mis-click on
+  // "handled" removes someone from every future audit permanently.
+  const stateByEmail = useMemo(
+    () => new Map(store.followUpState.map((s) => [s.email, s])),
+    [store.followUpState],
+  );
+  const hidden = useMemo(
+    () => allFollowUps.filter((f) => isDismissed(stateByEmail.get(f.email), todayISO())),
+    [allFollowUps, stateByEmail],
   );
   const stats = run?.result.judgeStats;
 
@@ -69,6 +87,11 @@ export default function FollowUpsPage() {
     const patch = { status, until: status === "snoozed" ? addDaysISO(todayISO(), 7) : null };
     if (existing) store.update("followUpState", existing.id, patch);
     else store.create("followUpState", { email, ...patch });
+  };
+
+  const restore = (email: string) => {
+    const existing = store.followUpState.find((s) => s.email === email);
+    if (existing) store.remove("followUpState", existing.id);
   };
 
   const logInteraction = (f: FollowUp) => {
@@ -98,7 +121,32 @@ export default function FollowUpsPage() {
     });
   };
 
+  // Three distinct "can't show you anything" states, not one. `configured.gmail`
+  // is only an env check (GOOGLE_CLIENT_ID / SECRET present) — it says nothing
+  // about whether an inbox is actually linked. Collapsing all three into "Nobody
+  // is waiting on you" would be, in this audit's own words, the worst possible
+  // wrong answer: a confident, cheerful lie about coverage that was never there.
   if (configured && !configured.gmail) {
+    return (
+      <div className="space-y-5">
+        <PageHeader title="Follow-ups" subtitle="Who is owed a reply, judged per thread." />
+        <Panel>
+          <EmptyState
+            icon={MailWarning}
+            title="Gmail isn't set up yet"
+            message="This install has no Google OAuth credentials configured, so there's no sent mail to read. Set that up on the Inbox page first."
+            action={
+              <button className="btn btn-accent" onClick={() => router.push("/inbox")}>
+                Go to Inbox
+              </button>
+            }
+          />
+        </Panel>
+      </div>
+    );
+  }
+
+  if (configured && configured.gmail && accountCount === 0) {
     return (
       <div className="space-y-5">
         <PageHeader title="Follow-ups" subtitle="Who is owed a reply, judged per thread." />
@@ -186,26 +234,69 @@ export default function FollowUpsPage() {
 
       {compare && stats && <ComparePanel stats={stats} />}
 
-      <Panel title="Owed a reply" noPad>
-        {rows.length === 0 ? (
+      <Panel
+        title="Owed a reply"
+        noPad
+        action={
+          hidden.length > 0 ? (
+            <button
+              onClick={() => setShowHidden((s) => !s)}
+              className="text-[0.74rem] text-[var(--color-muted)] hover:text-[var(--color-ink)] transition-colors"
+            >
+              {hidden.length} hidden · {showHidden ? "hide" : "show"}
+            </button>
+          ) : undefined
+        }
+      >
+        {rows.length === 0 && hidden.length === 0 ? (
           <EmptyState
             icon={MailWarning}
             title={run ? "Nobody is waiting on you" : "No audit yet"}
             message={run ? "Every thread in the last scan is handled." : "Run an audit to scan your sent mail."}
           />
         ) : (
-          rows.map((f) => (
-            <FollowUpRow
-              key={f.email}
-              followUp={f}
-              compare={compare}
-              onOpen={() => router.push("/inbox")}
-              onLog={() => logInteraction(f)}
-              onTask={() => createTask(f)}
-              onHandled={() => dismiss(f.email, "handled")}
-              onSnooze={() => dismiss(f.email, "snoozed")}
-            />
-          ))
+          <>
+            {rows.length === 0 && (
+              <p className="p-4 text-[0.8rem] text-[var(--color-dim)]">
+                Nobody is waiting on you — everyone else is hidden.
+              </p>
+            )}
+            {rows.map((f) => (
+              <FollowUpRow
+                key={f.email}
+                followUp={f}
+                compare={compare}
+                onOpen={() => router.push("/inbox")}
+                onLog={() => logInteraction(f)}
+                onTask={() => createTask(f)}
+                onHandled={() => dismiss(f.email, "handled")}
+                onSnooze={() => dismiss(f.email, "snoozed")}
+              />
+            ))}
+            {showHidden &&
+              hidden.map((f) => {
+                const state = stateByEmail.get(f.email);
+                return (
+                  <div
+                    key={f.email}
+                    className="flex items-center gap-3 border-b border-[var(--color-line)] px-4 py-2.5 text-[0.8rem] text-[var(--color-dim)]"
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {f.name} <span className="text-[var(--color-dim)]">— {f.company}</span>
+                    </span>
+                    <span className="shrink-0 text-[0.72rem]">
+                      {state?.status === "handled" ? "handled" : "snoozed"}
+                    </span>
+                    <button
+                      onClick={() => restore(f.email)}
+                      className="shrink-0 text-[0.76rem] text-[var(--color-muted)] hover:text-[var(--color-ink)] underline-offset-2 hover:underline transition-colors"
+                    >
+                      Undo
+                    </button>
+                  </div>
+                );
+              })}
+          </>
         )}
       </Panel>
     </div>
