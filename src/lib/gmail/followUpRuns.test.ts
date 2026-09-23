@@ -51,7 +51,29 @@ describe("followUpRuns", () => {
     expect(all.map((r) => r.id)).toEqual(["r2", "r1"]);
   });
 
-  it("keeps ten runs of history", () => {
+  it("prunes to the newest RUN_HISTORY runs when the cap is exceeded", async () => {
     expect(RUN_HISTORY).toBe(10);
+
+    // Saved in ascending `at` order, r1 oldest .. r12 newest — this insertion
+    // order is why the mock's DELETE arm (keep the first N of an array built
+    // by unshift) agrees with the real SQL (keep the newest N by `at DESC`).
+    // They agree here only because insertion order matches temporal order;
+    // the mock does not independently sort by `at`.
+    for (let i = 1; i <= 12; i++) {
+      await saveRun(run(`r${i}`, `2026-09-${String(i).padStart(2, "0")}T09:00:00.000Z`));
+    }
+
+    // Ask for more than RUN_HISTORY back. listRuns's own default LIMIT would
+    // mask a broken prune (it caps reads at RUN_HISTORY regardless of what
+    // saveRun did), so this must request a larger limit to prove the DELETE
+    // in saveRun actually removed rows from the table rather than merely
+    // relying on the read side to truncate the response.
+    const all = await listRuns(20);
+    const ids = all.map((r) => r.id);
+
+    expect(all).toHaveLength(10);
+    expect(ids[0]).toBe("r12"); // newest first
+    expect(ids).not.toContain("r1"); // oldest, pruned
+    expect(ids).not.toContain("r2"); // second-oldest, pruned
   });
 });
