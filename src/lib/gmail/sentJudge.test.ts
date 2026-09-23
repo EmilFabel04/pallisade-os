@@ -228,24 +228,36 @@ describe("runJudge", () => {
   });
 
   it("yields null for a thread whose call failed, without failing the run", async () => {
-    const evaluate = vi
-      .fn()
-      .mockResolvedValueOnce(reply)
-      .mockRejectedValueOnce(new JevError("jev 529"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const evaluate = vi
+        .fn()
+        .mockResolvedValueOnce(reply)
+        .mockRejectedValueOnce(new JevError("jev 529"));
 
-    const run = await runJudge([state, state], { evaluate });
+      const run = await runJudge([state, state], { evaluate });
 
-    expect(run.judgements[0]?.source).toBe("jev");
-    expect(run.judgements[1]).toBeNull();
-    expect(run.failures).toBe(1);
+      expect(run.judgements[0]?.source).toBe("jev");
+      expect(run.judgements[1]).toBeNull();
+      expect(run.failures).toBe(1);
+      expect(errSpy).toHaveBeenCalledWith("[followups] jev judge failed:", "jev 529");
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("yields null when the response parses but the answers are wrong", async () => {
-    const evaluate = vi.fn().mockResolvedValue({ ...reply, answers: {} });
-    const run = await runJudge([state], { evaluate });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const evaluate = vi.fn().mockResolvedValue({ ...reply, answers: {} });
+      const run = await runJudge([state], { evaluate });
 
-    expect(run.judgements[0]).toBeNull();
-    expect(run.failures).toBe(1);
+      expect(run.judgements[0]).toBeNull();
+      expect(run.failures).toBe(1);
+      expect(errSpy).toHaveBeenCalledWith("[followups] jev judge failed:", 'jev answer "is_my_outreach" was not a noul');
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("respects bounded concurrency", async () => {
