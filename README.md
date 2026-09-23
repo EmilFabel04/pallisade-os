@@ -45,6 +45,7 @@ populated? **Settings → Data → Load demo data** drops in a full sample datas
 | ---------------- | -------------------------------------------------------------- |
 | `/`              | Dashboard — metrics, today's focus, pipeline, follow-ups, activity, AI tomorrow plan |
 | `/leads`         | CRM with full filtering (status, source, industry, quality, follow-up) |
+| `/follow-ups`    | Who is owed a reply, judged and ranked per thread by Jev        |
 | `/interactions`  | Call / interaction notes + **Generate Call Summary** (AI)      |
 | `/projects`      | Project tracker with linked tasks                              |
 | `/tasks`         | Tasks with Today / This Week / Overdue / Sales / Product / Delivery views |

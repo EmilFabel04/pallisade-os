@@ -93,6 +93,7 @@ Project → Settings → Environment Variables:
 | `GOOGLE_CLIENT_ID` | existing Gmail/Calendar/Drive client |
 | `GOOGLE_CLIENT_SECRET` | existing Gmail/Calendar/Drive client |
 | `OPENAI_API_KEY` | optional — voice transcription |
+| `TYPESAFE_API_KEY` | optional — Jev judges the `/follow-ups` sent-mail audit per thread; without it the audit falls back to the keyword heuristic, nothing breaks |
 
 > Do **not** set `NODE_ENV` — Vercel sets it to `production`, which makes the auth
 > gate enforce. The local dev bypass can never trigger in production.
