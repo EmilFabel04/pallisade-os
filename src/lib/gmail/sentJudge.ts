@@ -249,8 +249,9 @@ export async function runJudge(
         const { judgement, inputTokens: used } = await judgeOne(states[i], evaluate);
         judgements[i] = judgement;
         inputTokens += used;
-      } catch {
+      } catch (err) {
         failures++;
+        console.error("[followups] jev judge failed:", err instanceof Error ? err.message : err);
       }
     }
   });

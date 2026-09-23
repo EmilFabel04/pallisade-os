@@ -248,7 +248,57 @@ describe("runJudge", () => {
     expect(run.failures).toBe(1);
   });
 
-  it("stays under Jev's rate ceiling", () => {
+  it("respects bounded concurrency", async () => {
+    let maxConcurrency = 0;
+    let currentConcurrency = 0;
+
+    // Pre-allocate deferreds for each state
+    const deferreds: Array<{ resolve: () => void; promise: Promise<void> }> = [];
+    for (let i = 0; i < 30; i++) {
+      let resolve: () => void = () => {};
+      const promise = new Promise<void>((r) => {
+        resolve = r;
+      });
+      deferreds.push({ resolve, promise });
+    }
+
+    let callIndex = 0;
+    const evaluate = vi.fn(async (state, questions) => {
+      const myCallIndex = callIndex++;
+      currentConcurrency++;
+      maxConcurrency = Math.max(maxConcurrency, currentConcurrency);
+
+      // Wait for this specific deferred to be resolved
+      await deferreds[myCallIndex].promise;
+
+      currentConcurrency--;
+      return reply;
+    });
+
+    // Start the run with 30 states (more than JUDGE_CONCURRENCY)
+    const runPromise = runJudge(Array(30).fill(state), { evaluate });
+
+    // Spin until all JUDGE_CONCURRENCY workers have made their first call
+    // Yield to the event loop to let workers progress
+    while (callIndex < JUDGE_CONCURRENCY) {
+      await Promise.resolve();
+    }
+
+    // Now all workers should be blocked on their deferreds
+    // Resolve all deferreds to let them proceed
+    for (const deferred of deferreds) {
+      deferred.resolve();
+    }
+
+    const run = await runPromise;
+
+    // Prove concurrency is real: more than one call was in flight
+    expect(maxConcurrency).toBeGreaterThan(1);
+    // Prove the bound is real: never exceeded JUDGE_CONCURRENCY
+    expect(maxConcurrency).toBeLessThanOrEqual(JUDGE_CONCURRENCY);
+    // Prove JUDGE_CONCURRENCY respects Jev's ceiling
     expect(JUDGE_CONCURRENCY).toBeLessThanOrEqual(20);
+    // Verify we processed all states
+    expect(run.judgements).toHaveLength(30);
   });
 });
