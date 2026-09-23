@@ -11,17 +11,20 @@ primary decision-maker wherever `TYPESAFE_API_KEY` is set, with the heuristic ke
 as an automatic, per-thread fallback. The audit is exposed through two API routes and a
 new `/follow-ups` page. This file records what each task built, the two deliberate
 behaviour changes worth knowing about before touching this code again, the mutation
-sweep, every real defect the branch's reviews found, the deferred minors, and — stated
-plainly rather than invented — what has and has not actually been verified.
+sweep, every real defect the branch's reviews found, a pre-merge whole-branch review and
+the fix wave it triggered (see **Final wave — whole-branch review**, below), the
+deferred minors as they now stand, and — stated plainly rather than invented — what has
+and has not actually been verified.
 
 ## Where it stands
 
-Suite: **1169 tests passing across 108 files** (confirmed again while writing this
-document; the branch's own progression was 1116 → 1169 across the eight tasks).
-`npx tsc --noEmit` clean. `npm run build` passes. `GET /api/followups` (the page's
-status endpoint) returns 200. Mutation sweeps ran on Tasks 2, 4 and 5 — every mutant
-introduced was killed; see **Mutation testing** below, including a correction to how
-this repo's mutation script reports success.
+Suite: **1175 tests passing across 109 files** after the final whole-branch-review fix
+wave (see **Final wave — whole-branch review**, below); it stood at 1169/108 when
+Task 8 first wrote this document, itself the endpoint of a 1116 → 1169 progression
+across the eight tasks. `npx tsc --noEmit` clean. `npm run build` passes.
+`GET /api/followups` (the page's status endpoint) returns 200. Mutation sweeps ran on
+Tasks 2, 4 and 5 — every mutant introduced was killed; see **Mutation testing** below,
+including a correction to how this repo's mutation script reports success.
 
 | Task | State |
 | --- | --- |
@@ -156,15 +159,24 @@ completion. Mutation killed both before and after the fix round; the warming-net
 restoration was additionally hand-verified load-bearing (removed, watched the test
 fail, restored).
 
-Deferred minors: `URGENCY_RANK` is typed `Record<string, number>`, which defeats the
-compiler on a renamed level (should be `Record<Urgency, number>`); `Candidate.raw`
-retains the full Gmail payload for the whole scan to read one id; no audit-level test
-exercises more than one candidate at a time, so a partial degrade (some threads
-succeed, some fall back) is never exercised end to end; `auditSentFollowUps` is now 222
-lines and the judging pass would extract cleanly as `judgeCandidates()`; test
-housekeeping — `afterEach` hand-duplicates the `vi.mock` factory default, and
-`vi.stubEnv("TYPESAFE_API_KEY")` is inert and never unstubbed, leaking into two later
-tests.
+Deferred minors, four of five resolved in the final whole-branch-review fix wave (see
+**Final wave — whole-branch review**, below): `URGENCY_RANK` was typed
+`Record<string, number>`, which defeated the compiler on a renamed level —
+**resolved**, retyped `Record<Urgency, number>` in `7565efd`. `Candidate.raw` retained
+the full Gmail payload for the whole scan to read one id — **resolved**, replaced with
+`threadId: string` in `bbea84e`, which in the same commit also fixed an unflagged dead
+`let used = 0` in `sentJudge.ts`'s `buildJudgeState` (Task 2's file — never itself
+recorded as a deferred minor in this document, but caught in the same pass). No
+audit-level test exercised more than one candidate at a time, so a partial-degrade run
+was never exercised end to end — **resolved**, a three-thread mixed-verdict test (one
+Jev verdict, one fallback, one Jev verdict at a different urgency, matched by recipient
+email rather than array index) added in `9465d62`. Of the test-housekeeping pair,
+`vi.stubEnv("TYPESAFE_API_KEY")` being inert and never unstubbed is **resolved** —
+removed in `9465d62` — but `afterEach` hand-duplicating the `vi.mock` factory default
+instead of resetting it is **not**: the new multi-candidate test added in the same
+commit follows the existing pattern rather than fixing it. Still open, and explicitly
+out of scope for the final wave: `auditSentFollowUps` is still 222 lines and its
+judging pass would still extract cleanly as a `judgeCandidates()` helper.
 
 Two items were explicitly flagged to this final review for merge triage rather than
 fixed in Task 4 — see **Deferred minors, triaged** below.
@@ -228,8 +240,11 @@ response body, only the server console; the forwarding closures still pin what e
 test claims.
 
 5/5 route tests, full suite 1161/107 files. Deferred minors: the `GET` route's
-`apiError` catch branch is unexercised; the 502 test deliberately emits
-`apiError`'s `console.error` — intentional, matching other negative-path tests
+`apiError` catch branch was unexercised — **resolved** in the final whole-branch-review
+fix wave, `35a1730`, which added `src/app/api/followups/route.test.ts` (4 tests,
+including a `latestRun()` failure surfacing as a 502) alongside unrelated work on that
+same route (see **Final wave — whole-branch review**, below); the 502 test deliberately
+emits `apiError`'s `console.error` — intentional, matching other negative-path tests
 elsewhere in this repo.
 
 ### Task 7 — The `/follow-ups` page (`bbe5bdb`)
@@ -390,7 +405,9 @@ What evidence does exist, and no more than this:
 - `npm run build` — passes; `/follow-ups`, `/api/followups` and `/api/followups/run`
   all present as routes in the build output.
 - `GET /follow-ups` (and `GET /api/followups`) — returns 200.
-- **1169 tests passing across 108 files**, reconfirmed while writing this document.
+- **1169 tests passing across 108 files**, reconfirmed while writing this document
+  (superseded by the final wave, below: 1175 tests across 109 files, `tsc` and
+  `npm run build` reconfirmed clean).
 - Mutation sweeps on Tasks 2, 4 and 5, all mutants killed.
 
 What remains outstanding, and is the first thing to do the next time the founder opens
@@ -402,20 +419,88 @@ often Jev and the keyword heuristic actually disagree. A visual check of the pag
 they should, does a snooze/handled action actually hide a row — is equally outstanding
 and equally cheap to do in the same sitting.
 
+**This is still true after the final whole-branch-review fix wave, and if anything it
+now matters more, not less.** That wave (see below) added three distinct empty states
+to `/follow-ups` — credentials missing, credentials present but no account linked, and
+linked-but-nothing-owed, replacing the single binary check that was there before — plus
+a "N hidden · show" toggle and an undo action for a mis-clicked "handled." None of this
+has been seen rendered either, for the same structural reason given above: the
+auth/store-hydration splash screen still blocks an automated request from reaching it.
+`tsc`, `vitest` and `next build` confirm the code compiles, type-checks, and the route
+still prerenders; none of them confirm a human looking at the page sees the right state
+at the right time. These are exactly the states a human would check first: disconnect
+Gmail entirely and confirm the first empty state renders; leave Gmail configured with no
+account linked and confirm the second, distinct from the first; mark someone handled,
+reload, and confirm the "N hidden" toggle appears and its undo action actually brings
+them back. That check remains outstanding.
+
+## Final wave — whole-branch review
+
+Before merge, a whole-branch review ran over the full diff — all eight tasks together,
+not per-task — and returned **"Fix first," no Critical findings**, judging the Jev
+engine and its per-thread heuristic-fallback contract sound. What it caught is
+structural, and is exactly the kind of thing eight isolated task reviews cannot catch by
+construction: each of the per-task reviews above checked one task's diff against its own
+task's concerns, correctly scoped to what that task touched. None of them was scoped to
+notice that the *branch as a whole* had changed what `audit_sent_followups` returns
+without updating the surfaces that tell a model what it returns. `tools.ts`'s tool
+description, `advisor/route.ts`'s system-prompt appendix, and three read-only agents
+(`pipeline-analyst.md`, `deal-strategist.md`, `strategist.md`) all still described the
+pre-Jev keyword-only audit and its two buckets, six tasks after Task 4 made inclusion a
+Jev judgement and added a third bucket (`stalled`). The whole-branch review also caught
+that the one test exercising the real `buildJudgeState → runJudge → judgeOne →
+interpretJudgement` chain end to end (`sentAudit.test.ts`, "the advisor's audit tool")
+asserted only `judgeStats.mode === "jev"` and the presence of a `judgement` property on
+the result — both of which stay true even if `interpretJudgement` threw on every thread
+and every row fell back to the heuristic. As written, it would have passed against a
+judge that never ran.
+
+Ten items were fixed in response, across six commits: the multi-candidate alignment test
+(`9465d62`, written first, before any source change — see Task 4's deferred minors,
+above); `Candidate.raw` and the dead `sentJudge.ts` initializer (`bbea84e`);
+`URGENCY_RANK`'s typing (`7565efd`); the four doc surfaces named above (`9bd73e3`);
+making run persistence best-effort and budgeting `maxDuration` on the run route
+(`51c7013`); and distinguishing "no inbox linked" from "nothing owed," guarding the
+page's status fetch on `res.ok`, and making a mis-clicked "handled" recoverable
+(`35a1730`). A scratch report written during that session covered each item's full
+before/after detail; it does not survive past that session, so this document — updated
+in the same wave — is now the complete durable record.
+
+Suite after the wave: **1175 tests passing across 109 files** (was 1169/108 going in).
+`npx tsc --noEmit` clean. `npm run build` passes.
+
+Two things the wave explicitly did not do, both intentionally, per the fix-wave's own
+brief: restructure `auditSentFollowUps` into a `judgeCandidates()` helper, and touch the
+warming-filter batching. Both remain in **Deferred minors**, below — the warming item
+with an updated note on why it is now unblocked.
+
 ## Deferred minors — triage list for whoever merges
 
 None of the following blocks a merge. Two are worth reading before the rest:
 
 - **Warming-labelled candidates are still sent to Jev, and billed, before being
-  discarded.** The unconditional warming-label filter added in Task 4 (see **The Apollo
-  mailwarming net**) runs in the per-thread judging loop, *after* the full candidate
-  batch has already been built and (in jev mode) sent to `runJudge`. In practice this is
-  small: the Gmail query already excludes the warming label server-side, so a warming
-  thread reaching the judging loop at all should be rare (a label-lookup failure, a
-  label rename, a newly-added account). But when it does happen, that thread is a real,
-  billed Jev call whose answer is then thrown away. The fix is straightforward — move
-  the warming check ahead of state-building instead of ahead of judgement-consultation —
-  and was deliberately left for a follow-up rather than expanding Task 4's scope.
+  discarded — still outstanding, but now unblocked.** The unconditional warming-label
+  filter added in Task 4 (see **The Apollo mailwarming net**) runs in the per-thread
+  judging loop, *after* the full candidate batch has already been built and (in jev
+  mode) sent to `runJudge`. In practice this is small: the Gmail query already excludes
+  the warming label server-side, so a warming thread reaching the judging loop at all
+  should be rare (a label-lookup failure, a label rename, a newly-added account). But
+  when it does happen, that thread is a real, billed Jev call whose answer is then
+  thrown away. The fix is straightforward to describe — move the warming check ahead of
+  state-building instead of ahead of judgement-consultation — but it touches exactly the
+  four positionally-aligned arrays (`candidates`, `heuristicRaw`, `heuristicVerdicts`,
+  `jevRun.judgements`) that the judging pass depends on. A naive version of this fix
+  filters warming-labelled threads out of `candidates` before `states` is built from it,
+  while `heuristicRaw`/`heuristicVerdicts` are still computed from the *un*filtered
+  array (or drops indices unevenly some other way) — desynchronising the four arrays
+  silently. Until the final whole-branch-review wave, nothing would have caught that:
+  there was no test exercising more than one candidate at a time (see Task 4's deferred
+  minors, above, before this wave resolved it). That gap is now closed — `9465d62`, the
+  multi-candidate alignment test, matches each result to its recipient by email rather
+  than trusting array position — so this fix is unblocked: whoever picks it up next has
+  a test that will fail loudly if the reindexing is wrong, where before it would have
+  shipped green. It was still deliberately left for a follow-up rather than folded into
+  the final wave, to keep that wave's scope to what its brief named.
 - **The `followUpRuns` test mock does not interpret `ORDER BY`.** Task 5's hand-written
   libsql mock returns rows in whatever order the test inserted them, not in the order
   the real `ORDER BY at DESC` clause would produce. A reversed sort direction in that SQL
@@ -437,26 +522,23 @@ The rest, grouped by task, all tagged `minor (deferred)` in the execution ledger
 - **Task 3** — `JudgeRun.calls` is always `=== states.length` under current semantics
   (nothing currently short-circuits before all states are dispatched); no test covers
   `runJudge([])`.
-- **Task 4** — `URGENCY_RANK` is typed `Record<string, number>` instead of
-  `Record<Urgency, number>`, so a renamed urgency level would defeat the compiler
-  instead of failing to build; `Candidate.raw` retains the full Gmail thread payload for
-  the life of the scan just to read one id off it later; no audit-level test exercises
-  more than one candidate at a time, so a partial-degrade run (some threads judged by
-  Jev, some fallen back to the heuristic, in the same audit) is never exercised
-  end-to-end; `auditSentFollowUps` is now 222 lines and its judging pass would extract
-  cleanly as a `judgeCandidates()` helper; test housekeeping — `afterEach` hand-
-  duplicates the `vi.mock` factory default instead of resetting it, and
-  `vi.stubEnv("TYPESAFE_API_KEY")` in one test is inert and never unstubbed, leaking
-  into two later tests (harmless today, fragile if those tests are reordered).
+- **Task 4** — four of the five items originally listed here were resolved in the final
+  whole-branch-review fix wave; see the updated paragraph under **Task 4**, above, for
+  full detail and commit references (`URGENCY_RANK`'s typing, `Candidate.raw`, the
+  missing multi-candidate test, and the `vi.stubEnv` leak). Still open: `auditSentFollowUps`
+  is 222 lines and its judging pass would extract cleanly as a `judgeCandidates()`
+  helper (explicitly out of scope for that wave); `afterEach` in `sentAudit.test.ts`
+  still hand-duplicates the `vi.mock` factory default instead of resetting it.
 - **Task 5** — no secondary sort key on `followUpRuns.at`, so boundary selection between
   two runs saved in the same instant is SQLite-implementation-defined; `saveRun` is an
   `INSERT` then a separate `DELETE` (two `execute()` calls) where the sibling
   `savePosts` uses one `batch()` — a crash between the two calls leaves a stale extra
   row until the next save prunes it (self-healing, not silent data loss).
-- **Task 6** — the `GET /api/followups` route's `apiError` catch branch is unexercised
-  by any test; the 502 test for the run route deliberately emits `apiError`'s
-  `console.error` line, which is intentional and matches other negative-path tests
-  elsewhere in this repo, not an oversight.
+- **Task 6** — the `GET /api/followups` route's `apiError` catch branch was
+  unexercised by any test — resolved in the final whole-branch-review fix wave
+  (`35a1730`), which added `src/app/api/followups/route.test.ts`; the 502 test for the
+  run route deliberately emits `apiError`'s `console.error` line, which is intentional
+  and matches other negative-path tests elsewhere in this repo, not an oversight.
 - **Task 7** — a snooze hides a recipient for 6 full days plus two partial days rather
   than a clean 7, a consequence of comparing date-only strings; there is no distinct
   loading state during the brief window before `/api/followups` resolves on first
