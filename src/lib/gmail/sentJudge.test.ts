@@ -1,0 +1,166 @@
+import { describe, it, expect } from "vitest";
+import {
+  buildJudgeState, interpretJudgement, heuristicJudgement,
+  JUDGE_QUESTIONS, STATE_CHAR_BUDGET, URGENCY_LEVELS,
+} from "@/lib/gmail/sentJudge";
+import { JevError, type JevAnswer } from "@/lib/jev/types";
+import type { ScanMessage } from "@/lib/gmail/sentScan";
+
+const own = new Set(["emil@pallisade.io"]);
+
+const msg = (over: Partial<ScanMessage> = {}): ScanMessage => ({
+  from: "emil@pallisade.io",
+  to: [{ name: "Jane Roe", email: "jane@acme.co" }],
+  date: "2026-09-10T09:00:00.000Z",
+  text: "Worth a chat?",
+  ...over,
+});
+
+const answers = (over: Record<string, JevAnswer> = {}): Record<string, JevAnswer> => ({
+  is_my_outreach: { type: "noul", noul: 0.9 },
+  needs_nudge: { type: "noul", noul: 0.8 },
+  urgency: {
+    type: "score", score: 2.0, legend: {}, probabilities: {}, confidence: 0.9,
+  },
+  ...over,
+});
+
+describe("buildJudgeState", () => {
+  it("labels the founder's messages and the counterparty's", () => {
+    const state = buildJudgeState({
+      subject: "Pilot scope",
+      messages: [msg(), msg({ from: "jane@acme.co", text: "Let me think." })],
+      ownEmails: own,
+      todayIso: "2026-09-20T09:00:00.000Z",
+    });
+
+    expect(state.messages.map((m) => m.author)).toEqual(["them", "founder"]);
+  });
+
+  it("orders newest first so truncation drops the oldest", () => {
+    const state = buildJudgeState({
+      subject: "s",
+      messages: [
+        msg({ date: "2026-09-01T09:00:00.000Z", text: "oldest" }),
+        msg({ date: "2026-09-11T09:00:00.000Z", text: "newest" }),
+      ],
+      ownEmails: own,
+      todayIso: "2026-09-20T09:00:00.000Z",
+    });
+
+    expect(state.messages[0].text).toBe("newest");
+  });
+
+  it("strips quoted text before the model sees it", () => {
+    const state = buildJudgeState({
+      subject: "s",
+      messages: [msg({ text: "Following up.\n\nEmil\n\n> old thread\n> more" })],
+      ownEmails: own,
+      todayIso: "2026-09-20T09:00:00.000Z",
+    });
+
+    expect(state.messages[0].text).not.toContain("old thread");
+  });
+
+  it("truncates the whole state to the character budget", () => {
+    const state = buildJudgeState({
+      subject: "s",
+      messages: Array.from({ length: 40 }, (_, i) =>
+        msg({ date: `2026-09-${String(i + 1).padStart(2, "0")}T09:00:00.000Z`, text: "x".repeat(500) }),
+      ),
+      ownEmails: own,
+      todayIso: "2026-09-20T09:00:00.000Z",
+    });
+
+    const chars = state.messages.reduce((n, m) => n + m.text.length, 0);
+    expect(chars).toBeLessThanOrEqual(STATE_CHAR_BUDGET);
+    expect(state.messages.length).toBeGreaterThan(0);
+  });
+
+  it("counts days since the founder's most recent message", () => {
+    const state = buildJudgeState({
+      subject: "s",
+      messages: [msg({ date: "2026-09-10T09:00:00.000Z" })],
+      ownEmails: own,
+      todayIso: "2026-09-20T09:00:00.000Z",
+    });
+
+    expect(state.daysSinceLastSent).toBe(10);
+  });
+});
+
+describe("JUDGE_QUESTIONS", () => {
+  it("keeps the urgency score inside Jev's 2-10 level range", () => {
+    expect(JUDGE_QUESTIONS.urgency.criteria.length).toBe(URGENCY_LEVELS.length);
+    expect(JUDGE_QUESTIONS.urgency.criteria.length).toBeGreaterThanOrEqual(2);
+    expect(JUDGE_QUESTIONS.urgency.criteria.length).toBeLessThanOrEqual(10);
+  });
+});
+
+describe("interpretJudgement", () => {
+  it("includes and nudges when both probabilities clear the thresholds", () => {
+    const j = interpretJudgement(answers());
+    expect(j).toMatchObject({ source: "jev", included: true, needsNudge: true, urgency: "warm" });
+    expect(j.nudgeProb).toBe(0.8);
+  });
+
+  it("excludes a thread below the outreach threshold", () => {
+    const j = interpretJudgement(answers({ is_my_outreach: { type: "noul", noul: 0.49 } }));
+    expect(j.included).toBe(false);
+  });
+
+  it("includes exactly at the outreach threshold", () => {
+    const j = interpretJudgement(answers({ is_my_outreach: { type: "noul", noul: 0.5 } }));
+    expect(j.included).toBe(true);
+  });
+
+  it("does not nudge a concluded thread", () => {
+    const j = interpretJudgement(answers({ needs_nudge: { type: "noul", noul: 0.2 } }));
+    expect(j.needsNudge).toBe(false);
+  });
+
+  it("rounds a fractional score to the nearest urgency level", () => {
+    const score = (n: number): JevAnswer => ({
+      type: "score", score: n, legend: {}, probabilities: {}, confidence: 0.9,
+    });
+    expect(interpretJudgement(answers({ urgency: score(0.2) })).urgency).toBe("dead");
+    expect(interpretJudgement(answers({ urgency: score(2.6) })).urgency).toBe("hot");
+  });
+
+  it("clamps a score outside the legend rather than indexing past the end", () => {
+    const j = interpretJudgement(answers({
+      urgency: { type: "score", score: 99, legend: {}, probabilities: {}, confidence: 0.9 },
+    }));
+    expect(j.urgency).toBe("hot");
+  });
+
+  it("throws when an answer is missing, so the caller can fall back", () => {
+    const partial = answers();
+    delete partial.needs_nudge;
+    expect(() => interpretJudgement(partial)).toThrow(JevError);
+  });
+
+  it("throws when an answer is the wrong primitive", () => {
+    expect(() =>
+      interpretJudgement(answers({ needs_nudge: { type: "choice", choice: "yes", probabilities: {}, confidence: 1 } })),
+    ).toThrow(JevError);
+  });
+});
+
+describe("heuristicJudgement", () => {
+  it("carries the inclusion verdict and admits it cannot rank", () => {
+    const j = heuristicJudgement({ included: true, reason: "subject" });
+    expect(j).toEqual({
+      source: "heuristic",
+      included: true,
+      needsNudge: true,
+      urgency: null,
+      outreachProb: null,
+      nudgeProb: null,
+    });
+  });
+
+  it("never nudges a thread it excluded", () => {
+    expect(heuristicJudgement({ included: false, reason: "warming_label" }).needsNudge).toBe(false);
+  });
+});
