@@ -109,10 +109,15 @@ export const EMAIL_TOOLS: ToolDef[] = [
     }) },
   { name: "audit_sent_followups", description:
       "Audit the founder's SENT mail to find people who owe him a reply or who he left hanging. " +
-      "Scans sent threads newest-first, skips Apollo mailwarming, and keeps threads whose subject " +
-      "mentions Pallisade or where he signed off as Emil. Returns one row per recipient with a bucket: " +
-      "'awaiting_you' (they replied last — most urgent) or 'no_reply' (they never replied). " +
-      "Also returns scan diagnostics. Never invent recipients.",
+      "Scans sent threads newest-first and skips Apollo mailwarming. Whether a thread counts as his " +
+      "outreach, and how urgently it needs a nudge, is judged per thread by Jev (TypeSafe's model) " +
+      "when a TypeSafe key is configured; without one — or when Jev fails on a given thread — that " +
+      "thread falls back to a keyword heuristic (subject mentions Pallisade, or he signed off as " +
+      "Emil) that has no notion of urgency. Returns one row per recipient with a bucket: " +
+      "'awaiting_you' (they replied last — most urgent), 'no_reply' (they never replied), or " +
+      "'stalled' (they replied but he answered last and Jev judged a nudge still owed — heuristic " +
+      "mode never surfaces this bucket). Also returns scan diagnostics, including judgeStats.mode " +
+      "and degraded (true if Jev was expected to judge and failed for at least one thread). Never invent recipients.",
     input_schema: obj({
       query: s("extra Gmail search terms to narrow the scan, e.g. 'subject:Pallisade' or 'newer_than:90d'. Optional."),
       limit: n("max threads to scan, default and maximum 400"),

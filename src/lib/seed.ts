@@ -876,6 +876,7 @@ export function seedData(): DataShape {
     projectThreads: [],
     quotes: [],
     comparables: [],
+    followUpState: [],
     settings: DEFAULT_SETTINGS,
   };
 }

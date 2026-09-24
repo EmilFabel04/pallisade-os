@@ -5,7 +5,7 @@ import { getAgent, AgentNotFound } from "@/lib/agents/registry";
 import { runAgent, DEFAULT_MODEL } from "@/lib/agents/runtime";
 import { renderBody } from "@/lib/agents/render";
 import { formatAttachmentsBlock } from "@/lib/brain/attachments";
-import { resolveAvailability, resolveDriveAccountId } from "@/lib/brain/availability";
+import { resolveAvailability, resolveDriveAccountId, resolveFathomEnabled } from "@/lib/brain/availability";
 import { buildSnapshot } from "@/lib/advisorClient";
 import type { AgentContext, AgentSpec } from "@/lib/agents/types";
 import type { AdvisorSnapshot } from "@/lib/types";
@@ -132,6 +132,7 @@ export async function POST(req: Request) {
     emailEnabled,
     calendarEnabled,
     driveAccountId,
+    fathomEnabled: resolveFathomEnabled(spec),
   };
 
   let rendered = renderBody(spec.body, ctx);

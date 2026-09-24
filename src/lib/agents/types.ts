@@ -64,4 +64,10 @@ export interface AgentContext {
    * never what is in it.
    */
   projectSnapshot: ProjectSnapshot | null;
+  /**
+   * Whether FATHOM_API_KEY is set. Resolved server-side; the browser never
+   * supplies it. The `fathom` group grants nothing when false, so an agent
+   * cannot receive tools that answer every call "not connected".
+   */
+  fathomEnabled: boolean;
 }

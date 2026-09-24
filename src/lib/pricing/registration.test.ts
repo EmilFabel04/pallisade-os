@@ -12,6 +12,7 @@ const EMPTY_SHAPE = {
   brainThreads: [], newsFeed: [], newsInterests: [], newsBookmarks: [], notes: [],
   metricEntries: [], milestones: [], projectThreads: [],
   quotes: [], comparables: [],
+  followUpState: [],
   settings: DEFAULT_SETTINGS,
 } as DataShape;
 

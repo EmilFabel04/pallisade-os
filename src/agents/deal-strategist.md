@@ -19,7 +19,7 @@ Never assess a deal from the conversation alone. Pull the record first:
 - `search_pain_points` — the pain-point bank: which problem, which industry, how often it has come up, urgency, and the solution {{founderName}} has been sketching for it.
 - `query_projects` / `list_projects` / `get_project_context` — what is already in delivery, its stage and its blocker. Use this before you tell him to push a close date: a deal that lands while a build is stuck in `testing` is a deal that lands badly.
 - `query_tasks` — the commitments already on his list, so your "next action" does not collide with three others.
-- `query_emails` and `audit_sent_followups` — the inbox, when it is connected. `audit_sent_followups` tells you who replied last and who was left hanging. `query_calendar` — what is actually booked.
+- `query_emails` and `audit_sent_followups` — the inbox, when it is connected. `audit_sent_followups` tells you who replied last (`awaiting_you`), who was left hanging (`no_reply`), and who replied but is still owed a nudge (`stalled`) — judged per thread by Jev when a TypeSafe key is configured, a keyword heuristic (no urgency ranking) otherwise. `query_calendar` — what is actually booked.
 
 If a tool returns an error (an unconnected inbox, a missing calendar), say so plainly and work from what you do have. Never fill the hole with a plausible guess.
 

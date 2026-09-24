@@ -39,6 +39,7 @@ export const COLLECTIONS = [
   "projectThreads",
   "quotes",
   "comparables",
+  "followUpState",
 ] as const;
 export type Coll = (typeof COLLECTIONS)[number];
 

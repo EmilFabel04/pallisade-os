@@ -11,7 +11,7 @@ function ctx(): AgentContext {
   return {
     today: "2026-08-13", businessName: "P", founderName: "E", services: "S",
     snapshot: null, proposals: [], emailEnabled: false, calendarEnabled: false,
-    driveAccountId: null, projectSnapshot: null,
+    driveAccountId: null, projectSnapshot: null, fathomEnabled: false,
   };
 }
 

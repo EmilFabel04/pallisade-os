@@ -18,6 +18,27 @@ import {
   judgeThread, classifyThread, groupByRecipient, WARMING_LABEL,
   type FollowUp, type ScanMessage, type ScannedThread,
 } from "./sentScan";
+import { isConfigured as jevConfigured } from "@/lib/jev/client";
+import {
+  buildJudgeState, heuristicJudgement, runJudge,
+  type JudgeState, type ThreadJudgement,
+} from "./sentJudge";
+
+export type JudgeMode = "jev" | "heuristic" | "both";
+
+export interface JudgeStats {
+  mode: JudgeMode;
+  /** Threads actually sent to Jev. */
+  calls: number;
+  /** Threads that fell back after a Jev failure. */
+  failures: number;
+  inputTokens: number;
+  costUSD: number;
+  ms: number;
+  /** Compare mode only. */
+  agreements: number;
+  disagreements: number;
+}
 
 /** Newest-first thread ceiling for one audit. */
 export const SCAN_CAP = 400;
@@ -55,17 +76,33 @@ export interface SentAuditResult {
    *  Apollo mailwarming. */
   labelLookupFailed: boolean;
   /** Threads that failed both the subject and sign-off rules. A looser sign-off
-   *  rule would start admitting these — the number to watch if results look thin. */
+   *  rule would start admitting these — the number to watch if results look thin.
+   *  Heuristic-sourced exclusions only; a Jev exclusion counts in `excludedByJudge`
+   *  instead, since is_my_outreach has no equivalent reason taxonomy. */
   excludedSignoffOnly: number;
   excludedWarming: number;
+  /** Threads Jev judged not to be the founder's outreach. Counted separately from
+   *  `excludedSignoffOnly` because is_my_outreach fully replaces judgeThread's
+   *  inclusion decision in jev mode — without this counter a Jev exclusion left
+   *  every exclusion counter at zero, an unexplained gap between `scanned` and
+   *  `matched`. */
+  excludedByJudge: number;
   /** Threads where no message could be attributed to the founder, so they were skipped
    *  rather than emitting a row that can never render. This is a residual guard against
    *  malformed From headers, not an alias diagnostic: the query is in:sent, so every
    *  listed thread has a SENT-labelled message whose From is harvested into the own set. */
   excludedNoOwnMessage: number;
-  /** Threads where they replied but the founder answered last: counted, not listed. */
+  /** Threads where they replied but the founder answered last (bucket `stalled`),
+   *  dropped because the heuristic has no opinion on stalled threads or because
+   *  the judge said none is owed: counted, not listed. */
   stalledNotShown: number;
+  /** Threads the judge said need no follow-up now, whatever their bucket: counted,
+   *  not listed. Distinct from `stalledNotShown`, which is the stalled bucket only. */
+  notNudgeworthy: number;
   followUps: FollowUp[];
+  judgeStats: JudgeStats;
+  /** True when any thread fell back to the heuristic after a Jev failure. */
+  degraded: boolean;
 }
 
 interface RawMessage {
@@ -78,6 +115,22 @@ interface RawMessage {
 interface RawThread {
   id: string;
   messages?: RawMessage[];
+}
+
+/** A thread that survived fetching and has at least one message from the
+ *  founder, captured for judging after the per-account scan finishes.
+ *
+ *  Holds only `threadId`, not the whole `RawThread` — at `SCAN_CAP` that raw
+ *  payload (every message, base64 bodies included) held for every candidate
+ *  across the whole scan is plausibly 100MB+ resident. `threadId` is the only
+ *  field ever read back off it afterwards. */
+interface Candidate {
+  threadId: string;
+  messages: ScanMessage[];
+  ourMessages: ScanMessage[];
+  subject: string;
+  labelNames: string[];
+  accountOwnEmails: Set<string>;
 }
 
 /**
@@ -164,7 +217,13 @@ function toScanMessages(messages: RawMessage[]): ScanMessage[] {
  * query. `opts.limit` caps the newest-first scan, clamped to [1, SCAN_CAP].
  */
 export async function auditSentFollowUps(
-  opts: { query?: string; limit?: number } = {},
+  opts: {
+    query?: string;
+    limit?: number;
+    judge?: JudgeMode;
+    /** Injected for tests; production uses the real fan-out. */
+    deps?: { runJudge?: typeof runJudge };
+  } = {},
 ): Promise<SentAuditResult> {
   const accounts = await listAccountInfo();
   const ownEmails = new Set(accounts.map((a) => a.email.trim().toLowerCase()));
@@ -186,9 +245,12 @@ export async function auditSentFollowUps(
   let listingFailures = 0;
   let excludedSignoffOnly = 0;
   let excludedWarming = 0;
+  let excludedByJudge = 0;
   let excludedNoOwnMessage = 0;
   let stalledNotShown = 0;
+  let notNudgeworthy = 0;
   const kept: ScannedThread[] = [];
+  const candidates: Candidate[] = [];
 
   for (const account of accounts) {
     const [listed, labelResult] = await Promise.all([
@@ -252,35 +314,119 @@ export async function auditSentFollowUps(
       ];
       const subject = header(raw.messages[0].payload?.headers, "Subject");
 
-      const verdict = judgeThread({
+      candidates.push({
+        threadId: raw.id,
+        messages,
+        ourMessages,
         subject,
         labelNames: names,
-        ownMessageBodies: ourMessages.map((m) => m.text),
-      });
-      if (!verdict.included) {
-        if (verdict.reason === "warming_label") excludedWarming++;
-        else if (verdict.reason === "no_subject_no_signoff") excludedSignoffOnly++;
-        continue;
-      }
-
-      const bucket = classifyThread(messages, ownEmails);
-      if (bucket === "stalled") {
-        stalledNotShown++;
-        continue;
-      }
-
-      const lastOurs = ourMessages.map((m) => m.date).sort().pop() ?? "";
-      kept.push({
-        threadId: raw.id,
-        subject: subject || "(no subject)",
-        bucket,
-        lastSent: lastOurs,
-        recipients: ourMessages.flatMap((m) => m.to),
+        accountOwnEmails: new Set(ownEmails),
       });
     }
   }
 
-  const followUps = groupByRecipient(kept, ownEmails, new Date().toISOString());
+  const mode: JudgeMode = opts.judge ?? (jevConfigured() ? "jev" : "heuristic");
+  const todayIso = new Date().toISOString();
+  const startedAt = Date.now();
+
+  // The heuristic verdict is always computed: it is the fallback, and in
+  // compare mode it is the thing being compared against.
+  const heuristicRaw = candidates.map((c) =>
+    judgeThread({
+      subject: c.subject,
+      labelNames: c.labelNames,
+      ownMessageBodies: c.ourMessages.map((m) => m.text),
+    }),
+  );
+  const heuristicVerdicts = heuristicRaw.map(heuristicJudgement);
+
+  let jevRun: Awaited<ReturnType<typeof runJudge>> | null = null;
+  if (mode !== "heuristic" && candidates.length > 0) {
+    const states: JudgeState[] = candidates.map((c) =>
+      buildJudgeState({
+        subject: c.subject,
+        messages: c.messages,
+        ownEmails: c.accountOwnEmails,
+        todayIso,
+      }),
+    );
+    jevRun = await (opts.deps?.runJudge ?? runJudge)(states);
+  }
+
+  let degraded = false;
+  let agreements = 0;
+  let disagreements = 0;
+
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+
+    // A label is a fact, not a judgement — the same principle that keeps
+    // classifyThread out of the judge's hands. is_my_outreach fully replaces
+    // judgeThread's inclusion decision in jev mode, and Jev has no notion of
+    // Apollo mailwarming, so this check runs unconditionally, in every mode,
+    // before the judge's verdict is consulted at all.
+    if (c.labelNames.some((n) => n.toLowerCase() === WARMING_LABEL.toLowerCase())) {
+      excludedWarming++;
+      continue;
+    }
+
+    const heuristic = heuristicVerdicts[i];
+    const jev = jevRun?.judgements[i] ?? null;
+
+    if (mode !== "heuristic" && !jev) degraded = true;
+
+    const judgement: ThreadJudgement = jev ?? heuristic;
+
+    let agrees: boolean | null = null;
+    if (mode === "both" && jev) {
+      agrees = jev.included === heuristic.included;
+      if (agrees) agreements++;
+      else disagreements++;
+    }
+
+    if (!judgement.included) {
+      // Attribute the exclusion to whichever judge actually made it.
+      // judgeThread's reasons (now that warming is filtered above) only ever
+      // explain a heuristic-sourced exclusion; is_my_outreach has no such
+      // taxonomy, so a Jev exclusion gets its own counter.
+      if (judgement.source === "jev") {
+        excludedByJudge++;
+      } else if (heuristicRaw[i].reason === "no_subject_no_signoff") {
+        excludedSignoffOnly++;
+      }
+      continue;
+    }
+
+    const bucket = classifyThread(c.messages, c.accountOwnEmails);
+
+    // Stalled threads were dropped unseen before there was anything able to
+    // judge them. A Jev verdict is such a thing; the heuristic is not, so its
+    // behaviour is unchanged.
+    const dropStalled =
+      bucket === "stalled" && (judgement.source === "heuristic" || !judgement.needsNudge);
+    if (dropStalled) {
+      stalledNotShown++;
+      continue;
+    }
+
+    if (!judgement.needsNudge) {
+      notNudgeworthy++;
+      continue;
+    }
+
+    const lastOurs = c.ourMessages.map((m) => m.date).sort().pop() ?? "";
+    kept.push({
+      threadId: c.threadId,
+      subject: c.subject || "(no subject)",
+      bucket,
+      lastSent: lastOurs,
+      recipients: c.ourMessages.flatMap((m) => m.to),
+      judgement,
+      agrees,
+    });
+  }
+
+  const followUps = groupByRecipient(kept, ownEmails, todayIso);
 
   if (scanned >= cap) cappedReasons.add("cap");
 
@@ -295,8 +441,21 @@ export async function auditSentFollowUps(
     labelLookupFailed,
     excludedSignoffOnly,
     excludedWarming,
+    excludedByJudge,
     excludedNoOwnMessage,
     stalledNotShown,
+    notNudgeworthy,
     followUps,
+    judgeStats: {
+      mode,
+      calls: jevRun?.calls ?? 0,
+      failures: jevRun?.failures ?? 0,
+      inputTokens: jevRun?.inputTokens ?? 0,
+      costUSD: jevRun?.costUSD ?? 0,
+      ms: Date.now() - startedAt,
+      agreements,
+      disagreements,
+    },
+    degraded,
   };
 }

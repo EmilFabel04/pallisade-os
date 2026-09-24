@@ -15,6 +15,7 @@ const shape = (): DataShape => ({
   brainThreads: [], newsFeed: [], newsInterests: [], newsBookmarks: [], notes: [],
   metricEntries: [], milestones: [], projectThreads: [],
   quotes: [], comparables: [],
+  followUpState: [],
   settings: DEFAULT_SETTINGS,
 });
 

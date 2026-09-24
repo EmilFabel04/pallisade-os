@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { toolsFor, dispatch, SERVER_TOOL_NAMES } from "@/lib/agents/capabilities";
 import { CAPABILITY_GROUPS } from "@/lib/agents/types";
 import type { AgentContext } from "@/lib/agents/types";
@@ -45,6 +45,7 @@ function ctx(over: Partial<AgentContext> = {}): AgentContext {
     services: "AI systems", snapshot: snapshot(), proposals: [],
     emailEnabled: false, calendarEnabled: false, driveAccountId: null,
     projectSnapshot: null,
+    fathomEnabled: false,
     ...over,
   };
 }
@@ -177,6 +178,44 @@ describe("the delivery group", () => {
   });
 });
 
+describe("the fathom group", () => {
+  it("grants both meeting tools when Fathom is configured", () => {
+    expect(names(toolsFor(["fathom"], ctx({ fathomEnabled: true }))))
+      .toEqual(["fathom_read_meeting", "fathom_search_meetings"]);
+  });
+
+  // Same gate as `delivery`: without it an agent receives two tools that answer
+  // every call with "not connected" and relays that to the founder as a fact
+  // about their own integrations. That has happened twice in this codebase.
+  it("grants nothing when Fathom is not configured", () => {
+    expect(toolsFor(["fathom"], ctx({ fathomEnabled: false }))).toEqual([]);
+  });
+
+  it("routes a fathom tool to its resolver rather than reporting an unknown tool", async () => {
+    // This file does not mock the Fathom client, unlike fathom/tools.test.ts.
+    // resolveFathomTool only avoids a real HTTP request here because
+    // FATHOM_API_KEY happens to be unset in this environment — that is an
+    // accident of environment, not a property of this test. A developer with
+    // the key exported in their shell would otherwise turn this unit test
+    // into a live call against the founder's real Fathom account. Force the
+    // key off and assert fetch is never reached, so the guarantee holds
+    // regardless of what the shell exports.
+    const priorKey = process.env.FATHOM_API_KEY;
+    delete process.env.FATHOM_API_KEY;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const out = JSON.parse(await dispatch("fathom_search_meetings", {}, ctx({ fathomEnabled: true })));
+      expect(String(out.error ?? "")).not.toContain("unknown tool");
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      if (priorKey === undefined) delete process.env.FATHOM_API_KEY;
+      else process.env.FATHOM_API_KEY = priorKey;
+    }
+  });
+});
+
 describe("every delivery tool answers with data, not an error", () => {
   const withProject = () => ctx({ projectSnapshot: projectSnapshot(), proposals: [] });
 
@@ -261,6 +300,7 @@ describe("capability group disjointness", () => {
     calendarEnabled: true,
     driveAccountId: "acct-1",
     projectSnapshot: projectSnapshot(),
+    fathomEnabled: true,
   });
 
   // Guards the fixture itself. If a future change makes a group grant nothing
@@ -268,7 +308,7 @@ describe("capability group disjointness", () => {
   // — this test fails first and says which group went dark.
   it("grants a non-empty tool set for every implemented group", () => {
     const empty = CAPABILITY_GROUPS.filter((g) => toolsFor([g], full()).length === 0);
-    expect(empty).toEqual(["repo", "fathom"]);
+    expect(empty).toEqual(["repo"]);
   });
 
   // dispatch() routes a tool call by name-set membership in a fixed if-chain,

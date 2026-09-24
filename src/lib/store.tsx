@@ -54,7 +54,7 @@ type NewRecord<K extends CollectionKey> = Omit<
 >;
 
 export interface SearchHit {
-  kind: Exclude<CollectionKey, "metricEntries"> | "painPoints";
+  kind: Exclude<CollectionKey, "metricEntries" | "followUpState"> | "painPoints";
   id: string;
   title: string;
   subtitle: string;
@@ -105,6 +105,7 @@ const EMPTY: DataShape = {
   projectThreads: [],
   quotes: [],
   comparables: [],
+  followUpState: [],
   settings: DEFAULT_SETTINGS,
 };
 

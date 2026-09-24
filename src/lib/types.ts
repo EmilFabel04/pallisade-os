@@ -6,6 +6,10 @@
 
 // voice.ts imports nothing, so this direction cannot cycle back.
 import type { VoiceStats } from "@/lib/content/voice";
+// sentAudit.ts pulls in the Gmail client transitively; types.ts is imported by
+// client components, so this MUST stay `import type` — the type-only form is
+// erased at compile time, so the cycle it creates costs nothing.
+import type { SentAuditResult } from "@/lib/gmail/sentAudit";
 
 export interface BaseRecord {
   id: string;
@@ -622,6 +626,29 @@ export interface Quote extends BaseRecord {
   notes: string;
 }
 
+/* ---------- sent-mail follow-up audit ---------- */
+
+/** The founder's own disposition of a recipient. Client-authored, so it lives
+ *  in COLLECTIONS; the audit itself does not write here. */
+export interface FollowUpState {
+  id: string;
+  /** Lowercased recipient address this applies to. */
+  email: string;
+  status: "handled" | "snoozed";
+  /** ISO date a snooze expires. null for "handled". */
+  until: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One stored audit run. Server-authored — deliberately not in COLLECTIONS. */
+export interface FollowUpRun {
+  id: string;
+  /** ISO timestamp the run finished. */
+  at: string;
+  result: SentAuditResult;
+}
+
 /* ---------- collections registry ---------- */
 
 export interface DataShape {
@@ -649,6 +676,7 @@ export interface DataShape {
   projectThreads: ProjectThread[];
   quotes: Quote[];
   comparables: Comparable[];
+  followUpState: FollowUpState[];
   settings: Settings;
 }
 
@@ -664,6 +692,9 @@ export type AdvisorSnapshot = Omit<
   // The founder's raw writing samples are content-studio material, not sales
   // context — omitted for the same reason positioningProfiles is.
   | "voiceSamples" | "voiceProfile"
+  // The founder's dismissals are not sales context, and leaving it in would
+  // break every advisor test fixture for no gain.
+  | "followUpState"
   // quotes and comparables are deliberately NOT omitted: what was quoted to a
   // company is exactly what the Sales Advisor needs.
 >;

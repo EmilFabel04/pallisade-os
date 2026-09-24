@@ -23,7 +23,7 @@ vi.mock("@/lib/agents/overrides", () => ({
 const baseCtx = (): AgentContext => ({
   today: "2026-08-13", businessName: "P", founderName: "E", services: "S",
   snapshot: null, proposals: [], emailEnabled: false, calendarEnabled: false,
-  driveAccountId: null, projectSnapshot: null,
+  driveAccountId: null, projectSnapshot: null, fathomEnabled: false,
 });
 
 // Lifted from src/lib/agents/capabilities.test.ts's projectSnapshot() helper
