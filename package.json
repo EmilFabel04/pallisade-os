@@ -8,6 +8,7 @@
     "start": "next start",
     "app": "bash scripts/launch.sh",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
