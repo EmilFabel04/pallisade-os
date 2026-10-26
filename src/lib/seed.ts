@@ -12,7 +12,13 @@ import type {
 import { addDaysISO, nowISO, todayISO, uid } from "./utils";
 
 /* Demo dataset — generated relative to "today" so the dashboard,
-   follow-up logic and charts are immediately meaningful. */
+   follow-up logic and charts are immediately meaningful.
+
+   Every client company, contact and note below is invented. Emails and
+   LinkedIn URLs use the reserved `.example` domain, and phone numbers use
+   an invalid +27 00 prefix (no South African number starts with 0 after
+   the country code), so nothing here can reach a real inbox, profile or
+   phone line. */
 
 const today = todayISO();
 const D = (offset: number) => addDaysISO(today, offset);
@@ -764,7 +770,7 @@ const painSeeds: Array<Omit<PainPoint, "id" | "createdAt" | "updatedAt">> = [
     painPoint: "Client onboarding is paperwork-heavy and slow",
     industry: "Wealth Management",
     companyType: "Private wealth firm",
-    whoMentioned: "Sugarbird Wealth, Summit",
+    whoMentioned: "Sugarbird Wealth, Hollowcrest",
     frequency: 3,
     workaround: "Manual forms, chasing signatures over email",
     possibleSolution: "Digital onboarding with e-sign and KYC checklist automation",
